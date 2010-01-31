@@ -1,0 +1,4 @@
+haxe/std/* usr/share/haxe
+haxedoc usr/bin
+haxelib usr/bin
+bin/haxe usr/bin

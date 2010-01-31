@@ -1,0 +1,90 @@
+#!/usr/bin/make -f
+# debian/rules for haXe.
+
+package := $(firstword $(shell dh_listpackages))
+
+# Do we have a native ocaml compiler?  If not, use bytecode.
+ifeq ($(shell test -x /usr/bin/ocamlopt -o -x /usr/bin/ocamlopt.opt && echo true),true)
+  OCAMLTYPE = install_native.ml
+  OCAMLSTRIP =
+  OCAMLDEPS = ocaml:Depends=
+else
+  OCAMLTYPE = install_bytecode.ml
+  OCAMLSTRIP = -Xhaxe
+  OCAMLDEPS = ocaml:Depends=ocaml-base-nox-$(shell ocamlfind ocamlc -version)
+endif
+
+# The upstream CVS repository.
+motiontwin := :pserver:anonymous@cvs.motion-twin.com:/cvsroot
+cvs := cvs -z3 -d $(motiontwin)
+version := $(shell dpkg-parsechangelog | grep ^Version | cut -d' ' -f2 | cut -d':' -f2 | cut -d'-' -f1)
+date := 2009-08-01
+repackdir := $(package)-$(version)
+
+# Repackage the source.
+get-orig-source:
+	echo "*** Please hit enter on login (empty password) ***"
+	$(cvs) login
+	$(cvs) export -N -d $(repackdir) -D $(date) haxe
+	$(cvs) export -N -d $(repackdir) -D $(date) ocaml/swflib
+	$(cvs) export -N -d $(repackdir) -D $(date) ocaml/extc
+	$(cvs) export -N -d $(repackdir) -D $(date) neko/libs/include/ocaml
+	find $(repackdir) -name .cvsignore -o -name '*.vcproj' \
+		-o -name '*.sln' -o -name '*.bat' | xargs rm -rf
+	tar cfz $(package)_$(version).orig.tar.gz $(repackdir)
+	rm -rf $(repackdir)
+
+# Use quilt to patch sources.
+include /usr/share/quilt/quilt.make
+
+build: patch build-stamp
+build-stamp: 
+	dh_testdir
+	ocaml debian/$(OCAMLTYPE)
+	$(CURDIR)/bin/haxe $(CURDIR)/haxe/std/tools/haxedoc/haxedoc.hxml
+	$(CURDIR)/bin/haxe $(CURDIR)/haxe/std/tools/haxelib/haxelib.hxml
+	touch $@
+
+binary-indep: build-stamp
+
+binary-arch: build-stamp
+	dh_testdir
+	dh_testroot
+	echo $(OCAMLDEPS) >> $(CURDIR)/debian/haxe.substvars
+	dh_installdocs
+	dh_install debian/haxe-mode.el usr/share/emacs/site-lisp/haxe-mode
+	dh_installemacsen
+	dh_install
+	mkdir -p $(CURDIR)/debian/haxe/etc/bash_completion.d
+	cp $(CURDIR)/debian/bash_completion $(CURDIR)/debian/haxe/etc/bash_completion.d/haxe
+	dh_installman debian/haxe.1 debian/haxelib.1 debian/haxedoc.1
+	dh_installchangelogs haxe/doc/CHANGES.txt
+	dh_strip -Xhaxedoc -Xhaxelib $(OCAMLSTRIP)
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+binary: binary-indep binary-arch
+
+clean: clean-patched unpatch
+clean-patched:
+	dh_testdir
+	dh_testroot
+	-rm -f *-stamp
+	-rm -rf $(CURDIR)/bin
+	-rm -f $(CURDIR)/haxe/lexer.ml
+	-rm -f $(CURDIR)/ocaml/xml-light/xml_parser.ml
+	-rm -f $(CURDIR)/ocaml/xml-light/xml_parser.mli
+	-rm -f $(CURDIR)/ocaml/xml-light/xml_lexer.ml
+	find $(CURDIR) -name '*.o' -o -name '*.cmi' -o -name '*.cmx' -o -name '*.cmo' \
+		-o -name '*.cma' -o -name '*.a' -o -name '*.cmxa' -o -name '*.n' \
+		| xargs rm -rf
+	rm -f $(CURDIR)/haxedoc
+	rm -f $(CURDIR)/haxelib
+	dh_clean
+
+.PHONY: binary binary-indep binary-arch build clean clean-patched

@@ -1,0 +1,26 @@
+;; -*-emacs-lisp-*-
+
+(if (not (file-exists-p "/usr/share/emacs/site-lisp/haxe-mode"))
+    (message "Package haxe needs reinstall.  Skipping setup.")
+
+  (let ((haxedir (concat "/usr/share/"
+                         (symbol-name debian-emacs-flavor)
+                         "/site-lisp/haxe-mode")))    
+
+    ;; Only load haxe-mode if it has been installed.
+    (if (zerop (length (file-expand-wildcards haxedir)))
+        (message "haxe-mode not for this flavor.  Skipping.")
+
+      ;; The haxe package follows the Debian/GNU Linux 'emacsen' policy and
+      ;; byte-compiles its elisp files for each 'emacs flavor'.  The compiled code
+      ;; is then installed in a subdirectory of the respective site-lisp directory.
+      (debian-pkg-add-load-path-item haxedir)
+      
+      ;; Automatically start haXe files in haxe-mode.
+      (add-to-list (quote auto-mode-alist) (quote ("\\.hx\\'" . haxe-mode)))
+
+      ;; Make sure that Help can find the source code.  Has to be at the end.
+      (setq load-path
+            (nconc load-path (list "/usr/share/emacs/site-lisp/haxe-mode")))
+  
+      (autoload 'haxe-mode "haxe-mode" "Major mode for editing haXe code." t))))
