@@ -1,3 +1,11 @@
+haxe (1:2.4-4) unstable; urgency=low
+
+  * Converted to dpkg-source format 3.0 (quilt).
+  * Use mercurial-buildpackage for repository maintenance, so old
+    repository does not exist any more.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 31 Jan 2010 22:37:10 +0100
+
 haxe (1:2.4-3) unstable; urgency=low
 
   * Rebuild because the i386 had broken dependencies on neko.

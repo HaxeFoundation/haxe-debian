@@ -34,10 +34,7 @@ get-orig-source:
 	tar cfz $(package)_$(version).orig.tar.gz $(repackdir)
 	rm -rf $(repackdir)
 
-# Use quilt to patch sources.
-include /usr/share/quilt/quilt.make
-
-build: patch build-stamp
+build: build-stamp
 build-stamp: 
 	dh_testdir
 	ocaml debian/$(OCAMLTYPE)
@@ -70,8 +67,7 @@ binary-arch: build-stamp
 
 binary: binary-indep binary-arch
 
-clean: clean-patched unpatch
-clean-patched:
+clean:
 	dh_testdir
 	dh_testroot
 	-rm -f *-stamp
@@ -87,4 +83,4 @@ clean-patched:
 	rm -f $(CURDIR)/haxelib
 	dh_clean
 
-.PHONY: binary binary-indep binary-arch build clean clean-patched
+.PHONY: binary binary-indep binary-arch build clean
