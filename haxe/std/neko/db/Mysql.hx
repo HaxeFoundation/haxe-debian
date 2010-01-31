@@ -150,6 +150,19 @@ private class MysqlConnection implements Connection {
 		return "'"+escape(s)+"'";
 	}
 
+	public function addValue( s : StringBuf, v : Dynamic ) {
+		var t = untyped __dollar__typeof(v);
+		if( untyped (t == __dollar__tint || t == __dollar__tnull) )
+			s.add(v);
+		else if( untyped t == __dollar__tbool )
+			s.addChar(if( v ) "1".code else "0".code);
+		else {
+			s.addChar("'".code);
+			s.add(escape(Std.string(v)));
+			s.addChar("'".code);
+		}
+	}
+
 	public function lastInsertId() {
 		return request("SELECT LAST_INSERT_ID()").getIntResult(0);
 	}
@@ -191,7 +204,12 @@ class Mysql {
 			socket : if( params.socket == null ) null else params.socket.__s
 		};
 		var c = D.connect(o);
-		D.select_db(c,untyped params.database.__s);
+		try {
+			D.select_db(c,untyped params.database.__s);
+		} catch( e : Dynamic ) {
+			D.close(c);
+			neko.Lib.rethrow(e);
+		}
 		return new MysqlConnection(c);
 	}
 

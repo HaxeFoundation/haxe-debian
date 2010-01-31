@@ -53,13 +53,13 @@ class Http {
 #if (neko || php || cpp)
 	public var noShutdown : Bool;
 	public var cnxTimeout : Float;
-	var responseHeaders : Hash<String>;
+	public var responseHeaders : Hash<String>;
 	var postData : String;
 	var chunk_size : Null<Int>;
 	var chunk_buf : haxe.io.Bytes;
 	var file : { param : String, filename : String, io : haxe.io.Input, size : Int };
 #elseif js
-	var async : Bool;
+	public var async : Bool;
 	var postData : String;
 #end
 	var headers : Hash<String>;
@@ -75,7 +75,7 @@ class Http {
 		params = new Hash();
 		#if js
 		async = true;
-		#elseif (neko || php)
+		#elseif (neko || php || cpp)
 		cnxTimeout = 10;
 		#end
 		#if php
@@ -122,7 +122,8 @@ class Http {
 				me.onError("Http Error #"+r.status);
 			}
 		};
-		r.onreadystatechange = onreadystatechange;
+		if( async )
+			r.onreadystatechange = onreadystatechange;
 		var uri = postData;
 		if( uri != null )
 			post = true;
@@ -482,10 +483,6 @@ class Http {
 		if( status == 0 || status == null )
 			throw "Response status error";
 
-		onStatus(status);
-		if( status < 200 || status >= 400 )
-			throw "Http Error #"+status;
-
 		// remove the two lasts \r\n\r\n
 		headers.pop();
 		headers.pop();
@@ -499,6 +496,9 @@ class Http {
 			if( hname.toLowerCase() == "content-length" )
 				size = Std.parseInt(hval);
 		}
+
+		onStatus(status);
+
 		var chunked = responseHeaders.get("Transfer-Encoding") == "chunked";
 		var chunk_re = ~/^([0-9A-Fa-f]+)[ ]*\r\n/m;
 		chunk_size = null;
@@ -538,6 +538,8 @@ class Http {
 		}
 		if( chunked && (chunk_size != null || chunk_buf != null) )
 			throw "Invalid chunk";
+		if( status < 200 || status >= 400 )
+			throw "Http Error #"+status;
 		api.close();
 	}
 

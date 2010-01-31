@@ -67,9 +67,23 @@ let rec gen_type t =
 	| TInst (c,params) -> node "c" [gen_path c.cl_path c.cl_private] (List.map gen_type params)
 	| TType (t,params) -> node "t" [gen_path t.t_path t.t_private] (List.map gen_type params)
 	| TFun (args,r) -> node "f" ["a",String.concat ":" (List.map gen_arg_name args)] (List.map gen_type (List.map (fun (_,opt,t) -> if opt then follow_param t else t) args @ [r]))
-	| TAnon a -> node "a" [] (pmap (fun f -> node f.cf_name [] [gen_type f.cf_type]) a.a_fields)
+	| TAnon a -> node "a" [] (pmap (fun f -> gen_field [] { f with cf_public = false }) a.a_fields)
 	| TDynamic t2 -> node "d" [] (if t == t2 then [] else [gen_type t2])
 	| TLazy f -> gen_type (!f())
+
+and gen_field att f =
+	let add_get_set acc name att =
+		match acc with
+		| NormalAccess | ResolveAccess -> att
+		| MethodAccess dyn -> (name, if dyn then "dynamic" else "method") :: att 
+		| NoAccess | NeverAccess -> (name, "null") :: att
+		| CallAccess m -> (name,m) :: att
+		| InlineAccess -> (name,"inline") :: att
+	in
+	let att = (match f.cf_expr with None -> att | Some e -> ("line",string_of_int (Lexer.get_error_line e.epos)) :: att) in
+	let att = add_get_set f.cf_get "get" (add_get_set f.cf_set "set" att) in	
+	let att = (match f.cf_params with [] -> att | l -> ("params", String.concat ":" (List.map (fun (n,_) -> n) l)) :: att) in
+	node f.cf_name (if f.cf_public then ("public","1") :: att else att) (gen_type f.cf_type :: gen_doc_opt f.cf_doc)
 
 let gen_constr e =
 	let doc = gen_doc_opt e.ef_doc in
@@ -82,22 +96,6 @@ let gen_constr e =
 	) in
 	node e.ef_name args t
 
-let gen_field att f =
-	let add_get_set acc name att =
-		match acc with
-		| NormalAccess | ResolveAccess | MethodAccess _  -> att
-		| NoAccess | NeverAccess -> (name, "null") :: att
-		| CallAccess m -> (name, if m = name ^ "_" ^ f.cf_name then "dynamic" else m) :: att
-		| InlineAccess -> assert false
-	in
-	let att = (match f.cf_expr with None -> att | Some e -> ("line",string_of_int (Lexer.get_error_line e.epos)) :: att) in
-	let att = (match f.cf_get with
-		| InlineAccess -> att
-		| g -> add_get_set f.cf_get "get" (add_get_set f.cf_set "set" att)
-	) in
-	let att = (match f.cf_params with [] -> att | l -> ("params", String.concat ":" (List.map (fun (n,_) -> n) l)) :: att) in
-	node f.cf_name (if f.cf_public then ("public","1") :: att else att) (gen_type f.cf_type :: gen_doc_opt f.cf_doc)
-
 let gen_type_params priv path params pos m =
 	let mpriv = (if priv then [("private","1")] else []) in
 	let mpath = (if m.mpath <> path then [("module",snd (gen_path m.mpath false))] else []) in
@@ -107,13 +105,9 @@ let gen_class_path name (c,pl) =
 	node name [("path",s_type_path c.cl_path)] (List.map gen_type pl)
 
 let rec exists f c =
-	try
-		let f2 = PMap.find f.cf_name c.cl_fields in
-		not (type_iseq f.cf_type f2.cf_type)
-	with
-		Not_found ->
+	PMap.exists f.cf_name c.cl_fields ||
 			match c.cl_super with
-			| None -> true
+			| None -> false
 			| Some (csup,_) -> exists f csup
 
 let gen_type_decl com t =
@@ -122,10 +116,10 @@ let gen_type_decl com t =
 	| TClassDecl c ->
 		let stats = List.map (gen_field ["static","1"]) c.cl_ordered_statics in
 		let fields = (match c.cl_super with
-			| None -> c.cl_ordered_fields
-			| Some (csup,_) -> List.filter (fun f -> exists f csup) c.cl_ordered_fields
+			| None -> List.map (fun f -> f,[]) c.cl_ordered_fields
+			| Some (csup,_) -> List.map (fun f -> if exists f csup then (f,["override","1"]) else (f,[])) c.cl_ordered_fields
 		) in
-		let fields = List.map (gen_field []) fields in
+		let fields = List.map (fun (f,att) -> gen_field att f) fields in
 		let constr = (match c.cl_constructor with None -> [] | Some f -> [gen_field [] f]) in
 		let impl = List.map (gen_class_path "implements") c.cl_implements in
 		let tree = (match c.cl_super with

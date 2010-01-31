@@ -1,5 +1,6 @@
 package tools.haxelib;
 import tools.haxelib.SiteDb;
+import haxe.rtti.CType;
 
 class Site {
 
@@ -65,51 +66,107 @@ class Site {
 				return "/"+Datas.REPOSITORY+"/"+Datas.fileName(res(p).name,res(v).name);
 			}
 		};
-		if (fillContent(ctx))
+		if( fillContent(ctx) )
 			neko.Lib.print( page.execute(ctx,macros) );
 	}
 
 	static function fillContent( ctx : Dynamic ) {
 		var uri = neko.Web.getURI().split("/");
+		var error = function(msg) { ctx.error = StringTools.htmlEscape(msg); return true; }
 		if( uri[0] == "" )
 			uri.shift();
 		var act = uri.shift();
-		if( act == null || act == "" )
+		if( act == null || act == "" || act == "index.n" )
 			act = "index";
-		ctx.projects = Project.manager.allByName();
+		ctx.menuTags = Tag.manager.topTags(10);
 		switch( act ) {
 		case "p":
 			var name = uri.shift();
 			var p = Project.manager.search({ name : name }).first();
-			if( p == null ) {
-				ctx.error = "Unknown project '"+name+"'";
-				return true;
-			}
+			if( p == null )
+				return error("Unknown project '"+name+"'");
 			ctx.p = p;
 			ctx.owner = p.owner;
 			ctx.version = p.version;
 			ctx.versions = Version.manager.byProject(p);
+			var tags = Tag.manager.search({ project : p.id });
+			if( !tags.isEmpty() ) ctx.tags = tags;
 		case "u":
 			var name = uri.shift();
 			var u = User.manager.search({ name : name }).first();
-			if( u == null ) {
-				ctx.error = "Unknown user '"+name+"'";
-				return true;
-			}
+			if( u == null )
+				return error("Unknown user '"+name+"'");
 			ctx.u = u;
 			ctx.uprojects = Developer.manager.search({ user : u.id }).map(function(d:Developer) { return d.project; });
+		case "t":
+			var tag = uri.shift();
+			ctx.tag = StringTools.htmlEscape(tag);
+			ctx.tprojects = Tag.manager.search({ tag : tag }).map(function(t) return t.project);
+		case "d":
+			var name = uri.shift();
+			var p = Project.manager.search({ name : name }).first();
+			if( p == null )
+				return error("Unknown project '"+name+"'");
+			var version = uri.shift();
+			var v;
+			if( version == null ) {
+				v = p.version;
+				version = v.name;
+			} else {
+				v = Version.manager.search({ project : p.id, name : version }).first();
+				if( v == null ) return error("Unknown version '"+version+"'");
+			}
+			if( v.documentation == null )
+				return error("Project "+p.name+" version "+version+" has no documentation");
+			var root : TypeRoot = haxe.Unserializer.run(v.documentation);
+			var buf = new StringBuf();
+			var html = new tools.haxedoc.HtmlPrinter("/d/"+p.name+"/"+version+"/","","");
+			html.output = function(str) buf.add(str);
+			var path = uri.join(".").toLowerCase().split(".");
+			if( path.length == 1 && path[0] == "" )
+				path = [];
+			if( path.length == 0 ) {
+				ctx.index = true;
+				html.process(TPackage("root","root",root));
+			} else {
+				var cl = html.find(root,path,0);
+				if( cl == null ) {
+					// we most likely clicked on a class which is part of the haxe core documentation
+					neko.Web.redirect("http://haxe.org/api/"+path.join("/"));
+					return false;
+				}
+				html.process(cl);
+			}
+			ctx.p = p;
+			ctx.v = v;
+			ctx.content = buf.toString();
 		case "index":
 			var vl = Version.manager.latest(10);
 			for( v in vl ) {
-				var p = v.project;
+				var p = v.project; // fetch
 			}
 			ctx.versions = vl;
+		case "all":
+			ctx.projects = Project.manager.allByName();
+		case "search":
+			var v = neko.Web.getParams().get("v");
+			var p = Project.manager.search({ name : v }).first();
+			if( p != null ) {
+				neko.Web.redirect("/p/"+p.name);
+				return false;
+			}
+			if( Tag.manager.count({ tag : v }) > 0 ) {
+				neko.Web.redirect("/t/"+v);
+				return false;
+			}
+			ctx.projects = Project.manager.containing(v).map(function(p) return Project.manager.get(p.id));
+			ctx.act_all = true;
+			ctx.search = StringTools.htmlEscape(v);
 		case "rss":
 			neko.Web.setHeader("Content-Type", "text/xml; charset=UTF-8");
 			neko.Lib.println('<?xml version="1.0" encoding="UTF-8"?>');
 			neko.Lib.print(buildRss().toString());
 			return false;
-
 		default:
 			ctx.error = "Unknown action : "+act;
 			return true;

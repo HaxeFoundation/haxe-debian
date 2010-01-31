@@ -61,13 +61,23 @@ class Type {
 				if(__call__("_hx_is_lambda", untyped o)) return null;
 				return __call__("_hx_ttype", 'String');
 			}
+			if(!untyped __call__("is_object", o)) {
+				return null;
+			}
 			var c = __call__("get_class", o);
 			if(c == false || c == '_hx_anonymous' || __call__("is_subclass_of", c, "enum"))
 				return null;
 			else
 				return __call__("_hx_ttype", c);
 		#elseif cpp
-			return untyped o.__GetClass();
+			if (o==null || !Reflect.isObject(o))  return null;
+			var c = o.__GetClass();
+			switch(c.toString())
+			{
+				case "__Anon" : return null;
+				case "Class" : return null;
+			}
+			return c;
 		#else
 			return null;
 		#end
@@ -104,7 +114,7 @@ class Type {
 			else
 				return __php__("_hx_ttype(get_class($o))");
 		#elseif cpp
-			if(!o.__IsEnum())
+			if(o.__GetClass()!=Enum)
 				return null;
 			return o;
 		#else
@@ -209,7 +219,14 @@ class Type {
 			cl = __eval__(name);
 		#elseif js
 			try {
+				#if js_namespace
+				if (name.indexOf('.') < 0)
+					cl = eval(js.Boot.__ns + '.' + name);
+				else
+					cl = eval(name);
+				#else
 				cl = eval(name);
+				#end
 			} catch( e : Dynamic ) {
 				cl = null;
 			}
@@ -261,7 +278,14 @@ class Type {
 			e = __eval__(name);
 		#elseif js
 			try {
+				#if js_namespace
+				if (name.indexOf('.') < 0)
+					e = eval(js.Boot.__ns + '.' + name);
+				else
+					e = eval(name);
+				#else
 				e = eval(name);
+				#end
 			} catch( err : Dynamic ) {
 				e = null;
 			}
@@ -508,7 +532,7 @@ class Type {
 			while(list(, $p) = each($ps))
 				if($p->isStatic()) $r[] = $p->getName();
 			");
-			return untyped __php__("new _hx_array($r)");
+			return untyped __php__("new _hx_array(array_unique($r))");
 		#elseif cpp
 			return untyped c.GetClassFields();
 		#else

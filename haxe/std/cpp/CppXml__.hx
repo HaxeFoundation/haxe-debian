@@ -103,7 +103,7 @@ class CppXml__ {
 				untyped this.cur = this.cur._parent;
 			}
 		};
-		untyped _parse(xmlData.__s,parser);
+		untyped _parse(xmlData,parser);
 		x.nodeType = Xml.Document;
 		return x;
 	}
@@ -215,6 +215,8 @@ class CppXml__ {
 	public function set( att : String, value : String ) : Void {
 		if( nodeType != Xml.Element )
 			throw "bad nodeType";
+		if (_attributes==null)
+			_attributes = {};
 		Reflect.setField (_attributes, att, value );
 		return null;
 	}
@@ -339,7 +341,7 @@ class CppXml__ {
 		return null;
 	}
 
-   function removeChild( x_ : Xml ) : Bool {
+   public function removeChild( x_ : Xml ) : Bool {
       var x:CppXml__ = cast x_;
 		if( _children == null )
 			throw "bad nodetype";

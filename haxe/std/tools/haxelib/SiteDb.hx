@@ -28,8 +28,25 @@ class Project extends neko.db.Object {
 	public var description : String;
 	public var website : String;
 	public var license : String;
+	public var downloads : Int;
 	public var owner(dynamic,dynamic) : User;
 	public var version(dynamic,dynamic) : Version;
+
+}
+
+class Tag extends neko.db.Object {
+
+	static function RELATIONS() {
+		return [
+			{ key : "project", prop : "project", manager : Project.manager },
+		];
+	}
+
+	public static var manager = new TagManager(Tag);
+
+	public var id : Int;
+	public var tag : String;
+	public var project(dynamic,dynamic) : Project;
 
 }
 
@@ -47,6 +64,7 @@ class Version extends neko.db.Object {
 	public var date : String; // sqlite does not have a proper 'date' type
 	public var comments : String;
 	public var downloads : Int;
+	public var documentation : Null<String>;
 
 }
 
@@ -69,9 +87,9 @@ class Developer extends neko.db.Object {
 
 class ProjectManager extends neko.db.Manager<Project> {
 
-	public function containing( word ) {
+	public function containing( word ) : List<{ id : Int, name : String }> {
 		word = quote("%"+word+"%");
-		return results("SELECT name FROM Project WHERE name LIKE "+word+" OR description LIKE "+word);
+		return results("SELECT id, name FROM Project WHERE name LIKE "+word+" OR description LIKE "+word);
 	}
 
 	public function allByName() {
@@ -88,6 +106,14 @@ class VersionManager extends neko.db.Manager<Version> {
 
 	public function byProject( p : Project ) {
 		return objects("SELECT * FROM Version WHERE project = "+p.id+" ORDER BY date DESC",false);
+	}
+
+}
+
+class TagManager extends neko.db.Manager<Tag> {
+
+	public function topTags( n : Int ) {
+		return results("SELECT tag, COUNT(*) as count FROM Tag GROUP BY tag ORDER BY count DESC LIMIT "+n);
 	}
 
 }
@@ -114,7 +140,8 @@ class SiteDb {
 				license VARCHAR(20) NOT NULL,
 				description TEXT NOT NULL,
 				website VARCHAR(100) NOT NULL,
-				version INT
+				version INT,
+				downloads INT NOT NULL
 			)
 		");
 		db.request("DROP TABLE IF EXISTS Version");
@@ -125,7 +152,8 @@ class SiteDb {
 				downloads INTEGER NOT NULL,
 				date VARCHAR(19) NOT NULL,
 				name VARCHAR(32) NOT NULL,
-				comments TEXT NOT NULL
+				comments TEXT NOT NULL,
+				documentation TEXT NULL
 			)
 		");
 		db.request("DROP TABLE IF EXISTS Developer");
@@ -135,5 +163,15 @@ class SiteDb {
 				project INTEGER NOT NULL
 			)
 		");
+		db.request("DROP TABLE IF EXISTS Tag");
+		db.request("
+			CREATE TABLE Tag (
+				id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+				tag VARCHAR(32) NOT NULL,
+				project INTEGER NOT NULL
+			)
+		");
+		db.request("DROP INDEX IF EXISTS TagSearch");
+		db.request("CREATE INDEX TagSearch ON Tag(tag)");
 	}
 }

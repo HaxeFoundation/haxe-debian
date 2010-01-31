@@ -124,6 +124,10 @@ class Main {
 		addCommand("run",run,"run the specified project with parameters",false);
 		addCommand("test",test,"install the specified package localy",false);
 		addCommand("dev",dev,"set the development directory for a given project",false);
+		initSite();
+	}
+
+	function initSite() {
 		siteUrl = "http://"+SERVER.host+":"+SERVER.port+"/"+SERVER.dir;
 		site = new SiteProxy(haxe.remoting.HttpConnection.urlConnect(siteUrl+SERVER.url).api);
 	}
@@ -179,9 +183,27 @@ class Main {
 	function process() {
 		var debug = false;
 		argcur = 0;
-		if( args[argcur] == "-debug" ) {
-			argcur++;
-			debug = true;
+		while( true ) {
+			var a = args[argcur++];
+			if( a == null )
+				break;
+			switch( a ) {
+			case "-debug":
+				debug = true;
+			case "-R":
+				var path = args[argcur++];
+				var r = ~/^(http:\/\/)?([^:\/]+)(:[0-9]+)?\/?(.*)$/;
+				if( !r.match(path) )
+					throw "Invalid repository format '"+path+"'";
+				SERVER.host = r.matched(2);
+				if( r.matched(3) != null )
+					SERVER.port = Std.parseInt(r.matched(3).substr(1));
+				SERVER.dir = r.matched(4);
+				initSite();
+			default:
+				argcur--;
+				break;
+			}
 		}
 		var cmd = args[argcur++];
 		if( cmd == null )
@@ -231,6 +253,7 @@ class Main {
 		var prj = param("Project name");
 		var inf = site.infos(prj);
 		print("Name: "+inf.name);
+		print("Tags: "+inf.tags.join(", "));
 		print("Desc: "+inf.desc);
 		print("Website: "+inf.website);
 		print("License: "+inf.license);
@@ -277,7 +300,7 @@ class Main {
 		var file = param("Package");
 		var data = neko.io.File.getBytes(file);
 		var zip = neko.zip.Reader.readZip(new haxe.io.BytesInput(data));
-		var infos = Datas.readInfos(zip);
+		var infos = Datas.readInfos(zip,true);
 		var user = infos.developers.first();
 		var password;
 		if( site.isNewUser(user) ) {
@@ -308,6 +331,13 @@ class Main {
 				throw "Project "+d.project+" does not have version "+d.version;
 		}
 
+		// check if this version already exists
+		var sinfos = try site.infos(infos.project) catch( _ : Dynamic ) null;
+		if( sinfos != null )
+			for( v in sinfos.versions )
+				if( v.name == infos.version && ask("You're about to overwrite existing version '"+v.name+"', please confirm") == No )
+					throw "Aborted";
+
 		// query a submit id that will identify the file
 		var id = site.getSubmitId();
 
@@ -319,6 +349,9 @@ class Main {
 		print("Sending data.... ");
 		h.request(true);
 
+		// processing might take some time, make sure we wait
+		print("Processing file.... ");
+		haxe.remoting.HttpConnection.TIMEOUT = 1000;
 		// ask the server to register the sent file
 		var msg = site.processSubmit(id,user,password);
 		print(msg);
@@ -367,6 +400,7 @@ class Main {
 		h.customRequest(false,progress);
 
 		doInstallFile(filepath,setcurrent);
+		site.postInstall(project,version);
 	}
 
 	function doInstallFile(filepath,setcurrent,?nodelete) {
@@ -375,7 +409,7 @@ class Main {
 		var f = neko.io.File.read(filepath,true);
 		var zip = neko.zip.Reader.readZip(f);
 		f.close();
-		var infos = Datas.readInfos(zip);
+		var infos = Datas.readInfos(zip,false);
 
 		// create directories
 		var pdir = getRepository() + Datas.safe(infos.project);
@@ -643,7 +677,7 @@ class Main {
 			}
 		l.add({ project : prj, version : version });
 		var xml = neko.io.File.getContent(vdir+"/haxelib.xml");
-		var inf = Datas.readData(xml);
+		var inf = Datas.readData(xml,false);
 		for( d in inf.dependencies )
 			checkRec(d.project,if( d.version == "" ) null else d.version,l);
 	}

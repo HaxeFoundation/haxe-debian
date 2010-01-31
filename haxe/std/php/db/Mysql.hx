@@ -43,7 +43,7 @@ private class MysqlConnection implements Connection {
 		var h = untyped __call__("mysql_query", s, c);
 		if(untyped __physeq__(h, false))
 			throw "Error while executing "+s+" ("+untyped __call__("mysql_error", c)+")";
-		return new MysqlResultSet(cast h);
+		return new MysqlResultSet(cast h, cast c);
 	}
 
 	public function escape( s : String ) {
@@ -52,6 +52,15 @@ private class MysqlConnection implements Connection {
 
 	public function quote( s : String ) {
 		return "'" + untyped __call__("mysql_real_escape_string", s, c) + "'";
+	}
+
+	public function addValue( s : StringBuf, v : Dynamic ) {
+		if( untyped __call__("is_int", v) || __call__("is_null", v))
+			s.add(v);
+		else if( untyped __call__("is_bool", v) )
+			s.add(if( v ) 1 else 0);
+		else
+			s.add(quote(Std.string(v)));
 	}
 
 	public function lastInsertId() {
@@ -80,20 +89,22 @@ private class MysqlResultSet implements ResultSet {
 	public var length(getLength,null) : Int;
 	public var nfields(getNFields,null) : Int;
 	private var __r : Void;
+	private var __c : Void;
 	private var cache : Dynamic;
 
-	public function new(r) {
+	public function new(r, c) {
 		__r = r;
+		__c = c;
 	}
 
 	private function getLength() {
 		if(untyped __physeq__(__r, true))
-			return untyped __call__("mysql_affected_rows");
+			return untyped __call__("mysql_affected_rows", __c);
 		else if (untyped __physeq__(__r, false))
 			return 0;
 		return untyped __call__("mysql_num_rows", __r);
 	}
-	
+
 	private var _nfields : Int;
 	private function getNFields() {
 		if(_nfields == null)
@@ -105,20 +116,21 @@ private class MysqlResultSet implements ResultSet {
 	private function getFieldsDescription() {
 		if(_fieldsDesc == null) {
 			_fieldsDesc = [];
-			for(i in 0...nfields) {
-				_fieldsDesc.push({
+			for (i in 0...nfields) {
+				var item = {
 					name : untyped __call__("mysql_field_name", __r, i),
 					type : untyped __call__("mysql_field_type", __r, i)
-				});
+				};
+				_fieldsDesc.push(item);
 			}
 		}
 		return _fieldsDesc;
 	}
 
 	private function convert(v : String, type : String) : Dynamic {
-		if(v == null) return v;
+		if (v == null) return v;
 		switch(type) {
-			case "year", "int":
+			case "int", "year":
 				return untyped __call__("intval", v);
 			case "real":
 				return untyped __call__("floatval", v);
@@ -140,7 +152,7 @@ private class MysqlResultSet implements ResultSet {
 		cRow = untyped __call__("mysql_fetch_array", __r, __php__("MYSQL_NUM"));
 		return ! untyped __physeq__(cRow, false);
 	}
-	
+
 	public function next() : Dynamic {
 		if( cache != null ) {
 			var t = cache;
@@ -164,7 +176,7 @@ private class MysqlResultSet implements ResultSet {
 	}
 
 	public function getResult( n : Int ) : String {
-		if(cRow == null) 
+		if(cRow == null)
 			if(!fetchRow())
 				return null;
 		return cRow[n];

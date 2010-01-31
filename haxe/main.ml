@@ -20,7 +20,7 @@ open Printf
 open Genswf
 open Common
 
-let version = 204
+let version = 205
 
 let prompt = ref false
 let display = ref false
@@ -115,7 +115,7 @@ let rec read_type_path com p =
 		| _ -> p
 	) in
 	List.iter (fun path ->
-		let dir = path ^ String.concat "/" p in		
+		let dir = path ^ String.concat "/" p in
 		let r = (try Sys.readdir dir with _ -> [||]) in
 		Array.iter (fun f ->
 			if (try (Unix.stat (dir ^ "/" ^ f)).Unix.st_kind = Unix.S_DIR with _ -> false) then begin
@@ -124,7 +124,7 @@ let rec read_type_path com p =
 						match read_type_path com [f] with
 						| [] , [] -> ()
 						| _ ->
-							try 
+							try
 								match PMap.find f com.package_rules with
 								| Forbidden -> ()
 								| Remap f -> packages := f :: !packages
@@ -189,7 +189,7 @@ let rec process_params acc = function
 
 and init params =
 	let usage = Printf.sprintf
-		"Haxe Compiler %d.%.2d - (c)2005-2009 Motion-Twin\n Usage : haxe.exe %s <class names...>\n Options :"
+		"haXe Compiler %d.%.2d - (c)2005-2010 Motion-Twin\n Usage : haxe%s -main <class> [-swf9|-swf|-js|-neko|-php|-cpp|-as3] <output> [options]\n Options :"
 		(version / 100) (version mod 100) (if Sys.os_type = "Win32" then ".exe" else "")
 	in
 	let classes = ref [([],"Std")] in
@@ -292,9 +292,12 @@ try
 		("-lib",Arg.String (fun l ->
 			libs := l :: !libs;
 			Common.define com l;
-		),"<library[:version]> : use an haxelib library");
+		),"<library[:version]> : use a haxelib library");
 		("-D",Arg.String (fun var ->
-			if var = "use_rtti_doc" then Parser.use_doc := true;
+			(match var with
+			| "use_rtti_doc" -> Parser.use_doc := true
+			| "no_opt" -> com.foptimize <- false
+			| _ -> ());
 			Common.define com var
 		),"<var> : define a conditional compilation flag");
 		("-v",Arg.Unit (fun () ->
@@ -358,7 +361,7 @@ try
 			) lines) @ !excludes;
 		),"<filename> : don't generate code for classes listed in this file");
 		("-prompt", Arg.Unit (fun() -> prompt := true),": prompt on error");
-		("-cmd", Arg.String (fun cmd ->			
+		("-cmd", Arg.String (fun cmd ->
 			cmds := expand_env cmd :: !cmds
 		),": run the specified command after successful compilation");
 		("--flash-strict", define "flash_strict", ": more type strict flash API");
@@ -374,7 +377,7 @@ try
 		("--display", Arg.String (fun file_pos ->
 			match file_pos with
 			| "classes" ->
-				pre_compilation := (fun() -> raise (Parser.TypePath ["."])) :: !pre_compilation;
+				pre_compilation := (fun() -> raise (Parser.TypePath (["."],None))) :: !pre_compilation;
 			| "keywords" ->
 				report_list (Hashtbl.fold (fun k _ acc -> (k,"","") :: acc) Lexer.keywords []);
 				exit 0;
@@ -390,13 +393,18 @@ try
 				};
 		),": display code tips");
 		("--no-output", Arg.Unit (fun() -> no_output := true),": compiles but does not generate any file");
-		("--times", Arg.Unit (fun() -> measure_times := true),": mesure compilation times");
+		("--times", Arg.Unit (fun() -> measure_times := true),": measure compilation times");
 		("--no-inline", define "no_inline", ": disable inlining");
-		("--no-opt", define "no_opt", ": disable code optimizations");		
+		("--no-opt", define "no_opt", ": disable code optimizations");
 		("--php-front",Arg.String (fun f ->
 			if com.php_front <> None then raise (Arg.Bad "Multiple --php-front");
 			com.php_front <- Some f;
 		),"<filename> : select the name for the php front file");
+		("--js-namespace",Arg.String (fun f ->
+			if com.js_namespace <> None then raise (Arg.Bad "Multiple --js-namespace");
+			com.js_namespace <- Some f;
+			Common.define com "js_namespace";
+		),"<namespace> : create a namespace where root types are defined");
 		("--remap", Arg.String (fun s ->
 			let pack, target = (try ExtString.String.split s ":" with _ -> raise (Arg.Bad "Invalid format")) in
 			com.package_rules <- PMap.add pack (Remap target) com.package_rules;
@@ -441,7 +449,7 @@ try
 		| Cross ->
 			(* no platform selected *)
 			set_platform Cross "cross" "";
-			no_output := true; ""
+			"?"
 		| Flash | Flash9 ->
 			Common.define com ("flash" ^ string_of_int com.flash_version);
 			if com.flash_version >= 9 then begin
@@ -480,8 +488,13 @@ try
 			Codegen.check_local_vars_init;
 			Codegen.block_vars com;
 		] in
-		let filters = (if Common.defined com "no_opt" then filters else Optimizer.reduce_expression com :: filters) in
-		Codegen.post_process com filters;
+		let tfilters = [
+			Codegen.fix_overrides com;
+		] in
+		let filters = (match com.platform with Js | Php | Cpp -> Optimizer.sanitize :: filters | _ -> filters) in
+		let filters = (if not com.foptimize then filters else Optimizer.reduce_expression ctx :: filters) in
+		Codegen.post_process com filters tfilters;
+		if Common.defined com "dump" then Codegen.dump_types com;
 		(match com.platform with
 		| Cross ->
 			()
@@ -546,10 +559,20 @@ with
 			prerr_endline (htmlescape (Type.s_type ctx t));
 			prerr_endline "</type>");
 		exit 0;
-	| Parser.TypePath p ->
-		let packs, classes = read_type_path com p in
-		if packs = [] && classes = [] then report ("No classes found in " ^ String.concat "." p) Ast.null_pos;
-		report_list (List.map (fun f -> f,"","") (packs @ classes));
+	| Parser.TypePath (p,c) ->
+		(match c with
+		| None -> 
+			let packs, classes = read_type_path com p in
+			if packs = [] && classes = [] then report ("No classes found in " ^ String.concat "." p) Ast.null_pos;
+			report_list (List.map (fun f -> f,"","") (packs @ classes))
+		| Some c ->
+			try 
+				let ctx = Typer.create com in
+				let m = Typeload.load_module ctx (p,c) Ast.null_pos in
+				report_list (List.map (fun t -> snd (Type.t_path t),"","") (List.filter (fun t -> not (Type.t_private t)) m.Type.mtypes))
+			with _ -> 
+				report ("Could not load module " ^ (Ast.s_type_path (p,c))) Ast.null_pos
+		);
 		exit 0;
 	| e when (try Sys.getenv "OCAMLRUNPARAM" <> "b" with _ -> true) ->
 		report (Printexc.to_string e) Ast.null_pos

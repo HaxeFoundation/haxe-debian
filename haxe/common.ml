@@ -56,6 +56,7 @@ type context = {
 	version : int;
 	mutable debug : bool;
 	mutable verbose : bool;
+	mutable foptimize : bool;
 	mutable platform : platform;
 	mutable class_path : string list;
 	mutable main_class : Type.path option; 
@@ -63,6 +64,7 @@ type context = {
 	mutable package_rules : (string,package_rule) PMap.t;
 	mutable error : string -> pos -> unit;
 	mutable warning : string -> pos -> unit;
+	mutable js_namespace : string option;
 	(* output *)
 	mutable file : string;
 	mutable flash_version : int;
@@ -82,6 +84,7 @@ let create v =
 		version = v;
 		debug = false;
 		verbose = false;
+		foptimize = true;
 		platform = Cross;
 		class_path = [];
 		main_class = None;
@@ -92,6 +95,7 @@ let create v =
 		flash_version = 8;
 		resources = Hashtbl.create 0;
 		php_front = None;
+		js_namespace = None;
 		warning = (fun _ _ -> assert false);
 		error = (fun _ _ -> assert false);
 		type_api = {
@@ -157,17 +161,14 @@ let new_timer name =
 		Hashtbl.add htimers name t;
 		t
 
-let curtime = ref None
+let curtime = ref []
 
 let timer name =
 	let t = new_timer name in
-	let old = !curtime in
-	curtime := Some t;
+	curtime := t :: !curtime;
 	(function() ->
 		let dt = get_time() -. t.start in
 		t.total <- t.total +. dt;
-		curtime := old;
-		match !curtime with
-		| None -> ()
-		| Some ct -> ct.start <- ct.start +. dt
+		curtime := List.tl !curtime;
+		List.iter (fun ct -> ct.start <- ct.start +. dt) !curtime
 	)

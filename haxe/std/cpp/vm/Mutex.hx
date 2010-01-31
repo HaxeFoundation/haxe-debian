@@ -24,22 +24,25 @@
  */
 package cpp.vm;
 
+#if HXCPP_MULTI_THREADED
+
 class Mutex {
 	var m : Dynamic;
+
 	public function new() {
-		m = mutex_create();
+		m = untyped __global__.__hxcpp_mutex_create();
 	}
 	public function acquire() {
-		mutex_acquire(m);
+		untyped __global__.__hxcpp_mutex_acquire(m);
 	}
 	public function tryAcquire() : Bool {
-		return mutex_try(m);
+		return untyped __global__.__hxcpp_mutex_try(m);
 	}
 	public function release() {
-		mutex_release(m);
+		untyped __global__.__hxcpp_mutex_release(m);
 	}
-	static var mutex_create = cpp.Lib.load("std","mutex_create",0);
-	static var mutex_release = cpp.Lib.load("std","mutex_release",1);
-	static var mutex_acquire = cpp.Lib.load("std","mutex_acquire",1);
-	static var mutex_try = cpp.Lib.load("std","mutex_try",1);
 }
+
+#else
+You_need_to_define_HXCPP_MULTI_THREADED_to_use_the_Mutex_class
+#end
