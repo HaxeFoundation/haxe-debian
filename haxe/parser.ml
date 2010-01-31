@@ -27,7 +27,7 @@ type error_msg =
 	| Missing_type
 
 exception Error of error_msg * pos
-exception TypePath of string list
+exception TypePath of string list * string option
 exception Display of expr
 
 let error_msg = function
@@ -76,19 +76,19 @@ let is_not_assign = function
 	| OpAssign | OpAssignOp _ -> false
 	| _ -> true
 
-let can_swap _op op =
+let swap _op op =
 	let p1 = priority _op in
 	let p2 = priority op in
 	if p1 < p2 then
-		true
+		is_not_assign _op || is_not_assign op
 	else if p1 = p2 && p1 >= 0 then (* numerical ops are left-assoc *)
-		true
+		is_not_assign _op || is_not_assign op
 	else
 		false
 
 let rec make_binop op e ((v,p2) as e2) =
 	match v with
-	| EBinop (_op,_e,_e2) when can_swap _op op && (is_not_assign _op || is_not_assign op) ->
+	| EBinop (_op,_e,_e2) when swap _op op ->
 		let _e = make_binop op e _e in
 		EBinop (_op,_e,_e2) , punion (pos _e) (pos _e2)
 	| ETernary (e1,e2,e3) when is_not_assign op ->
@@ -163,8 +163,8 @@ let rec	parse_file s =
 
 and parse_type_decl s =
 	match s with parser
-	| [< '(Kwd Import,p1); p, t, s = parse_import []; p2 = semicolon >] -> EImport (p,t,s) , punion p1 p2
-	| [< '(Kwd Using,p1); p, t = parse_using []; p2 = semicolon >] -> EUsing (p,t) , punion p1 p2
+	| [< '(Kwd Import,p1); t = parse_type_path_normal; p2 = semicolon >] -> EImport t, punion p1 p2
+	| [< '(Kwd Using,p1); t = parse_type_path_normal; p2 = semicolon >] -> EUsing t, punion p1 p2
 	| [< c = parse_common_flags; s >] ->
 		match s with parser
 		| [< n , p1 = parse_enum_flags; doc = get_doc; '(Const (Type name),_); tl = parse_constraint_params; '(BrOpen,_); l = plist parse_enum; '(BrClose,p2) >] ->
@@ -239,22 +239,6 @@ and parse_class_field_resume s =
 				with
 					Stream.Error _ | Stream.Failure -> parse_class_field_resume s
 
-and parse_import acc = parser
-	| [< '(Const (Ident k),_); '(Dot,p); s >] ->
-		if is_resuming p then raise (TypePath (List.rev (k :: acc)));
-		parse_import (k :: acc) s
-	| [< '(Const (Type t),_); s >] ->
-		List.rev acc , t , match s with parser
-			| [< '(Dot,_); '(Const (Type s),_) >] -> Some s
-			| [< >] -> None
-
-and parse_using acc = parser
-	| [< '(Const (Ident k),_); '(Dot,p); s >] ->
-		if is_resuming p then raise (TypePath (List.rev (k :: acc)));
-		parse_using (k :: acc) s
-	| [< '(Const (Type t),_) >] ->
-		List.rev acc , t
-
 and parse_common_flags = parser
 	| [< '(Kwd Private,_); l = parse_common_flags >] -> (HPrivate, EPrivate) :: l
 	| [< '(Kwd Extern,_); l = parse_common_flags >] -> (HExtern, EExtern) :: l
@@ -292,10 +276,19 @@ and parse_type_path_normal s = parse_type_path1 [] s
 and parse_type_path1 pack = parser
 	| [< '(Const (Ident name),_); '(Dot,p); s >] ->
 		if is_resuming p then
-			raise  (TypePath (List.rev (name :: pack)))
+			raise (TypePath (List.rev (name :: pack),None))
 		else
 			parse_type_path1 (name :: pack) s
 	| [< '(Const (Type name),_); s >] ->
+		let sub = (match s with parser
+			| [< '(Dot,p); s >] ->
+				(if is_resuming p then
+					raise (TypePath (List.rev pack,Some name))
+				else match s with parser
+					| [< '(Const (Type name),_) >] -> Some name
+					| [< >] -> serror())
+			| [< >] -> None
+		) in
 		let params = (match s with parser
 			| [< '(Binop OpLt,_); l = psep Comma parse_type_path_or_const; '(Binop OpGt,_) >] -> l
 			| [< >] -> []
@@ -303,7 +296,8 @@ and parse_type_path1 pack = parser
 		{
 			tpackage = List.rev pack;
 			tname = name;
-			tparams = params
+			tparams = params;
+			tsub = sub;
 		}
 
 and parse_type_path_or_const = parser
@@ -589,7 +583,7 @@ and expr_next e1 = parser
 	| [< '(POpen,p1); s >] ->
 		if is_resuming p1 then display (EDisplay e1,p1);
 		(match s with parser
-		| [< params = psep Comma expr; '(PClose,p2); s >] -> expr_next (ECall (e1,params) , punion (pos e1) p2) s
+		| [< params = parse_call_params e1; '(PClose,p2); s >] -> expr_next (ECall (e1,params) , punion (pos e1) p2) s
 		| [< >] -> serror())
 	| [< '(BkOpen,_); e2 = expr; '(BkClose,p2); s >] ->
 		expr_next (EArray (e1,e2), punion (pos e1) p2) s
@@ -622,12 +616,12 @@ and expr_next e1 = parser
 
 and parse_switch_cases eswitch cases = parser
 	| [< '(Kwd Default,p1); '(DblDot,_); s >] ->
-		let b = (try block1 s with Display e -> display (ESwitch (eswitch,cases,Some e),p1)) in
+		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,cases,Some e),p1)) in		
 		let l , def = parse_switch_cases eswitch cases s in
 		(match def with None -> () | Some (e,p) -> error Duplicate_default p);
 		l , Some (b,p1)
 	| [< '(Kwd Case,p1); el = psep Comma expr; '(DblDot,_); s >] ->
-		let b = (try block1 s with Display e -> display (ESwitch (eswitch,List.rev ((el,e) :: cases),None),p1)) in
+		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,List.rev ((el,e) :: cases),None),p1)) in
 		parse_switch_cases eswitch ((el,(b,p1)) :: cases) s
 	| [< >] ->
 		List.rev cases , None
@@ -644,6 +638,24 @@ and parse_catch etry = parser
 				Display e -> display (ETry (etry,[name,t,e]),p))
 		| [< '(_,p) >] -> error Missing_type p
 
+and parse_call_params ec s =
+	try
+		match s with parser
+		| [< e = expr >] ->
+			let rec loop acc =
+				try 
+					match s with parser
+					| [< '(Comma,_); e = expr >] -> loop (e::acc)
+					| [< >] -> List.rev acc
+				with Display e ->
+					display (ECall (ec,List.rev (e::acc)),pos ec)
+			in
+			loop [e]
+		| [< >] ->
+			[]
+	with Display e ->
+		display (ECall (ec,[e]),pos ec)
+
 and toplevel_expr s =
 	try
 		expr s
@@ -657,6 +669,7 @@ let parse ctx code file =
 	cache := DynArray.create();
 	doc := None;
 	Lexer.init file;
+	Lexer.skip_header code;
 	let rec next_token() = process_token (Lexer.token code)
 
 	and process_token tk =

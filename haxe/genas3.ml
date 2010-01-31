@@ -549,8 +549,10 @@ and gen_expr ctx e =
 				spr ctx " = ";
 				gen_value ctx e
 		) vl;
-	| TNew (c,_,el) ->
-		print ctx "new %s(" (s_path ctx true c.cl_path e.epos);
+	| TNew (c,params,el) ->
+		(match c.cl_path, params with
+		| (["flash"],"Vector"), [pt] -> print ctx "new Vector.<%s>(" (type_str ctx pt e.epos)
+		| _ -> print ctx "new %s(" (s_path ctx true c.cl_path e.epos));
 		concat ctx "," (gen_value ctx) el;
 		spr ctx ")"
 	| TIf (cond,e,eelse) ->
@@ -704,7 +706,7 @@ and gen_value ctx e =
 		if ctx.in_static then
 			print ctx "function() : %s " t
 		else
-			print ctx "function($this:%s) : %s " (snd ctx.path) t;
+			print ctx "(function($this:%s) : %s " (snd ctx.path) t;
 		let b = if block then begin
 			spr ctx "{";
 			let b = open_block ctx in
@@ -728,7 +730,7 @@ and gen_value ctx e =
 			if ctx.in_static then
 				print ctx "()"
 			else
-				print ctx "(%s)" (this ctx)
+				print ctx "(%s))" (this ctx)
 		)
 	in
 	match e.eexpr with
@@ -854,6 +856,15 @@ let generate_field ctx static f =
 					if o then print ctx " = %s" (default_value tstr);
 				) args;
 				print ctx ") : %s " (type_str ctx r p);
+			| _ when (match f.cf_get with CallAccess m -> true | _ -> match f.cf_set with CallAccess m -> true | _ -> false) -> 
+				let t = type_str ctx f.cf_type p in
+				let id = s_ident f.cf_name in
+				(match f.cf_get with
+				| NormalAccess | CallAccess _ -> print ctx "function get %s() : %s;" id t;
+				| _ -> ());
+				(match f.cf_set with
+				| NormalAccess | CallAccess _ -> print ctx "function set %s( __v : %s ) : void;" id t;
+				| _ -> ());
 			| _ -> ()
 		else
 		if (match f.cf_get with CallAccess m -> true | _ -> match f.cf_set with CallAccess m -> true | _ -> false) then begin

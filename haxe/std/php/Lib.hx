@@ -40,16 +40,15 @@ class Lib {
 	}
 
 	public static function isCli() : Bool {
-		return untyped __php__("0 == strncasecmp(PHP_SAPI, 'cli', 3)");
+		return untyped __php__("(0 == strncasecmp(PHP_SAPI, 'cli', 3))");
 	}
 
 	public static function printFile(file : String) {
-		var h = untyped __call__("fopen", file,  "r");
-		return untyped __call__("fpassthru", h);
+		return untyped __call__("fpassthru", __call__("fopen", file,  "r"));
 	}
 
 	public static inline function toPhpArray(a : Array<Dynamic>) : NativeArray {
-		return untyped __php__("$a->»a");
+		return untyped __field__(a, '»a');
 	}
 
 	public static inline function toHaxeArray(a : NativeArray) : Array<Dynamic> {
@@ -61,13 +60,17 @@ class Lib {
 		untyped __php__("reset($arr); while(list($k, $v) = each($arr)) $h->set($k, $v)");
 		return h;
 	}
+	
+	public static function associativeArrayOfHash(hash : Hash<Dynamic>) : NativeArray {
+		return untyped hash.h;
+	}
 
 	/**
 		For neko compatibility only.
 	**/
 	public inline static function rethrow( e : Dynamic ) {
-		untyped __php__("if(isset($__e__)) throw $__e__");
-		if(Std.is(e, untyped __php__("Exception"))) {
+		untyped __php__("if(isset($»e)) throw $»e");
+		if(Std.is(e, Exception)) {
 			var __rtex__ = e;
 			untyped __php__("throw $__rtex__");
 		}

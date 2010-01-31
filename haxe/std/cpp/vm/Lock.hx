@@ -24,18 +24,21 @@
  */
 package cpp.vm;
 
+#if HXCPP_MULTI_THREADED
+
 class Lock {
 	var l : Dynamic;
 	public function new() {
-		l = lock_create();
+		l = untyped __global__.__hxcpp_lock_create();
 	}
-	public function wait( ?timeout : Float ) : Bool {
-		return lock_wait(l,timeout);
+	public function wait( ?timeout : Float = -1) : Bool {
+		return untyped __global__.__hxcpp_lock_wait(l,timeout);
 	}
 	public function release() {
-		lock_release(l);
+		untyped __global__.__hxcpp_lock_release(l);
 	}
-	static var lock_create = cpp.Lib.load("std","lock_create",0);
-	static var lock_release = cpp.Lib.load("std","lock_release",1);
-	static var lock_wait = cpp.Lib.load("std","lock_wait",2);
 }
+
+#else
+You_need_to_define_HXCPP_MULTI_THREADED_to_use_the_Lock_class
+#end

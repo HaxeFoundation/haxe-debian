@@ -303,6 +303,8 @@ function _hx_field($o, $field) {
 							return $o->$field;
 						}
 					}
+				} else if(isset($o->»dynamics[$field])) {
+					return $o->»dynamics[$field];
 				} else {
 					return array($o, $field);
 				}
@@ -313,9 +315,22 @@ function _hx_field($o, $field) {
 	}
 }
 
+function _hx_get_object_vars($o) {
+	$a = array_keys(get_object_vars($o));
+	if(isset($o->»dynamics))
+		$a = array_merge($a, array_keys($o->»dynamics));
+	$arr = array();
+	while($k = current($a)) {
+		if(substr($k, 0, 1) != '»')
+			$arr[] = $k;
+		next($a);
+	}
+	return $arr;
+}
+
 function _hx_has_field($o, $field) {
 	return
-		(is_object($o) && (method_exists($o, $field) || isset($o->$field) || property_exists($o, $field)))
+		(is_object($o) && (method_exists($o, $field) || isset($o->$field) || property_exists($o, $field) || isset($o->»dynamics[$field])))
 		||
 		(is_string($o) && (in_array($field, array('toUpperCase', 'toLowerCase', 'charAt', 'charCodeAt', 'indexOf', 'lastIndexOf', 'split', 'substr', 'toString', 'length'))))
 	;
@@ -700,6 +715,7 @@ class _hx_lambda {
 		}
 		for($»i = 0; $»i < count($this->args); $»i++)
 			${$this->args[$»i]} =& $this->params[$»i];
+		$»this = $this->scope;
 		return eval($this->body);
 	}
 
@@ -713,45 +729,45 @@ class _hx_lambda {
 		return $this->execute();
 	}
 
-	public function execute1(&$_1) {
-		if($this->scope == null) $this->scope= &$_1;
-		$this->params = array(&$_1);
+	public function execute1($_1) {
+		if($this->scope == null) $this->scope= $_1;
+		$this->params = array($_1);
 		return $this->execute();
 	}
 
-	public function execute2(&$_1, &$_2) {
-		if($this->scope == null) $this->scope= &$_1;
-		$this->params = array(&$_1, &$_2);
+	public function execute2($_1, $_2) {
+		if($this->scope == null) $this->scope= $_1;
+		$this->params = array($_1, $_2);
 		return $this->execute();
 	}
 
-	public function execute3(&$_1, &$_2, &$_3) {
-		if($this->scope == null) $this->scope= &$_1;
-		$this->params = array(&$_1, &$_2, &$_3);
+	public function execute3($_1, $_2, $_3) {
+		if($this->scope == null) $this->scope= $_1;
+		$this->params = array($_1, $_2, $_3);
 		return $this->execute();
 	}
 
-	public function execute4(&$_1, &$_2, &$_3, &$_4) {
-		if($this->scope == null) $this->scope= &$_1;
-		$this->params = array(&$_1, &$_2, &$_3, &$_4);
+	public function execute4($_1, $_2, $_3, $_4) {
+		if($this->scope == null) $this->scope= $_1;
+		$this->params = array($_1, $_2, $_3, $_4);
 		return $this->execute();
 	}
 
-	public function execute5(&$_1, &$_2, &$_3, &$_4, &$_5) {
-		if($this->scope == null) $this->scope= &$_1;
-		$this->params = array(&$_1, &$_2, &$_3, &$_4, &$_5);
+	public function execute5($_1, $_2, $_3, $_4, $_5) {
+		if($this->scope == null) $this->scope= $_1;
+		$this->params = array($_1, $_2, $_3, $_4, $_5);
 		return $this->execute();
 	}
 
-	public function execute6(&$_1, &$_2, &$_3, &$_4, &$_5, &$_6) {
-		if($this->scope == null) $this->scope= &$_1;
-		$this->params = array(&$_1, &$_2, &$_3, &$_4, &$_5, &$_6);
+	public function execute6($_1, $_2, $_3, $_4, $_5, $_6) {
+		if($this->scope == null) $this->scope= $_1;
+		$this->params = array($_1, $_2, $_3, $_4, $_5, $_6);
 		return $this->execute();
 	}
 
-	public function execute7(&$_1, &$_2, &$_3, &$_4, &$_5, &$_6, &$_7) {
-		if($this->scope == null) $this->scope= &$_1;
-		$this->params = array(&$_1, &$_2, &$_3, &$_4, &$_5, &$_6, &$_7);
+	public function execute7($_1, $_2, $_3, $_4, $_5, $_6, $_7) {
+		if($this->scope == null) $this->scope= $_1;
+		$this->params = array($_1, $_2, $_3, $_4, $_5, $_6, $_7);
 		return $this->execute();
 	}
 }
@@ -862,6 +878,9 @@ function _hx_autoload($name) {
 	require_once(php_Boot::$tpaths[$name]);
 	return true;
 }
+
+if(!ini_get('date.timezone'))
+	date_default_timezone_set('UTC');
 
 spl_autoload_register('_hx_autoload')");
 	}

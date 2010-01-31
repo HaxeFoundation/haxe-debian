@@ -599,7 +599,7 @@ and gen_call ctx e el =
 		(match ctx.curclass.cl_super with
 		| None -> assert false
 		| Some (c,_) ->
-			print ctx "parent::%s(" (name);
+			print ctx "parent::%s(" (s_ident name);
 			concat ctx "," (gen_value ctx) params;
 			spr ctx ")";
 		);
@@ -615,6 +615,11 @@ and gen_call ctx e el =
 		gen_value ctx f;
 		spr ctx "}";
 		genargs el;
+	| TLocal "__field__" , e :: ({ eexpr = TConst (TString code) } :: el) ->
+		gen_value ctx e;
+		spr ctx "->";
+		spr ctx code;
+		gen_array_args ctx el;
 	| TLocal "__field__" , e :: (f :: el) ->
 		gen_value ctx e;
 		spr ctx "->";
@@ -633,6 +638,9 @@ and gen_call ctx e el =
 		spr ctx ")";
 	| TLocal "__php__", [{ eexpr = TConst (TString code) }] ->
 		spr ctx (s_escape_php_vars ctx code)
+	| TLocal "__instanceof__" ,  [e1;{ eexpr = TConst (TString t) }] ->
+		gen_value ctx e1;
+		print ctx " instanceof %s" (s_escape_php_vars ctx t);
 	| TLocal "__physeq__" ,  [e1;e2] ->
 		gen_value ctx e1;
 		spr ctx " === ";
@@ -982,7 +990,8 @@ and gen_expr ctx e =
 		| _ -> print ctx "%s::%s$%s" (s_path ctx en.e_path en.e_extern e.epos) (escphp ctx.quotes) (s_ident s))
 	| TArray (e1,e2) ->
 		(match e1.eexpr with
-		| TCall _ ->
+		| TCall _
+		| TArrayDecl _ ->
 			spr ctx "_hx_array_get(";
 			gen_value ctx e1;
 			spr ctx ", ";
@@ -1181,13 +1190,13 @@ and gen_expr ctx e =
 					| _ -> 
 						gen_expr ctx e1) in
 				
-				spr ctx "isset(";
+				spr ctx "(isset(";
 				gen_field_access ctx true e1 s;
 				spr ctx ") ? ";
 				gen_field_access ctx true e1 s;
 				spr ctx ": array(";
 				ob e1.eexpr;
-				print ctx ", %s\"%s%s\")" p s p;
+				print ctx ", %s\"%s%s\"))" p (s_ident s) p;
 				
 			end)
 		| TMono _ ->
@@ -1830,12 +1839,12 @@ let generate_class ctx c =
 	(match c.cl_dynamic with
 		| Some _ when not c.cl_interface && not (super_has_dynamic c) ->
 			newline ctx;
-			spr ctx "private $»dynamics = array();\n\tpublic function &__get($n) {\n\t\tif(isset($this->»dynamics[$n]))\n\t\t\treturn $this->»dynamics[$n];\n\t}\n\tpublic function __set($n, $v) {\n\t\t$this->»dynamics[$n] = $v;\n\t}\n\tpublic function __call($n, $a) {\n\t\tif(is_callable($this->»dynamics[$n]))\n\t\t\treturn call_user_func_array($this->»dynamics[$n], $a);\n\t\tthrow new HException(\"Unable to call «\".$n.\"»\");\n\t}"
+			spr ctx "public $»dynamics = array();\n\tpublic function __get($n) {\n\t\tif(isset($this->»dynamics[$n]))\n\t\t\treturn $this->»dynamics[$n];\n\t}\n\tpublic function __set($n, $v) {\n\t\t$this->»dynamics[$n] = $v;\n\t}\n\tpublic function __call($n, $a) {\n\t\tif(isset($this->»dynamics[$n]) && is_callable($this->»dynamics[$n]))\n\t\t\treturn call_user_func_array($this->»dynamics[$n], $a);\n\t\tif('toString' == $n)\n\t\t\treturn $this->__toString();\n\t\tthrow new HException(\"Unable to call «\".$n.\"»\");\n\t}"
 		| Some _
 		| _ ->
 			if List.length ctx.dynamic_methods > 0 then begin
 				newline ctx;
-				spr ctx "public function __call($m, $a) {\n\t\tif(isset($this->$m) && is_callable($this->$m))\n\t\t\treturn call_user_func_array($this->$m, $a);\n\t\telse if(isset($this->»dynamics[$m]) && is_callable($this->»dynamics[$m]))\n\t\t\treturn call_user_func_array($this->»dynamics[$m], $a);\n\t\telse\n\t\t\tthrow new HException('Unable to call «'.$m.'»');\n\t}";
+				spr ctx "public function __call($m, $a) {\n\t\tif(isset($this->$m) && is_callable($this->$m))\n\t\t\treturn call_user_func_array($this->$m, $a);\n\t\telse if(isset($this->»dynamics[$m]) && is_callable($this->»dynamics[$m]))\n\t\t\treturn call_user_func_array($this->»dynamics[$m], $a);\n\t\telse if('toString' == $m)\n\t\t\treturn $this->__toString();\n\t\telse\n\t\t\tthrow new HException('Unable to call «'.$m.'»');\n\t}";
 			end;
 	);
 

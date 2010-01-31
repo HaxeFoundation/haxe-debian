@@ -165,7 +165,7 @@ let real_path = function
 	| ["flash"] , "Error" -> [], "Error"
 	| ["flash"] , "Vector" -> ["__AS3__";"vec"], "Vector"
 	| path -> path
-	
+
 let type_path ctx path =
 	let pack, name = real_path path in
 	HMPath (pack,name)
@@ -284,6 +284,7 @@ let property ctx p t =
 	| TInst ({ cl_path = ["flash"],"Vector" },_) ->
 		(match p with
 		| "length" | "fixed" | "toString" -> ident p, None, false
+		| "iterator" -> ident p, None, true
 		| _ -> as3 p, None, false);
 	| TInst ({ cl_path = [],"String" },_) ->
 		(match p with
@@ -303,7 +304,7 @@ let property ctx p t =
 		(try
 			let f = PMap.find p c.cl_fields in
 			ident p, Some (classify ctx (apply_params c.cl_types params f.cf_type)), false
-		with Not_found -> 
+		with Not_found ->
 			ident p, None, false)
 	| _ ->
 		ident p, None, false
@@ -364,6 +365,15 @@ let set_reg ctx r =
 	coerce ctx r.rtype;
 	write ctx (HSetReg r.rid)
 
+let set_reg_dup ctx r =
+	if not r.rinit then begin
+		r.rinit <- true;
+		if ctx.infos.icond then r.rcond <- true;
+	end;
+	coerce ctx r.rtype;
+	write ctx HDup;
+	write ctx (HSetReg r.rid)
+
 let free_reg ctx r =
 	r.rused <- false
 
@@ -414,7 +424,7 @@ let gen_local_access ctx name p (forset : 'a)  : 'a access =
 		if is_set forset then write ctx (HFindProp p);
 		VGlobal p
 
-let get_local_register ctx name = 
+let get_local_register ctx name =
 	match (try PMap.find name ctx.locals with Not_found -> LScope 0) with
 	| LReg r -> Some r
 	| _ -> None
@@ -422,12 +432,13 @@ let get_local_register ctx name =
 let rec setvar ctx (acc : write access) kret =
 	match acc with
 	| VReg r ->
-		if kret <> None then write ctx HDup;
-		set_reg ctx r;
+		if kret <> None then
+			set_reg_dup ctx r
+		else
+			set_reg ctx r;
 	| VGlobal _ | VId _ | VCast _ | VArray | VScope _ when kret <> None ->
 		let r = alloc_reg ctx (match kret with None -> assert false | Some k -> k) in
-		write ctx HDup;
-		set_reg ctx r;
+		set_reg_dup ctx r;
 		setvar ctx acc None;
 		write ctx (HReg r.rid);
 		free_reg ctx r
@@ -529,12 +540,12 @@ let end_fun ctx args tret =
 		| None -> HVNone
 		| Some c ->
 			match c with
-			| TInt i -> 
+			| TInt i ->
 				(match classify ctx t with
 				| KUInt -> HVUInt i
 				| _ -> HVInt i)
 			| TFloat s -> HVFloat (float_of_string s)
-			| TString s -> HVString s
+			| TString s -> HVString (Genswf8.to_utf8 s)
 			| TBool b -> HVBool b
 			| TNull -> HVNone
 			| TThis	| TSuper -> assert false
@@ -552,7 +563,7 @@ let end_fun ctx args tret =
 		hlmt_var_args = false;
 		hlmt_debug_name = None;
 		hlmt_dparams = (match !dparams with None -> None | Some l -> Some (List.rev l));
-		hlmt_pnames = None;
+		hlmt_pnames = if ctx.swc || ctx.debugger then Some (List.map (fun (n,_,_) -> Some n) args) else None;
 		hlmt_new_block = false;
 		hlmt_unused_flag = false;
 		hlmt_arguments_defined = false;
@@ -708,7 +719,7 @@ let gen_constant ctx c t p =
 		let f = float_of_string f in
 		write ctx (HFloat f);
 	| TString s ->
-		write ctx (HString s);
+		write ctx (HString (Genswf8.to_utf8 s));
 	| TBool b ->
 		write ctx (if b then HTrue else HFalse);
 	| TNull ->
@@ -742,7 +753,7 @@ let gen_access ctx e (forset : 'a) : 'a access =
 		| _ -> gen_expr ctx true e1);
 		(match k with
 		| Some t -> VCast (id,t)
-		| None -> 
+		| None ->
 		match follow e1.etype, follow e.etype with
 		| _ , TFun _ when not ctx.for_call -> VCast(id,classify ctx e.etype)
 		| TEnum _, _ -> VId id
@@ -777,13 +788,13 @@ let gen_expr_twice ctx e =
 		| Some r ->
 			write ctx (HReg r.rid);
 			write ctx (HReg r.rid);
-		| None -> 
+		| None ->
 			gen_expr ctx true e;
 			write ctx HDup)
 	| TConst _ ->
 		gen_expr ctx true e;
 		gen_expr ctx true e;
-	| _ ->		
+	| _ ->
 		gen_expr ctx true e;
 		write ctx HDup
 
@@ -914,7 +925,7 @@ let rec gen_expr_content ctx retval e =
 		write ctx (HArray 0)
 	| TNew (c,tl,pl) ->
 		let id = type_id ctx (TInst (c,tl)) in
-		(match id with 
+		(match id with
 		| HMParams _ ->
 			gen_type ctx id;
 			List.iter (gen_expr ctx true) pl;
@@ -1063,17 +1074,16 @@ let rec gen_expr_content ctx retval e =
 		let t = classify ctx e.etype in
 		(try
 			let t0 = classify ctx e0.etype in
-			(* generate optimized int switch *)			
+			(* generate optimized int switch *)
 			if t0 <> KInt && t0 <> KUInt then raise Exit;
 			let rec get_int e =
 				match e.eexpr with
-				| TConst (TInt n) -> Int32.to_int n
+				| TConst (TInt n) -> if n < 0l || n > 512l then raise Exit; Int32.to_int n
 				| TParenthesis e | TBlock [e] -> get_int e
 				| _ -> raise Not_found
 			in
 			List.iter (fun (vl,_) -> List.iter (fun v ->
-				let n = (try get_int v with _ -> raise Exit) in
-				if n < 0 || n > 512 then raise Exit;
+				try ignore (get_int v) with _ -> raise Exit
 			) vl) el;
 			gen_expr ctx true e0;
 			if t0 <> KInt then write ctx HToInt;
@@ -1387,8 +1397,8 @@ and gen_unop ctx retval op flag e =
 		let acc_read, acc_write = gen_access_rw ctx e in
 		let op = (match k, incr with
 			| KInt, true -> A3OIIncr
-			| KInt, false -> A3OIDecr 
-			| _ , true -> A3OIncr 
+			| KInt, false -> A3OIDecr
+			| _ , true -> A3OIncr
 			| _ , false -> A3ODecr
 		) in
 		getvar ctx acc_read;
@@ -1406,7 +1416,7 @@ and gen_unop ctx retval op flag e =
 			setvar ctx acc_write (if retval then Some k else None)
 
 and gen_binop ctx retval op e1 e2 t =
-	let write_op op =		
+	let write_op op =
 		let iop = (match op with
 			| OpAdd -> Some A3OIAdd
 			| OpSub -> Some A3OISub
@@ -1735,7 +1745,7 @@ let generate_class ctx c =
 		| None -> acc
 		| Some k ->
 			{
-				hlf_name = ident f.cf_name;
+				hlf_name = if c.cl_interface then HMName (f.cf_name, HNNamespace (match c.cl_path with [],n -> n | l,n -> String.concat "." l ^ ":" ^ n)) else ident f.cf_name;
 				hlf_slot = 0;
 				hlf_kind = k;
 				hlf_metas = None;
@@ -1920,7 +1930,7 @@ let generate_type ctx t =
 			let hlc = generate_enum ctx e in
 			let init = begin_fun ctx [] t_void [ethis] false e.e_pos in
 			generate_enum_init ctx e hlc;
-			write ctx HRetVoid;			
+			write ctx HRetVoid;
 			Some (init(), {
 				hlf_name = type_path ctx e.e_path;
 				hlf_slot = 0;
@@ -1949,7 +1959,7 @@ let generate com =
 		try_scope_reg = None;
 		for_call = false;
 	} in
-	let classes = List.fold_left (fun acc t -> 
+	let classes = List.fold_left (fun acc t ->
 		match generate_type ctx t with
 		| None -> acc
 		| Some (m,f) -> (t,m,f) :: acc
