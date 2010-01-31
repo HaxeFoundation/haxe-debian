@@ -1,3 +1,9 @@
+haxe (1:2.5-2) unstable; urgency=low
+
+  * New upstream version, taken from new upstream subversion repository.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 31 Jan 2010 23:08:43 +0100
+
 haxe (1:2.4-4) unstable; urgency=low
 
   * Converted to dpkg-source format 3.0 (quilt).
