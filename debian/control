@@ -10,7 +10,7 @@ Homepage: http://haxe.org
 Package: haxe
 Architecture: any
 Section: devel
-Depends: neko (>= 1.8.1), ${shlibs:Depends}, ${ocaml:Depends}
+Depends: neko (>= 1.8.1), ${shlibs:Depends}, ${misc:Depends}, ${ocaml:Depends}
 Description: Web-oriented universal programming language
  Programming language similar to JavaScript, but with full-featured
  static type system and generics.  The command-line compiler can

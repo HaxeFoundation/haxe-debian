@@ -1,15 +1,15 @@
-.TH HAXE 1 "Aug 01, 2009" ""
+.TH HAXE 1 "Feb 01, 2010" ""
 .SH NAME
 haxe \- compile haXe programs to SWF, Neko, JavaScript, PHP, or C++.
 .SH SYNOPSIS
-\fBhaxe\fR [options...] \fIclass_names\fR ...
+\fBhaxe\fR \fB-main\fR \fIclass\fR [\fB-swf9\fR|\fB-swf\fR|\fB-js\fR|\fB-neko\fR|\fB-php\fR|\fB-cpp\fR|\fB-as3\fR] \fIoutput\fR [options...]
 .SH DESCRIPTION
 .B haxe
-is a command-line compiler which compiles haXe programs into client-side
-Flash SWF, server-side Neko bytecode in Apache, or simply JavaScript.
+is a command-line compiler which compiles haXe programs into Flash SWF,
+JavaScript, ActionScript, PHP, C++, or Neko bytecode.
 .PP
 haXe programs are similar to JavaScript, but have a full-featured type
-system and generics.
+system with generics.
 .SH OPTIONS
 .TP
 .BI "\-cp " path
@@ -113,6 +113,9 @@ Disable code optimizations.
 .TP
 .BI "\-\-php-front " file
 Select the name for the php front file.
+.TP
+.BI "\-\-js\-namespace " namespace
+Create a namespace where root types are defined.
 .TP
 .BI "\-\-remap " package:target
 Remap a package to another one.
