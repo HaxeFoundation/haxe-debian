@@ -1,3 +1,9 @@
+haxe (1:2.5-1~bpo50+1) lenny-backports; urgency=low
+
+  * Backport to Lenny, adapt to old camlp4.
+
+ -- Jens Peter Secher <jps@debian.org>  Tue, 02 Feb 2010 11:40:11 +0100
+
 haxe (1:2.5-1) unstable; urgency=low
 
   * New upstream version, taken from new upstream subversion repository.
