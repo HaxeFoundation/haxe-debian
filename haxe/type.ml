@@ -96,6 +96,7 @@ and texpr_expr =
 	| TBreak
 	| TContinue
 	| TThrow of texpr
+	| TCast of texpr * module_type option	
 
 and texpr = {
 	eexpr : texpr_expr;
@@ -107,7 +108,8 @@ and tclass_field = {
 	cf_name : string;
 	mutable cf_type : t;
 	cf_public : bool;
-	cf_doc : Ast.documentation;
+	mutable cf_doc : Ast.documentation;
+	cf_meta : metadata;
 	cf_get : field_access;
 	cf_set : field_access;
 	cf_params : (string * t) list;
@@ -122,11 +124,14 @@ and tclass_kind =
 	| KGeneric
 	| KGenericInstance of tclass * tparams
 
+and metadata = unit -> (string * texpr list) list
+
 and tclass = {
-	cl_path : path;
-	cl_pos : Ast.pos;
-	cl_doc : Ast.documentation;
-	cl_private : bool;
+	mutable cl_path : path;
+	mutable cl_pos : Ast.pos;
+	mutable cl_private : bool;
+	mutable cl_doc : Ast.documentation;
+	mutable cl_meta : metadata;
 	mutable cl_kind : tclass_kind;
 	mutable cl_extern : bool;
 	mutable cl_interface : bool;
@@ -149,6 +154,7 @@ and tenum_field = {
 	ef_type : t;
 	ef_pos : Ast.pos;
 	ef_doc : Ast.documentation;
+	ef_meta : metadata;
 	ef_index : int;
 }
 
@@ -156,6 +162,7 @@ and tenum = {
 	e_path : path;
 	e_pos : Ast.pos;
 	e_doc : Ast.documentation;
+	e_meta : metadata;
 	e_private : bool;
 	e_extern : bool;
 	mutable e_types : (string * t) list;
@@ -167,6 +174,7 @@ and tdef = {
 	t_path : path;
 	t_pos : Ast.pos;
 	t_doc : Ast.documentation;
+	t_meta : metadata;
 	t_private : bool;
 	mutable t_types : (string * t) list;
 	mutable t_type : t;
@@ -199,12 +207,13 @@ let tfun pl r = TFun (List.map (fun t -> "",false,t) pl,r)
 
 let fun_args l = List.map (fun (a,c,t) -> a, c <> None, t) l
 
-let mk_class path pos doc priv =
+let mk_class path pos =
 	{
 		cl_path = path;
 		cl_pos = pos;
-		cl_doc = doc;
-		cl_private = priv;
+		cl_doc = None;
+		cl_meta = (fun() -> []);
+		cl_private = false;
 		cl_kind = KNormal;
 		cl_extern = false;
 		cl_interface = false;
@@ -222,7 +231,10 @@ let mk_class path pos doc priv =
 		cl_overrides = [];
 	}
 
-let null_class = mk_class ([],"") Ast.null_pos None true
+let null_class = 
+	let c = mk_class ([],"") Ast.null_pos in
+	c.cl_private <- true;
+	c
 
 let arg_name (name,_,_) = name
 
@@ -235,6 +247,11 @@ let t_path = function
 	| TClassDecl c -> c.cl_path
 	| TEnumDecl e -> e.e_path
 	| TTypeDecl t -> t.t_path
+
+let t_pos = function
+	| TClassDecl c -> c.cl_pos
+	| TEnumDecl e -> e.e_pos
+	| TTypeDecl t -> t.t_pos
 
 let print_context() = ref []
 
@@ -489,6 +506,8 @@ let invalid_visibility n = Invalid_visibility n
 let has_no_field t n = Has_no_field (t,n)
 let has_extra_field t n = Has_extra_field (t,n)
 let error l = raise (Unify_error l)
+let has_meta m ml = List.mem (m,[]) (ml())
+let no_meta() = []
 
 type simple_access =
 	| SAYes
@@ -513,6 +532,7 @@ let eq_stack = ref []
 
 type eq_kind =
 	| EqStrict
+	| EqCoreType
 	| EqRightDynamic
 	| EqBothDynamic
 
@@ -524,16 +544,17 @@ let rec type_eq param a b =
 	| _ , TLazy f -> type_eq param a (!f())
 	| TMono t , _ ->
 		(match !t with
-		| None -> if not (link t a b) then error [cannot_unify a b]
+		| None -> if param = EqCoreType || not (link t a b) then error [cannot_unify a b]
 		| Some t -> type_eq param t b)
 	| _ , TMono t ->
 		(match !t with
-		| None -> if not (link t b a) then error [cannot_unify a b]
+		| None -> if param = EqCoreType || not (link t b a) then error [cannot_unify a b]
 		| Some t -> type_eq param a t)
-	| TType (t1,tl1), TType (t2,tl2) when t1 == t2 && List.length tl1 = List.length tl2 ->
+	| TType (t1,tl1), TType (t2,tl2) when (t1 == t2 || (param = EqCoreType && t1.t_path = t2.t_path)) && List.length tl1 = List.length tl2 ->
 		List.iter2 (type_eq param) tl1 tl2
-	| TType (t,tl) , _ -> type_eq param (apply_params t.t_types tl t.t_type) b
-	| _ , TType (t,tl) ->
+	| TType (t,tl) , _ when param <> EqCoreType ->		
+		type_eq param (apply_params t.t_types tl t.t_type) b
+	| _ , TType (t,tl) when param <> EqCoreType ->
 		if List.exists (fun (a2,b2) -> fast_eq a a2 && fast_eq b b2) (!eq_stack) then
 			()
 		else begin
@@ -547,10 +568,10 @@ let rec type_eq param a b =
 					error (cannot_unify a b :: l)
 		end
 	| TEnum (e1,tl1) , TEnum (e2,tl2) ->
-		if e1 != e2 then error [cannot_unify a b];
+		if e1 != e2 && not (param = EqCoreType && e1.e_path = e2.e_path) then error [cannot_unify a b];
 		List.iter2 (type_eq param) tl1 tl2
 	| TInst (c1,tl1) , TInst (c2,tl2) ->
-		if c1 != c2 then error [cannot_unify a b];
+		if c1 != c2 && not (param = EqCoreType && c1.cl_path = c2.cl_path) then error [cannot_unify a b];
 		List.iter2 (type_eq param) tl1 tl2
 	| TFun (l1,r1) , TFun (l2,r2) when List.length l1 = List.length l2 ->
 		(try
@@ -568,8 +589,8 @@ let rec type_eq param a b =
 			PMap.iter (fun n f1 ->
 				try
 					let f2 = PMap.find n a2.a_fields in
-					if f1.cf_get <> f2.cf_get && (param = EqStrict || not (unify_access f1.cf_get f2.cf_get)) then error [invalid_access n true f1.cf_get f2.cf_get];
-					if f1.cf_set <> f2.cf_set && (param = EqStrict || not (unify_access f1.cf_set f2.cf_set)) then error [invalid_access n false f1.cf_set f2.cf_set];
+					if f1.cf_get <> f2.cf_get && (param = EqStrict || param = EqCoreType || not (unify_access f1.cf_get f2.cf_get)) then error [invalid_access n true f1.cf_get f2.cf_get];
+					if f1.cf_set <> f2.cf_set && (param = EqStrict || param = EqCoreType || not (unify_access f1.cf_set f2.cf_set)) then error [invalid_access n false f1.cf_set f2.cf_set];
 					try
 						type_eq param f1.cf_type f2.cf_type
 					with
@@ -818,6 +839,7 @@ let iter f e =
 	| TField (e,_)
 	| TClosure (e,_)
 	| TParenthesis e
+	| TCast (e,_)
 	| TUnop (_,_,e) ->
 		f e
 	| TArrayDecl el
@@ -902,6 +924,8 @@ let map_expr f e =
 		{ e with eexpr = TTry (f e1, List.map (fun (v,t,e) -> v, t, f e) catches) }
 	| TReturn eo ->
 		{ e with eexpr = TReturn (match eo with None -> None | Some e -> Some (f e)) }
+	| TCast (e1,t) ->
+		{ e with eexpr = TCast (f e1,t) }
 
 let map_expr_type f ft e =
 	match e.eexpr with
@@ -962,6 +986,39 @@ let map_expr_type f ft e =
 		{ e with eexpr = TTry (f e1, List.map (fun (v,t,e) -> v, ft t, f e) catches); etype = ft e.etype }
 	| TReturn eo ->
 		{ e with eexpr = TReturn (match eo with None -> None | Some e -> Some (f e)); etype = ft e.etype }
+	| TCast (e1,t) ->
+		{ e with eexpr = TCast (f e1,t); etype = ft e.etype }
+
+let s_expr_kind e =
+	match e.eexpr with
+	| TConst _ -> "Const"
+	| TLocal _ -> "Local"
+	| TEnumField _ -> "EnumField"
+	| TArray (_,_) -> "Array"
+	| TBinop (_,_,_) -> "Binop"
+	| TField (_,_) -> "Field"
+	| TClosure _ -> "Closure"
+	| TTypeExpr _ -> "TypeExpr"
+	| TParenthesis _ -> "Parenthesis"
+	| TObjectDecl _ -> "ObjectDecl"
+	| TArrayDecl _ -> "ArrayDecl"
+	| TCall (_,_) -> "Call"
+	| TNew (_,_,_) -> "New"
+	| TUnop (_,_,_) -> "Unop"
+	| TFunction _ -> "Function"
+	| TVars _ -> "Vars"
+	| TBlock _ -> "Block"
+	| TFor (_,_,_,_) -> "For"
+	| TIf (_,_,_) -> "If"
+	| TWhile (_,_,_) -> "While"
+	| TSwitch (_,_,_) -> "Switch"
+	| TMatch (_,_,_,_) -> "Match"
+	| TTry (_,_) -> "Try"
+	| TReturn _ -> "Return"
+	| TBreak -> "Break"
+	| TContinue -> "Continue"
+	| TThrow _ -> "Throw"
+	| TCast _ -> "Cast"
 
 let rec s_expr s_type e =
 	let sprintf = Printf.sprintf in
@@ -1040,5 +1097,7 @@ let rec s_expr s_type e =
 		"Continue"
 	| TThrow e ->
 		"Throw " ^ (loop e)
+	| TCast (e,t) ->
+		sprintf "Cast %s%s" (match t with None -> "" | Some t -> s_type_path (t_path t) ^ ": ") (loop e)
 	) in
 	sprintf "(%s : %s)" str (s_type e.etype)

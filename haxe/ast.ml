@@ -124,6 +124,7 @@ type token =
 	| IntInterval of string
 	| Macro of string
 	| Question
+	| At
 
 type unop_flag =
 	| Prefix
@@ -188,7 +189,7 @@ and expr_def =
 	| EUntyped of expr
 	| EThrow of expr
 	| ECast of expr * type_path option
-	| EDisplay of expr
+	| EDisplay of expr * bool
 	| EDisplayNew of type_path_normal
 	| ETernary of expr * expr * expr
 
@@ -197,6 +198,8 @@ and expr = expr_def * pos
 type type_param = string * type_path_normal list
 
 type documentation = string option
+
+type metadata = (string * expr list) list
 
 type access =
 	| APublic
@@ -207,9 +210,9 @@ type access =
 	| AInline
 
 type class_field =
-	| FVar of string * documentation * access list * type_path option * expr option
-	| FFun of string * documentation * access list * type_param list * func
-	| FProp of string * documentation * access list * string * string * type_path
+	| FVar of string * documentation * metadata * access list * type_path option * expr option
+	| FFun of string * documentation * metadata * access list * type_param list * func
+	| FProp of string * documentation * metadata * access list * string * string * type_path
 
 type enum_flag =
 	| EPrivate
@@ -222,12 +225,13 @@ type class_flag =
 	| HExtends of type_path_normal
 	| HImplements of type_path_normal
 
-type enum_constructor = string * documentation * (string * bool * type_path) list * pos
+type enum_constructor = string * documentation * metadata * (string * bool * type_path) list * pos
 
 type ('a,'b) definition = {
 	d_name : string;
 	d_doc : documentation;
 	d_params : type_param list;
+	d_meta : metadata;
 	d_flags : 'a list;
 	d_data : 'b;
 }
@@ -255,7 +259,7 @@ let is_prefix = function
 
 let base_class_name = snd
 
-let null_pos = { pfile = "<null>"; pmin = -1; pmax = -1 }
+let null_pos = { pfile = "?"; pmin = -1; pmax = -1 }
 
 let punion p p2 =
 	{
@@ -380,6 +384,7 @@ let s_token = function
 	| IntInterval s -> s ^ "..."
 	| Macro s -> "#" ^ s
 	| Question -> "?"
+	| At -> "@"
 
 let unescape s =
 	let b = Buffer.create 0 in

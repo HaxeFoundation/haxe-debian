@@ -68,8 +68,7 @@ class Lib {
 	/**
 		For neko compatibility only.
 	**/
-	public inline static function rethrow( e : Dynamic ) {
-		untyped __php__("if(isset($»e)) throw $»e");
+	public static function rethrow( e : Dynamic ) {
 		if(Std.is(e, Exception)) {
 			var __rtex__ = e;
 			untyped __php__("throw $__rtex__");

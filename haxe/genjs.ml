@@ -465,6 +465,10 @@ and gen_expr ctx e =
 			newline ctx;
 		);
 		spr ctx "}"
+	| TCast (e,None) ->
+		gen_expr ctx e
+	| TCast (e1,Some t) ->
+		gen_expr ctx (Codegen.default_cast ctx.com e1 t e.etype e.epos)
 
 and gen_value ctx e =
 	let assign e =
@@ -522,6 +526,8 @@ and gen_value ctx e =
 	| TBreak
 	| TContinue ->
 		unsupported e.epos
+	| TCast (e1,t) ->
+		gen_value ctx (match t with None -> e1 | Some t -> Codegen.default_cast ctx.com e1 t e.etype e.epos)
 	| TVars _
 	| TFor _
 	| TWhile _
@@ -603,6 +609,7 @@ let gen_class_static_field ctx c f =
 		match e.eexpr with
 		| TFunction _ ->
 			ctx.curmethod <- (f.cf_name,false);
+			ctx.id_counter <- 0;
 			print ctx "%s%s = " (s_path ctx c.cl_path) (field f.cf_name);
 			gen_value ctx e;
 			newline ctx
@@ -617,12 +624,14 @@ let gen_class_field ctx c f =
 		newline ctx
 	| Some e ->
 		ctx.curmethod <- (f.cf_name,false);
+		ctx.id_counter <- 0;
 		gen_value ctx e;
 		newline ctx
 
 let generate_class ctx c =
 	ctx.current <- c;
 	ctx.curmethod <- ("new",true);
+	ctx.id_counter <- 0;
 	let p = s_path ctx c.cl_path in
 	generate_package_create ctx c.cl_path;
 	print ctx "%s = " p;
@@ -679,7 +688,13 @@ let generate_enum ctx e =
 			print ctx "%s%s.__enum__ = %s" p (field f.ef_name) p;
 		);
 		newline ctx
-	) e.e_constrs
+	) e.e_constrs;
+	match Codegen.build_metadata ctx.com (TEnumDecl e) with
+	| None -> ()
+	| Some e ->
+		print ctx "%s.__meta__ = " p;
+		gen_expr ctx e;
+		newline ctx
 
 let generate_static ctx (c,f,e) =
 	print ctx "%s%s = " (s_path ctx c.cl_path) (field f);
@@ -745,7 +760,7 @@ let generate com =
 		newline ctx;
 	) (List.rev ctx.inits);
 	List.iter (generate_static ctx) (List.rev ctx.statics);
-	let ch = open_out com.file in
+	let ch = open_out_bin com.file in
 	output_string ch (Buffer.contents ctx.buf);
 	close_out ch;
 	t()

@@ -29,7 +29,7 @@ class Boot extends flash.display.MovieClip, implements Dynamic {
 	static var init : Void -> Void;
 	static var tf : flash.text.TextField;
 	static var lines : Array<String>;
-	static var lastError : flash.Error;
+	static var lastError : flash.errors.Error;
 
 	public static var skip_constructor = false;
 
@@ -89,7 +89,10 @@ class Boot extends flash.display.MovieClip, implements Dynamic {
 	public static function enum_to_string( e : { tag : String, params : Array<Dynamic> } ) {
 		if( e.params == null )
 			return e.tag;
-		return e.tag+"("+e.params.join(",")+")";
+		var pstr = [];
+		for( p in e.params )
+			pstr.push(__string_rec(p,""));
+		return e.tag+"("+pstr.join(",")+")";
 	}
 
 	public static function __instanceof( v : Dynamic, t : Dynamic ) {
@@ -164,6 +167,8 @@ class Boot extends flash.display.MovieClip, implements Dynamic {
 			s += "}";
 			return s;
 		case "Array":
+			if( v == Array )
+				return "#Array";
 			var s = "[";
 			var i;
 			var first = true;

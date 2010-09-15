@@ -20,10 +20,9 @@ open Printf
 open Genswf
 open Common
 
-let version = 205
+let version = 206
 
 let prompt = ref false
-let display = ref false
 let measure_times = ref false
 
 let executable_path() =
@@ -37,17 +36,26 @@ let normalize_path p =
 		| '\\' | '/' -> p
 		| _ -> p ^ "/"
 
-let message msg p =
+let format msg p =
 	if p = Ast.null_pos then
-		prerr_endline msg
+		msg
 	else begin
 		let error_printer file line = sprintf "%s:%d:" file line in
 		let epos = Lexer.get_error_pos error_printer p in
 		let msg = String.concat ("\n" ^ epos ^ " : ") (ExtString.String.nsplit msg "\n") in
-		prerr_endline (sprintf "%s : %s" epos msg)
+		sprintf "%s : %s" epos msg
 	end
 
+let message msg p =
+	prerr_endline (format msg p)
+
+let messages = ref []
+
+let store_message msg p =
+	messages := format msg p :: !messages
+
 let do_exit() =
+	List.iter prerr_endline (List.rev (!messages));
 	if !prompt then begin
 		print_endline "Press enter to exit...";
 		ignore(read_line());
@@ -55,7 +63,7 @@ let do_exit() =
 	exit 1
 
 let report msg p =
-	message msg p;
+	messages := format msg p :: !messages;
 	do_exit()
 
 let htmlescape s =
@@ -140,6 +148,18 @@ let rec read_type_path com p =
 			end;
 		) r;
 	) com.class_path;
+	List.iter (fun (_,_,extract) ->
+		Hashtbl.iter (fun (path,name) _ ->
+			if path = p then classes := name :: !classes else
+			let rec loop p1 p2 =
+				match p1, p2 with
+				| [], _ -> ()
+				| x :: _, [] -> packages := x :: !packages
+				| a :: p1, b :: p2 -> if a = b then loop p1 p2
+			in
+			loop path p
+		) (extract());
+	) com.swf_libs;
 	let rec unique = function
 		| [] -> []
 		| x1 :: x2 :: l when x1 = x2 -> unique (x2 :: l)
@@ -197,7 +217,6 @@ and init params =
 try
 	let xml_out = ref None in
 	let swf_header = ref None in
-	let swf_lib = ref None in
 	let cmds = ref [] in
 	let excludes = ref [] in
 	let libs = ref [] in
@@ -215,8 +234,7 @@ try
 	);
 	Parser.display_error := (fun e p ->
 		Lexer.save_lines();
-		message (Parser.error_msg e) p;
-		has_error := true;
+		com.error (Parser.error_msg e) p;
 	);
 	Parser.use_doc := false;
 	(try
@@ -239,6 +257,7 @@ try
 			else
 				let base_path = normalize_path (try executable_path() with _ -> "./") in
 				com.class_path <- [base_path ^ "std/";"";"/"]);
+	com.std_path <- List.filter (fun p -> ExtString.String.ends_with p "std/" || ExtString.String.ends_with p "std\\") com.class_path;
 	let set_platform pf name file =
 		if com.platform <> Cross then failwith "Multiple targets";
 		com.platform <- pf;
@@ -271,9 +290,6 @@ try
 		("-neko",Arg.String (set_platform Neko "neko"),"<file> : compile code to Neko Binary");
 		("-php",Arg.String (fun dir ->
 			classes := (["php"],"Boot") :: !classes;
-			classes := (["php"],"PhpXml__") :: !classes;
-			classes := (["php"],"PhpDate__") :: !classes;
-			classes := (["php"],"PhpMath__") :: !classes;
 			set_platform Php "php" dir;
 		),"<directory> : generate PHP code into target directory");
 		("-cpp",Arg.String (fun dir ->
@@ -301,11 +317,11 @@ try
 			Common.define com var
 		),"<var> : define a conditional compilation flag");
 		("-v",Arg.Unit (fun () ->
-			if not !display then com.verbose <- true
+			com.verbose <- true
 		),": turn on verbose mode");
 		("-debug", Arg.Unit (fun() ->
-			Common.define com "debug"; com.debug <- true)
-		, ": add debug informations to the compiled code");
+			Common.define com "debug"; com.debug <- true
+		), ": add debug informations to the compiled code");
 	] in
 	let adv_args_spec = [
 		("-swf-version",Arg.Int (fun v ->
@@ -323,8 +339,11 @@ try
 				_ -> raise (Arg.Bad "Invalid SWF header format")
 		),"<header> : define SWF header (width:height:fps:color)");
 		("-swf-lib",Arg.String (fun file ->
-			if !swf_lib <> None then raise (Arg.Bad "Only one SWF Library is allowed");
-			swf_lib := Some file
+			let getSWF = Genswf.parse_swf com file in
+			let extract = Genswf.extract_data getSWF in
+			let build cl p = Genswf.build_class com (Hashtbl.find (extract()) cl) file in
+			com.type_api.load_extern_type <- com.type_api.load_extern_type @ [build];
+			com.swf_libs <- (file,getSWF,extract) :: com.swf_libs
 		),"<file> : add the SWF library to the compiled SWF");
 		("-x", Arg.String (fun file ->
 			let neko_file = file ^ ".n" in
@@ -343,7 +362,14 @@ try
 				| _ -> raise (Arg.Bad "Invalid Resource format : should be file@name")
 			) in
 			let file = (try Common.find_file com file with Not_found -> file) in
-			let data = Std.input_file ~bin:true file in
+			let data = (try
+				let s = Std.input_file ~bin:true file in
+				if String.length s > 12000000 then raise Exit;
+				s;
+			with
+				| Sys_error _ -> failwith ("Resource file not found : " ^ file)
+				| _ -> failwith ("Resource '" ^ file ^ "' excess the maximum size of 12MB")
+			) in
 			if Hashtbl.mem com.resources name then failwith ("Duplicate resource name " ^ name);
 			Hashtbl.add com.resources name data
 		),"<file>[@name] : add a named resource file");
@@ -384,10 +410,9 @@ try
 			| _ ->
 				let file, pos = try ExtString.String.split file_pos "@" with _ -> failwith ("Invalid format : " ^ file_pos) in
 				let pos = try int_of_string pos with _ -> failwith ("Invalid format : "  ^ pos) in
-				display := true;
-				no_output := true;
+				Common.display := true;
 				Parser.resume_display := {
-					Ast.pfile = Common.get_full_path file;
+					Ast.pfile = String.lowercase (Common.get_full_path file);
 					Ast.pmin = pos;
 					Ast.pmax = pos;
 				};
@@ -395,7 +420,10 @@ try
 		("--no-output", Arg.Unit (fun() -> no_output := true),": compiles but does not generate any file");
 		("--times", Arg.Unit (fun() -> measure_times := true),": measure compilation times");
 		("--no-inline", define "no_inline", ": disable inlining");
-		("--no-opt", define "no_opt", ": disable code optimizations");
+		("--no-opt", Arg.Unit (fun() ->
+			com.foptimize <- false;
+			Common.define com "no_opt";
+		), ": disable code optimizations");
 		("--php-front",Arg.String (fun f ->
 			if com.php_front <> None then raise (Arg.Bad "Multiple --php-front");
 			com.php_front <- Some f;
@@ -445,6 +473,19 @@ try
 		if ret <> Unix.WEXITED 0 then failwith (String.concat "\n" lines);
 		com.class_path <- lines @ com.class_path;
 	);
+	if !Common.display then begin
+		com.verbose <- false;
+		xml_out := None;
+		no_output := true;
+		com.warning <- store_message;
+		com.error <- (fun msg p ->
+			store_message msg p;
+			has_error := true;
+		);
+	end;
+	let add_std dir =
+		com.class_path <- List.map (fun p -> p ^ dir ^ "/_std/") com.std_path @ com.class_path
+	in
 	let ext = (match com.platform with
 		| Cross ->
 			(* no platform selected *)
@@ -457,12 +498,14 @@ try
 				com.package_rules <- PMap.add "flash" (Directory "flash9") com.package_rules;
 				com.package_rules <- PMap.add "flash9" Forbidden com.package_rules;
 				com.platform <- Flash9;
-			end;
+				add_std "flash9";
+			end else
+				add_std "flash";			
 			"swf"
-		| Neko -> "n"
-		| Js -> "js"
-		| Php -> "php"
-		| Cpp -> "cpp"
+		| Neko -> add_std "neko"; "n"
+		| Js -> add_std "js"; "js"
+		| Php -> add_std "php"; "php"
+		| Cpp -> add_std "cpp"; "cpp"
 	) in
 	(* check file extension. In case of wrong commandline, we don't want
 		to accidentaly delete a source file. *)
@@ -480,7 +523,6 @@ try
 		Typer.finalize ctx;
 		t();
 		if !has_error then do_exit();
-		if !display then xml_out := None;
 		if !no_output then com.platform <- Cross;
 		com.types <- Typer.types ctx com.main_class (!excludes);
 		com.lines <- Lexer.build_line_index();
@@ -503,7 +545,7 @@ try
 			Genas3.generate com;
 		| Flash | Flash9 ->
 			if com.verbose then print_endline ("Generating swf : " ^ com.file);
-			Genswf.generate com !swf_header !swf_lib;
+			Genswf.generate com !swf_header;
 		| Neko ->
 			if com.verbose then print_endline ("Generating neko : " ^ com.file);
 			Genneko.generate com !libs;
@@ -561,16 +603,16 @@ with
 		exit 0;
 	| Parser.TypePath (p,c) ->
 		(match c with
-		| None -> 
+		| None ->
 			let packs, classes = read_type_path com p in
 			if packs = [] && classes = [] then report ("No classes found in " ^ String.concat "." p) Ast.null_pos;
 			report_list (List.map (fun f -> f,"","") (packs @ classes))
 		| Some c ->
-			try 
+			try
 				let ctx = Typer.create com in
 				let m = Typeload.load_module ctx (p,c) Ast.null_pos in
 				report_list (List.map (fun t -> snd (Type.t_path t),"","") (List.filter (fun t -> not (Type.t_private t)) m.Type.mtypes))
-			with _ -> 
+			with _ ->
 				report ("Could not load module " ^ (Ast.s_type_path (p,c))) Ast.null_pos
 		);
 		exit 0;

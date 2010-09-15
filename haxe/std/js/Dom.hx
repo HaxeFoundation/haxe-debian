@@ -185,6 +185,7 @@ typedef Document = {> HtmlDom,
 	function getElementById( id : String ) : HtmlDom;
 	function getElementsByName( name : String ) : HtmlCollection<HtmlDom>;
 	function createElement( name : String ) : HtmlDom;
+	function createTextNode( text : String ) : HtmlDom;
 }
 
 typedef Event = {
@@ -259,7 +260,7 @@ typedef History = {
 }
 
 typedef IFrame = {> HtmlDom,
-	var contentDocument : Document;
+	var contentWindow : Window;
 	var frameBorder : String;
 	var height : Int;
 	var width : Int;

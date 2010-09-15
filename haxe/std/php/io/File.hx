@@ -46,7 +46,7 @@ class File {
 		return haxe.io.Bytes.ofString(getContent(path));
 	}
 	
-	public static function putContent( path : String, content : String) : String {
+	public static function putContent( path : String, content : String) : Int {
 		return untyped __call__("file_put_contents", path, content);
 	}
 	
@@ -67,15 +67,15 @@ class File {
 	}
 
 	public static function stdin() {
-		return new FileInput(untyped __php__('STDIN'));
+		return new FileInput(untyped __call__('fopen', 'php://stdin', "r"));
 	}
 
 	public static function stdout() {
-		return new FileOutput(untyped __php__('STDOUT'));
+		return new FileOutput(untyped __call__('fopen', 'php://stdout', "w"));
 	}
 
 	public static function stderr() {
-		return new FileOutput(untyped __php__('STDERR'));
+		return new FileOutput(untyped __call__('fopen', 'php://stderr', "w"));
 	}
 	
 	public static function getChar( echo : Bool ) : Int {

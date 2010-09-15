@@ -49,6 +49,7 @@ type 'a access =
 	| VGlobal of hl_name
 	| VArray
 	| VScope of hl_slot
+	| VVolatile of hl_name * tkind option
 
 type local =
 	| LReg of register
@@ -104,20 +105,6 @@ let tid (x : 'a index) : int = Obj.magic x
 let ethis = mk (TConst TThis) (mk_mono()) null_pos
 let dynamic_prop = HMMultiNameLate [HNPublic (Some "")]
 
-let t_void = TEnum ({
-		e_path = [],"Void";
-		e_pos = null_pos;
-		e_doc = None;
-		e_private = false;
-		e_extern = false;
-		e_types = [];
-		e_constrs = PMap.empty;
-		e_names = [];
-	},[])
-
-let t_string = TInst (mk_class ([],"String") null_pos None false,[])
-let t_int = TInst (mk_class ([],"Int") null_pos None false,[])
-
 let write ctx op =
 	DynArray.add ctx.code op;
 	ctx.infos.ipos <- ctx.infos.ipos + 1;
@@ -162,7 +149,7 @@ let real_path = function
 	| ["flash";"utils"], "QName" -> [] , "QName"
 	| ["flash";"utils"], "Namespace" -> [] , "Namespace"
 	| ["flash"] , "FlashXml__" -> [] , "Xml"
-	| ["flash"] , "Error" -> [], "Error"
+	| ["flash";"errors"] , "Error" -> [], "Error"
 	| ["flash"] , "Vector" -> ["__AS3__";"vec"], "Vector"
 	| path -> path
 
@@ -224,6 +211,8 @@ let rec type_id ctx t =
 		type_path ctx path
 	| TEnum ({ e_path = ("flash" :: _,name); e_extern = true },_) ->
 		HMPath ([],if is_int_enum name then "int" else "String")
+	| TEnum ({ e_path = [],"XmlType"; e_extern = true },_) ->
+		HMPath ([],"String")
 	| _ ->
 		HMPath ([],"Object")
 
@@ -446,6 +435,9 @@ let rec setvar ctx (acc : write access) kret =
 		write ctx (HSetProp g)
 	| VId id | VCast (id,_) ->
 		write ctx (HInitProp id)
+	| VVolatile (id,_) ->
+		write ctx (HArray 1);
+		write ctx (HInitProp id)
 	| VArray ->
 		write ctx (HSetProp dynamic_prop);
 		ctx.infos.istack <- ctx.infos.istack - 1
@@ -462,6 +454,14 @@ let getvar ctx (acc : read access) =
 		write ctx (HReg r.rid)
 	| VId id ->
 		write ctx (HGetProp id)
+	| VVolatile (id,t) ->
+		write ctx (HGetProp id);
+		write ctx (HSmallInt 0);
+		write ctx (HGetProp dynamic_prop);
+		ctx.infos.istack <- ctx.infos.istack - 1;
+		(match t with
+		| None -> ()
+		| Some t -> coerce ctx t)
 	| VCast (id,t) ->
 		write ctx (HGetProp id);
 		coerce ctx t
@@ -686,7 +686,7 @@ let begin_fun ctx args tret el stat p =
 	)
 
 let empty_method ctx p =
-	let f = begin_fun ctx [] t_void [] true p in
+	let f = begin_fun ctx [] ctx.com.type_api.tvoid [] true p in
 	write ctx HRetVoid;
 	f()
 
@@ -761,10 +761,21 @@ let gen_access ctx e (forset : 'a) : 'a access =
 			(* if the return type is one of the type-parameters, then we need to cast it *)
 			if List.exists (fun t -> follow t == et) tl then
 				VCast (id, classify ctx et)
+			else if Codegen.is_volatile e.etype then
+				VVolatile (id,None)
 			else
 				VId id
-		| TAnon a, _ when (match !(a.a_status) with Statics _ | EnumStatics _ -> true | _ -> false) -> VId id
-		| _ -> VCast (id,classify ctx e.etype))
+		| TAnon a, _ when (match !(a.a_status) with Statics _ | EnumStatics _ -> true | _ -> false) ->
+			if Codegen.is_volatile e.etype then
+				VVolatile (id,None)
+			else
+				VId id
+		| _ ->
+			if Codegen.is_volatile e.etype then
+				VVolatile (id,Some (classify ctx e.etype))
+			else
+				VCast (id,classify ctx e.etype)
+		)
 	| TArray ({ eexpr = TLocal "__global__" },{ eexpr = TConst (TString s) }) ->
 		let path = (match List.rev (ExtString.String.nsplit s ".") with [] -> assert false | x :: l -> List.rev l, x) in
 		let id = type_path ctx path in
@@ -852,7 +863,7 @@ let rec gen_expr_content ctx retval e =
 	| TThrow e ->
 		ctx.infos.icond <- true;
 		getvar ctx (VGlobal (type_path ctx (["flash"],"Boot")));
-		let id = type_path ctx (["flash"],"Error") in
+		let id = type_path ctx (["flash";"errors"],"Error") in
 		write ctx (HFindPropStrict id);
 		write ctx (HConstructProperty (id,0));
 		setvar ctx (VId (ident "lastError")) None;
@@ -1014,7 +1025,7 @@ let rec gen_expr_content ctx retval e =
 				let has_call = (try call_loop e; false with Exit -> true) in
 				if has_call then begin
 					getvar ctx (gen_local_access ctx ename e.epos Read);
-					write ctx (HAsType (type_path ctx (["flash"],"Error")));
+					write ctx (HAsType (type_path ctx (["flash";"errors"],"Error")));
 					let j = jump ctx J3False in
 					getvar ctx (VGlobal (type_path ctx (["flash"],"Boot")));
 					getvar ctx (gen_local_access ctx ename e.epos Read);
@@ -1207,6 +1218,35 @@ let rec gen_expr_content ctx retval e =
 		switch();
 		List.iter (fun j -> j()) jends;
 		free_reg ctx rparams
+	| TCast (e1,t) ->
+		gen_expr ctx retval e1;		
+		if retval then begin
+			match t with
+			| None ->
+				(* no error if cast failure *)
+				let t1 = classify ctx e1.etype in
+				let t = classify ctx e.etype in
+				if t1 <> t then coerce ctx t;
+			| Some t ->
+				(* manual cast *)
+				let tid = (match gen_access ctx (mk (TTypeExpr t) t_dynamic e.epos) Read with
+					| VGlobal id -> id
+					| _ -> assert false
+				) in
+				match classify ctx e.etype with
+				| KType n when (match n with HMPath ([],"String") -> false | _ -> true) ->
+					(* for normal classes, we can use native cast *)
+					write ctx (HCast tid)
+				| _ ->
+					(* we need to check with "is" first *)
+					write ctx HDup;
+					write ctx (HIsType tid);
+					let j = jump ctx J3True in
+					write ctx (HString "Class cast error");
+					write ctx HThrow;
+					j();
+					write ctx (HCast tid)
+		end
 
 and gen_call ctx retval e el r =
 	match e.eexpr , el with
@@ -1601,8 +1641,12 @@ let generate_construct ctx fdata c =
 		| Some { eexpr = TFunction fdata } when f.cf_set = MethodAccess true ->
 			let id = ident f.cf_name in
 			write ctx (HFindProp id);
+			write ctx (HGetProp id);
+			let j = jump ctx J3True in
+			write ctx (HFindProp id);
 			write ctx (HFunction (generate_method ctx fdata false));
 			write ctx (HInitProp id);
+			j();			
 		| _ -> ()
 	) c.cl_fields;
 	gen_expr ctx false fdata.tf_expr;
@@ -1614,10 +1658,11 @@ let generate_class_statics ctx c =
 	List.iter (fun f ->
 		match f.cf_expr with
 		| None -> ()
-		| Some { eexpr = TFunction _ } -> ()
+		| Some { eexpr = TFunction _ } when f.cf_set = MethodAccess false || f.cf_get = InlineAccess -> ()
 		| Some e ->
 			write ctx (HGetLex (type_path ctx c.cl_path));
 			gen_expr ctx true e;
+			if Codegen.is_volatile f.cf_type then write ctx (HArray 1);
 			write ctx (HInitProp (ident f.cf_name));
 	) c.cl_ordered_statics
 
@@ -1644,7 +1689,7 @@ let generate_class_init ctx c hc =
 	write ctx (HInitProp (type_path ctx c.cl_path));
 	if ctx.swc then generate_class_statics ctx c
 
-let generate_enum_init ctx e hc =
+let generate_enum_init ctx e hc meta =
 	let path = ([],"Object") in
 	let name_id = type_path ctx e.e_path in
 	write ctx HGetGlobalScope;
@@ -1675,6 +1720,13 @@ let generate_enum_init ctx e hc =
 	List.iter (fun n -> write ctx (HString n)) e.e_names;
 	write ctx (HArray (List.length e.e_names));
 	write ctx (HSetProp (ident "__constructs__"));
+	(match meta with
+	| None -> ()
+	| Some e -> 
+		write ctx (HReg r.rid);
+		gen_expr ctx true e;
+		write ctx (HSetProp (ident "__meta__"));
+	);
 	free_reg ctx r
 
 let generate_field_kind ctx f c stat =
@@ -1714,7 +1766,7 @@ let generate_field_kind ctx f c stat =
 		None
 	| _ ->
 		Some (HFVar {
-			hlv_type = type_opt ctx f.cf_type;
+			hlv_type = if Codegen.is_volatile f.cf_type then Some (type_path ctx ([],"Array")) else type_opt ctx f.cf_type;
 			hlv_value = HVNone;
 			hlv_const = false;
 		})
@@ -1728,10 +1780,10 @@ let generate_class ctx c =
 			else
 				generate_construct ctx {
 					tf_args = [];
-					tf_type = t_void;
+					tf_type = ctx.com.type_api.tvoid;
 					tf_expr = {
 						eexpr = TBlock [];
-						etype = t_void;
+						etype = ctx.com.type_api.tvoid;
 						epos = null_pos;
 					}
 				} c
@@ -1740,12 +1792,40 @@ let generate_class ctx c =
 			| Some { eexpr = TFunction fdata } -> generate_construct ctx fdata c
 			| _ -> assert false
 	) in
+	let has_protected = ref None in
 	let fields = Array.of_list (PMap.fold (fun f acc ->
 		match generate_field_kind ctx f c false with
 		| None -> acc
 		| Some k ->
+			let rec find_meta c =
+				match c.cl_super with
+				| None -> []
+				| Some (c,_) ->
+					try
+						let f = PMap.find f.cf_name c.cl_fields in
+						if List.mem f.cf_name c.cl_overrides then raise Not_found;
+						f.cf_meta()
+					with Not_found ->
+						find_meta c
+			in			
+			let rec loop_meta = function
+				| [] -> ident f.cf_name
+				| x :: l ->					
+					match x with
+					| (":ns",[{ eexpr = TConst (TString ns) }]) -> HMName (f.cf_name,HNNamespace ns)
+					| (":protected",[]) ->
+						let p = (match c.cl_path with [], n -> n | p, n -> String.concat "." p ^ ":" ^ n) in
+						has_protected := Some p;
+						HMName (f.cf_name,HNProtected p)
+					| _ -> loop_meta l
+			in
+			let name = if c.cl_interface then
+				HMName (f.cf_name, HNNamespace (match c.cl_path with [],n -> n | l,n -> String.concat "." l ^ ":" ^ n))
+			else
+				loop_meta (find_meta c)
+			in
 			{
-				hlf_name = if c.cl_interface then HMName (f.cf_name, HNNamespace (match c.cl_path with [],n -> n | l,n -> String.concat "." l ^ ":" ^ n)) else ident f.cf_name;
+				hlf_name = name;
 				hlf_slot = 0;
 				hlf_kind = k;
 				hlf_metas = None;
@@ -1754,7 +1834,7 @@ let generate_class ctx c =
 	let st_field_count = ref 0 in
 	let st_meth_count = ref 0 in
 	let rec is_dynamic c =
-		if c.cl_dynamic <> None then true
+		if c.cl_dynamic <> None || c.cl_array_access <> None then true
 		else match c.cl_super with
 		| None -> false
 		| Some (c,_) -> is_dynamic c
@@ -1766,7 +1846,7 @@ let generate_class ctx c =
 		hlc_sealed = not (is_dynamic c);
 		hlc_final = false;
 		hlc_interface = c.cl_interface;
-		hlc_namespace = None;
+		hlc_namespace = (match !has_protected with None -> None | Some p -> Some (HNProtected p));
 		hlc_implements = Array.of_list (List.map (fun (c,_) ->
 			if not c.cl_interface then error "Can't implement class in Flash9" c.cl_pos;
 			let pack, name = real_path c.cl_path in
@@ -1788,9 +1868,10 @@ let generate_class ctx c =
 		) c.cl_ordered_statics);
 	}
 
-let generate_enum ctx e =
+let generate_enum ctx e meta =
 	let name_id = type_path ctx e.e_path in
-	let f = begin_fun ctx [("tag",None,t_string);("index",None,t_int);("params",None,mk_mono())] t_void [ethis] false e.e_pos in
+	let api = ctx.com.type_api in
+	let f = begin_fun ctx [("tag",None,api.tstring);("index",None,api.tint);("params",None,mk_mono())] api.tvoid [ethis] false e.e_pos in
 	let tag_id = ident "tag" in
 	let index_id = ident "index" in
 	let params_id = ident "params" in
@@ -1805,7 +1886,7 @@ let generate_enum ctx e =
 	write ctx (HInitProp params_id);
 	write ctx HRetVoid;
 	let construct = f() in
-	let f = begin_fun ctx [] t_string [] true e.e_pos in
+	let f = begin_fun ctx [] api.tstring [] true e.e_pos in
 	write ctx (HGetLex (type_path ctx (["flash"],"Boot")));
 	write ctx HThis;
 	write ctx (HCallProperty (ident "enum_to_string",1));
@@ -1841,6 +1922,17 @@ let generate_enum ctx e =
 			hlf_metas = None;
 		} :: acc
 	) e.e_constrs [] in
+	let constrs = (match meta with
+		| None -> constrs
+		| Some _ -> 
+			incr st_count;
+			{
+				hlf_name = ident "__meta__";
+				hlf_slot = !st_count;
+				hlf_kind = HFVar { hlv_type = None; hlv_value = HVNone; hlv_const = false; };
+				hlf_metas = None;
+			} :: constrs
+	) in			
 	{
 		hlc_index = 0;
 		hlc_name = name_id;
@@ -1887,7 +1979,7 @@ let generate_inits ctx =
 	(* define flash.Boot.init method *)
 	write ctx HGetGlobalScope;
 	write ctx (HGetProp (type_path ctx (["flash"],"Boot")));
-	let finit = begin_fun ctx [] t_void [] true null_pos in
+	let finit = begin_fun ctx [] ctx.com.type_api.tvoid [] true null_pos in
 	List.iter (fun t ->
 		match t with
 		| TClassDecl c ->
@@ -1898,7 +1990,7 @@ let generate_inits ctx =
 	) ctx.com.types;
 	if not ctx.swc then List.iter (fun t ->
 		match t with
-		| TClassDecl { cl_extern = true; cl_path = "flash" :: _ , _ } -> ()
+		| TClassDecl { cl_extern = true } -> ()
 		| TClassDecl c -> generate_class_statics ctx c
 		| _ -> ()
 	) ctx.com.types;
@@ -1913,7 +2005,7 @@ let generate_type ctx t =
 			None
 		else
 			let hlc = generate_class ctx c in
-			let init = begin_fun ctx [] t_void [ethis] false c.cl_pos in
+			let init = begin_fun ctx [] ctx.com.type_api.tvoid [ethis] false c.cl_pos in
 			generate_class_init ctx c hlc;
 			if c.cl_path = (["flash"],"Boot") then generate_inits ctx;
 			write ctx HRetVoid;
@@ -1927,9 +2019,10 @@ let generate_type ctx t =
 		if e.e_extern && e.e_path <> ([],"Void") then
 			None
 		else
-			let hlc = generate_enum ctx e in
-			let init = begin_fun ctx [] t_void [ethis] false e.e_pos in
-			generate_enum_init ctx e hlc;
+			let meta = Codegen.build_metadata ctx.com t in
+			let hlc = generate_enum ctx e meta in
+			let init = begin_fun ctx [] ctx.com.type_api.tvoid [ethis] false e.e_pos in
+			generate_enum_init ctx e hlc meta;
 			write ctx HRetVoid;
 			Some (init(), {
 				hlf_name = type_path ctx e.e_path;
@@ -1964,7 +2057,7 @@ let generate com =
 		| None -> acc
 		| Some (m,f) -> (t,m,f) :: acc
 	) [] com.types in
-	List.rev classes, (fun () -> empty_method ctx null_pos)
+	List.rev classes
 
 ;;
 Random.self_init();

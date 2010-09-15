@@ -58,7 +58,7 @@ let display e = raise (Display e)
 
 let is_resuming p =
 	let p2 = !resume_display in
-	p.pmax = p2.pmin && Common.get_full_path p.pfile = p2.pfile
+	p.pmax = p2.pmin && String.lowercase (Common.get_full_path p.pfile) = p2.pfile
 
 let priority = function
 	| OpAssign | OpAssignOp _ -> -4
@@ -165,12 +165,13 @@ and parse_type_decl s =
 	match s with parser
 	| [< '(Kwd Import,p1); t = parse_type_path_normal; p2 = semicolon >] -> EImport t, punion p1 p2
 	| [< '(Kwd Using,p1); t = parse_type_path_normal; p2 = semicolon >] -> EUsing t, punion p1 p2
-	| [< c = parse_common_flags; s >] ->
+	| [< meta = parse_meta; c = parse_common_flags; s >] ->
 		match s with parser
 		| [< n , p1 = parse_enum_flags; doc = get_doc; '(Const (Type name),_); tl = parse_constraint_params; '(BrOpen,_); l = plist parse_enum; '(BrClose,p2) >] ->
 			(EEnum {
 				d_name = name;
 				d_doc = doc;
+				d_meta = meta;
 				d_params = tl;
 				d_flags = List.map snd c @ n;
 				d_data = l
@@ -183,6 +184,7 @@ and parse_type_decl s =
 			(EClass {
 				d_name = name;
 				d_doc = doc;
+				d_meta = meta;
 				d_params = tl;
 				d_flags = List.map fst c @ n @ hl;
 				d_data = fl;
@@ -194,6 +196,7 @@ and parse_type_decl s =
 			(ETypedef {
 				d_name = name;
 				d_doc = doc;
+				d_meta = meta;
 				d_params = tl;
 				d_flags = List.map snd c;
 				d_data = t;
@@ -208,7 +211,7 @@ and parse_class_field_resume s =
 		(* junk all tokens until we reach next variable/function or next type declaration *)
 		let rec loop() =
 			(match List.map fst (Stream.npeek 2 s) with
-			| Kwd Public :: _ | Kwd Static :: _ | Kwd Var :: _ | Kwd Override :: _ | Kwd Dynamic :: _ ->
+			| At :: _ | Kwd Public :: _ | Kwd Static :: _ | Kwd Var :: _ | Kwd Override :: _ | Kwd Dynamic :: _ ->
 				raise Exit
 			| [] | Eof :: _ | Kwd Import :: _ | Kwd Using :: _ | Kwd Extern :: _ | Kwd Class :: _ | Kwd Interface :: _ | Kwd Enum :: _ | Kwd Typedef :: _ ->
 				raise Not_found
@@ -243,6 +246,19 @@ and parse_common_flags = parser
 	| [< '(Kwd Private,_); l = parse_common_flags >] -> (HPrivate, EPrivate) :: l
 	| [< '(Kwd Extern,_); l = parse_common_flags >] -> (HExtern, EExtern) :: l
 	| [< >] -> []
+
+and parse_meta = parser
+	| [< '(At,_); name = meta_name; s >] ->		
+		(match s with parser
+		| [< '(POpen,_); params = psep Comma expr; '(PClose,_); s >] -> (name,params) :: parse_meta s
+		| [< >] -> (name,[]) :: parse_meta s)
+	| [< >] -> []
+
+and meta_name = parser
+	| [< '(Const (Ident i),_) >] -> i
+	| [< '(Const (Type t),_) >] -> t
+	| [< '(Kwd k,_) >] -> s_keyword k
+	| [< '(DblDot,_); s >] -> ":" ^ meta_name s
 
 and parse_enum_flags = parser
 	| [< '(Kwd Enum,p) >] -> [] , p
@@ -329,11 +345,12 @@ and parse_type_anonymous_resume name = parser
 
 and parse_enum s =
 	doc := None;
+	let meta = parse_meta s in
 	match s with parser
 	| [< name = any_ident; doc = get_doc; s >] ->
 		match s with parser
-		| [< '(POpen,_); l = psep Comma parse_enum_param; '(PClose,_); p = semicolon; >] -> (name,doc,l,p)
-		| [< '(Semicolon,p) >] -> (name,doc,[],p)
+		| [< '(POpen,_); l = psep Comma parse_enum_param; '(PClose,_); p = semicolon; >] -> (name,doc,meta,l,p)
+		| [< '(Semicolon,p) >] -> (name,doc,meta,[],p)
 		| [< >] -> serror()
 
 and parse_enum_param = parser
@@ -343,19 +360,19 @@ and parse_enum_param = parser
 and parse_class_field s =
 	doc := None;
 	match s with parser
-	| [< l = parse_cf_rights true []; doc = get_doc; s >] ->
+	| [< meta = parse_meta; l = parse_cf_rights true []; doc = get_doc; s >] ->
 		match s with parser
 		| [< '(Kwd Var,p1); name = any_ident; s >] ->
 			(match s with parser
 			| [< '(POpen,_); i1 = property_ident; '(Comma,_); i2 = property_ident; '(PClose,_); '(DblDot,_); t = parse_type_path; p2 = semicolon >] ->
-				(FProp (name,doc,l,i1,i2,t),punion p1 p2)
+				(FProp (name,doc,meta,l,i1,i2,t),punion p1 p2)
 			| [< t = parse_type_opt; s >] ->
 				let e , p2 = (match s with parser
 				| [< '(Binop OpAssign,_) when List.mem AStatic l; e = toplevel_expr; p2 = semicolon >] -> Some e , p2
 				| [< '(Semicolon,p2) >] -> None , p2
 				| [< >] -> serror()
 				) in
-				(FVar (name,doc,l,t,e),punion p1 p2))
+				(FVar (name,doc,meta,l,t,e),punion p1 p2))
 		| [< '(Kwd Function,p1); name = parse_fun_name; pl = parse_constraint_params; '(POpen,_); al = psep Comma parse_fun_param; '(PClose,_); t = parse_type_opt; s >] ->
 			let e = (match s with parser
 				| [< e = toplevel_expr >] -> e
@@ -367,7 +384,7 @@ and parse_class_field s =
 				f_type = t;
 				f_expr = e;
 			} in
-			(FFun (name,doc,l,pl,f),punion p1 (pos e))
+			(FFun (name,doc,meta,l,pl,f),punion p1 (pos e))
 		| [< >] ->
 			if l = [] then raise Stream.Failure else serror()
 
@@ -445,11 +462,10 @@ and block2 name ident p = parser
 
 and block acc s =
 	try
-		let e = parse_block_elt s in
+		(* because of inner recursion, we can't put Display handling in errors below *)
+		let e = try parse_block_elt s with Display e -> display (EBlock (List.rev (e :: acc)),snd e) in
 		block (e :: acc) s
 	with
-		| Display e ->
-			display (EBlock (List.rev (e :: acc)),snd e)
 		| Stream.Failure ->
 			List.rev acc
 		| Stream.Error _ ->
@@ -571,17 +587,18 @@ and expr = parser
 
 and expr_next e1 = parser
 	| [< '(Dot,p); s >] ->
-		if is_resuming p then display (EDisplay e1,p);
+		if is_resuming p then display (EDisplay (e1,false),p);
 		(match s with parser
 		| [< '(Const (Ident f),p2) when p.pmax = p2.pmin; s >] -> expr_next (EField (e1,f) , punion (pos e1) p2) s
 		| [< '(Const (Type t),p2) when p.pmax = p2.pmin; s >] -> expr_next (EType (e1,t) , punion (pos e1) p2) s
+		| [< '(Binop OpOr,p2) when do_resume() >] -> display (EDisplay (e1,false),p) (* help for debug display mode *)
 		| [< >] ->
 			(* turn an integer followed by a dot into a float *)
 			match e1 with
 			| (EConst (Int v),p2) when p2.pmax = p.pmin -> expr_next (EConst (Float (v ^ ".")),punion p p2) s
 			| _ -> serror())
 	| [< '(POpen,p1); s >] ->
-		if is_resuming p1 then display (EDisplay e1,p1);
+		if is_resuming p1 then display (EDisplay (e1,true),p1);
 		(match s with parser
 		| [< params = parse_call_params e1; '(PClose,p2); s >] -> expr_next (ECall (e1,params) , punion (pos e1) p2) s
 		| [< >] -> serror())
@@ -616,7 +633,7 @@ and expr_next e1 = parser
 
 and parse_switch_cases eswitch cases = parser
 	| [< '(Kwd Default,p1); '(DblDot,_); s >] ->
-		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,cases,Some e),p1)) in		
+		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,cases,Some e),p1)) in
 		let l , def = parse_switch_cases eswitch cases s in
 		(match def with None -> () | Some (e,p) -> error Duplicate_default p);
 		l , Some (b,p1)
@@ -639,22 +656,24 @@ and parse_catch etry = parser
 		| [< '(_,p) >] -> error Missing_type p
 
 and parse_call_params ec s =
-	try
+	let e = (try
 		match s with parser
-		| [< e = expr >] ->
-			let rec loop acc =
-				try 
-					match s with parser
-					| [< '(Comma,_); e = expr >] -> loop (e::acc)
-					| [< >] -> List.rev acc
-				with Display e ->
-					display (ECall (ec,List.rev (e::acc)),pos ec)
-			in
-			loop [e]
-		| [< >] ->
-			[]
+		| [< e = expr >] -> Some e
+		| [< >] -> None
 	with Display e ->
 		display (ECall (ec,[e]),pos ec)
+	) in
+	let rec loop acc =
+		try
+			match s with parser
+			| [< '(Comma,_); e = expr >] -> loop (e::acc)
+			| [< >] -> List.rev acc
+		with Display e ->
+			display (ECall (ec,List.rev (e::acc)),pos ec)
+	in
+	match e with
+	| None -> []
+	| Some e -> loop [e]
 
 and toplevel_expr s =
 	try

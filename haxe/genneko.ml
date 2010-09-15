@@ -28,7 +28,7 @@ type context = {
 	mutable curmethod : string;
 	mutable locals : (string , bool) PMap.t;
 	mutable curblock : texpr list;
-	mutable inits : texpr list;
+	mutable inits : (tclass * texpr) list;
 }
 
 let files = Hashtbl.create 0
@@ -389,6 +389,10 @@ and gen_expr ctx e =
 		(EContinue,p)
 	| TThrow e ->
 		call p (builtin p "throw") [gen_expr ctx e]
+	| TCast (e,None) ->
+		gen_expr ctx e
+	| TCast (e1,Some t) ->
+		gen_expr ctx (Codegen.default_cast ctx.com e1 t e.etype e.epos)
 	| TMatch (e,_,cases,eo) ->
 		let etmp = (EVars ["@tmp",Some (gen_expr ctx e)],p) in
 		let eindex = field p (ident p "@tmp") "index" in
@@ -599,9 +603,9 @@ let gen_enum ctx e =
 			"__string" , ident p "@enum_to_string"
 		],p)),p) ::
 		pmap_list (gen_enum_constr ctx path) e.e_constrs @
-		match e.e_path with
+		(match e.e_path with
 		| [] , name -> [EBinop ("=",field p (ident p "@classes") name,ident p name),p]
-		| _ -> []
+		| _ -> [])
 	),p)
 
 let gen_type ctx t acc =
@@ -609,7 +613,7 @@ let gen_type ctx t acc =
 	| TClassDecl c ->
 		(match c.cl_init with
 		| None -> ()
-		| Some e -> ctx.inits <- e :: ctx.inits);
+		| Some e -> ctx.inits <- (c,e) :: ctx.inits);
 		if c.cl_extern || c.cl_path = ([],"@Main") then
 			acc
 		else
@@ -683,8 +687,12 @@ let gen_name ctx acc t =
 		let path = gen_type_path p e.e_path in
 		let setname = (EBinop ("=",field p path "__ename__",arr),p) in
 		let arr = call p (field p (ident p "Array") "new1") [array p (List.map (fun n -> gen_constant ctx e.e_pos (TString n)) e.e_names); int p (List.length e.e_names)] in
-		let setconstrs = (EBinop ("=", field p path "__constructs__", arr),p) in
-		setname :: setconstrs :: acc
+		let setconstrs = (EBinop ("=", field p path "__constructs__", arr),p) in		
+		let meta = (match Codegen.build_metadata ctx.com (TEnumDecl e) with
+			| None -> []
+			| Some e -> [EBinop ("=",field p path "__meta__", gen_expr ctx e),p]
+		) in
+		setname :: setconstrs :: meta @ acc
 	| TClassDecl c ->
 		if c.cl_extern || c.cl_path = ([],"@Main") then
 			acc
@@ -748,7 +756,11 @@ let generate com libs =
 	let names = List.fold_left (gen_name ctx) [] com.types in
 	let methods = List.rev (List.fold_left (fun acc t -> gen_type ctx t acc) [] com.types) in
 	let boot = gen_boot ctx in
-	let inits = List.map (gen_expr ctx) (List.rev ctx.inits) in
+	let inits = List.map (fun (c,e) -> 
+		ctx.curclass <- s_type_path c.cl_path;
+		ctx.curmethod <- "__init__";
+		gen_expr ctx e
+	) (List.rev ctx.inits) in
 	let vars = List.concat (List.map (gen_static_vars ctx) com.types) in
 	let e = (EBlock (header :: packs @ methods @ boot :: names @ inits @ vars), null_pos) in
 	let neko_file = (try Filename.chop_extension com.file with _ -> com.file) ^ ".neko" in

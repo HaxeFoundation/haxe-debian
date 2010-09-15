@@ -33,43 +33,39 @@ extern class Math
 	static var NEGATIVE_INFINITY(default,null) : Float;
 	static var POSITIVE_INFINITY(default,null) : Float;
 
-	static function abs(value:Float):Float;
-	static function min(value1:Float,value2:Float):Float;
-	static function max(value1:Float,value2:Float):Float;
-	static function sin(value:Float):Float;
-	static function cos(value:Float):Float;
-	static function atan2(value1:Float,value2:Float):Float;
-	static function tan(value:Float):Float;
-	static function exp(value:Float):Float;
-	static function log(value:Float):Float;
-	static function sqrt(value:Float):Float;
-	static function round(value:Float):Int;
-	static function floor(value:Float):Int;
-	static function ceil(value:Float):Int;
-	static function atan(value:Float):Float;
-	static function asin(value:Float):Float;
-	static function acos(value:Float):Float;
-	static function pow(value1:Float,value2:Float):Float;
+	static function abs(v:Float):Float;
+	static function min(a:Float,b:Float):Float;
+	static function max(a:Float,b:Float):Float;
+	static function sin(v:Float):Float;
+	static function cos(v:Float):Float;
+	static function atan2(y:Float,x:Float):Float;
+	static function tan(v:Float):Float;
+	static function exp(v:Float):Float;
+	static function log(v:Float):Float;
+	static function sqrt(v:Float):Float;
+	static function round(v:Float):Int;
+	static function floor(v:Float):Int;
+	static function ceil(v:Float):Int;
+	static function atan(v:Float):Float;
+	static function asin(v:Float):Float;
+	static function acos(v:Float):Float;
+	static function pow(v:Float,exp:Float):Float;
 	static function random() : Float;
 
 	static function isFinite( f : Float ) : Bool;
 	static function isNaN( f : Float ) : Bool;
 
-#if !php
 	private static function __init__() : Void untyped {
-	#if neko
-		Math = neko.NekoMath__;
-		neko.Boot.__classes.Math = Math;
-	#else
-		#if flash9
+	#if flash9
 		NaN = __global__["Number"].NaN;
 		NEGATIVE_INFINITY = __global__["Number"].NEGATIVE_INFINITY;
 		POSITIVE_INFINITY = __global__["Number"].POSITIVE_INFINITY;
-		#else
+	#else
+		Math.__name__ = ["Math"];
 		Math.NaN = Number["NaN"];
 		Math.NEGATIVE_INFINITY = Number["NEGATIVE_INFINITY"];
 		Math.POSITIVE_INFINITY = Number["POSITIVE_INFINITY"];
-		#end
+	#end
 		Math.isFinite = function(i) {
 			return
 			#if flash9
@@ -94,13 +90,8 @@ extern class Math
 			false;
 			#end
 		};
-	#end
-	#if flash9
-	#else
-		Math.__name__ = ["Math"];
-	#end
 	}
-#end
+
 }
 
 

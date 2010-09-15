@@ -42,6 +42,10 @@ class NativeArray<T> implements ArrayAccess<T> {
 		return untyped a.__a;
 	}
 
+	public static inline function sub<T>( a : NativeArray<T>, pos : Int, len : Int ) : NativeArray<T> {
+		return untyped __dollar__asub(a,pos,len);
+	}
+
 	public static inline function toArray<T>( a : NativeArray<T> ) : Array<T> {
 		return untyped Array.new1(a,__dollar__asize(a));
 	}

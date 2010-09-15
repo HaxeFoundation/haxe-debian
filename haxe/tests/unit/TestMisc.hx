@@ -20,19 +20,34 @@ class MyDynamicClass {
 		return v + x + y;
 	}
 
+#if php
+	static var Z = 10;
 
+	public dynamic static function staticDynamic(x,y) {
+		return Z + x + y;
+	}
+#else
 	static var V = 10;
 
 	public dynamic static function staticDynamic(x,y) {
 		return V + x + y;
 	}
-
+#end
 }
 
 class MyDynamicSubClass extends MyDynamicClass {
 
 	override function add(x,y) {
 		return (v + x + y) * 2;
+	}
+
+}
+
+class MyOtherDynamicClass extends MyDynamicClass {
+
+	public function new(v) {
+		add = function(x,y) return x + y + 10;
+		super(v);
 	}
 
 }
@@ -95,6 +110,13 @@ class TestMisc extends Test {
 		eq( inst.add(1,2), 203 );
 		eq( callback(inst.add,1)(2), 203 );
 		eq( add(1,2), 203 );
+
+		// check inherited dynamic method
+		var inst = new MyOtherDynamicClass(0);
+		var add = inst.add;
+		eq( inst.add(1,2), 13 );
+		eq( callback(inst.add,1)(2), 13 );
+		eq( add(1,2), 13 );
 
 		// check static dynamic
 		eq( MyDynamicClass.staticDynamic(1,2), 13 );
@@ -197,6 +219,30 @@ class TestMisc extends Test {
 		// check that operations are correctly generated
 		var x = 3; // prevent optimization
 		eq( 2 * foo(x), 16 );
+	}
+
+	function testEvalAccessOrder() {
+		var a = [0,0];
+		var x = 0;
+		a[x++]++;
+		eq(a[0],1);
+		eq(a[1],0);
+
+		var x = 0;
+		var a = new Array();
+		a[x++] = x++;
+		eq(a[0],1);
+
+		var x = 0;
+		var foo = function() return x++;
+		a[foo()] = foo();
+		eq(a[0],1);
+	}
+
+	static var add = function (x, y) return x + y;
+
+	function testStaticVarFun() {
+		eq( add(2,3), 5);
 	}
 
 }

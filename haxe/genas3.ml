@@ -44,7 +44,7 @@ type context = {
 
 let protect name =
 	match name with
-	| "Error" -> "_" ^ name
+	| "Error" | "Namespace" -> "_" ^ name
 	| _ -> name
 
 let s_path ctx stat path p =
@@ -59,7 +59,7 @@ let s_path ctx stat path p =
 		| _ -> name)
 	| (["flash"],"FlashXml__") ->
 		"Xml"
-	| (["flash"],"Error") ->
+	| (["flash";"errors"],"Error") ->
 		"Error"
 	| (["flash"],"Vector") ->
 		"Vector"
@@ -423,10 +423,11 @@ and gen_field_access ctx t s =
 		| [], "Date", "now"
 		| [], "Date", "fromTime"
 		| [], "Date", "fromString"
-		| [], "Date", "toString"
 		| [], "String", "charCodeAt"
 		->
 			print ctx "[\"%s\"]" s
+		| [], "Date", "toString" ->
+			print ctx "[\"toStringHX\"]"
 		| [], "String", "cca" ->
 			print ctx ".charCodeAt"
 		| _ ->
@@ -689,6 +690,12 @@ and gen_expr ctx e =
 			newline ctx;
 		);
 		spr ctx "}"
+	| TCast (e1,None) ->
+		spr ctx "((";
+		gen_expr ctx e1;
+		print ctx ") as %s)" (type_str ctx e.etype e.epos);
+	| TCast (e1,Some t) ->
+		gen_expr ctx (Codegen.default_cast ctx.inf.com e1 t e.etype e.epos)
 
 and gen_value ctx e =
 	let assign e =
@@ -754,6 +761,8 @@ and gen_value ctx e =
 	| TUnop _
 	| TFunction _ ->
 		gen_expr ctx e
+	| TCast (e1,t) ->
+		gen_value ctx (match t with None -> e1 | Some t -> Codegen.default_cast ctx.inf.com e1 t e.etype e.epos)
 	| TReturn _
 	| TBreak
 	| TContinue ->
@@ -877,13 +886,20 @@ let generate_field ctx static f =
 			| CallAccess m ->
 				print ctx "%s function get %s() : %s { return %s(); }" rights id t m;
 				newline ctx
-			| _ -> ());
+			| NoAccess | NeverAccess ->
+				print ctx "%s function get %s() : %s { return $%s; }" (if f.cf_set = NoAccess then "protected" else "private") id t id;
+				newline ctx
+			| _ ->
+				());
 			(match f.cf_set with
 			| NormalAccess ->
 				print ctx "%s function set %s( __v : %s ) : void { $%s = __v; }" rights id t id;
 				newline ctx
 			| CallAccess m ->
 				print ctx "%s function set %s( __v : %s ) : void { %s(__v); }" rights id t m;
+				newline ctx
+			| NoAccess | NeverAccess ->
+				print ctx "%s function set %s( __v : %s ) : void { $%s = __v; }" (if f.cf_set = NoAccess then "protected" else "private") id t id;
 				newline ctx
 			| _ -> ());
 			print ctx "protected var $%s : %s" (s_ident f.cf_name) (type_str ctx f.cf_type p);
@@ -990,18 +1006,24 @@ let generate_enum ctx e =
 		| TFun (args,_) ->
 			print ctx "public static function %s(" c.ef_name;
 			concat ctx ", " (fun (a,o,t) ->
-				print ctx "%s : %s" a (type_str ctx t c.ef_pos);
+				print ctx "%s : %s" (s_ident a) (type_str ctx t c.ef_pos);
 				if o then spr ctx " = null";
 			) args;
 			print ctx ") : %s {" ename;
 			print ctx " return new %s(\"%s\",%d,[" ename c.ef_name c.ef_index;
-			concat ctx "," (fun (a,_,_) -> spr ctx a) args;
+			concat ctx "," (fun (a,_,_) -> spr ctx (s_ident a)) args;
 			print ctx "]); }";
 		| _ ->
 			print ctx "public static var %s : %s = new %s(\"%s\",%d)" c.ef_name ename ename c.ef_name c.ef_index;
 	) e.e_constrs;
 	newline ctx;
-	print ctx "public static var __constructs__ : Array = [%s];" (String.concat "," (List.map (fun s -> "\"" ^ Ast.s_escape s ^ "\"") e.e_names));
+	(match Codegen.build_metadata ctx.inf.com (TEnumDecl e) with
+	| None -> ()
+	| Some e ->
+		print ctx "public static var __meta__ : * = ";
+		gen_expr ctx e;
+		newline ctx);
+	print ctx "public static var __constructs__ : Array = [%s];" (String.concat "," (List.map (fun s -> "\"" ^ Ast.s_escape s ^ "\"") e.e_names));	
 	cl();
 	newline ctx;
 	print ctx "}";
@@ -1153,7 +1175,11 @@ and type_path ctx p =
 	| [] , "void" -> [] , "Void"
 	| [] , "Function" -> [] , "Dynamic"
 	| [] , "Class" -> [] , "Class<Dynamic>"
-	| [] , "Error" -> ["flash"], "Error"
+	| [] , "Error" -> ["flash";"errors"], "Error"
+	| [] , "XML" -> ["flash";"xml"], "XML"
+	| [] , "XMLList" -> ["flash";"xml"], "XMLList"
+	| [] , "QName" -> ["flash";"utils"], "QName"
+	| [] , "Namespace" -> ["flash";"utils"], "Namespace"
 	| ["__AS3__";"vec"] , "Vector" -> ["flash"], "Vector"
 	| pack, cl when pack = !cur_package -> [], cl
 	| path -> path
@@ -1250,7 +1276,8 @@ let sort_fields ctx f1 f2 =
 	let fun2 = is_fun f2.f3_kind in
 	compare (acc1,fun1,name1) (acc2,fun2,name2)
 
-let gen_fields ctx ch fields stat construct =
+let gen_fields ctx ch fields others construct =
+	let stat = others <> None in
 	let fields = List.sort (sort_fields ctx) (Array.to_list fields) in
 	let construct = ref construct in
 	let gen_construct() =
@@ -1264,6 +1291,11 @@ let gen_fields ctx ch fields stat construct =
 	List.iter (fun f ->
 		let acc, name = ident_rights ctx f.f3_name in
 		let rights = (match acc with APrivate -> "//private " | AProtected -> "private " | APublic -> "") ^ (if stat then "static " else "") in
+		let rights = (match others with
+			| Some l when List.exists (fun cf -> snd (ident_rights ctx cf.f3_name) = name) l -> 
+				"// -- ignored because a nonstatic field has the same name -- " ^ rights
+			| _ -> rights 
+		) in
 		if acc <> APublic || is_fun f.f3_kind then gen_construct();
 		if name.[0] = '$' || acc = APrivate then
 			()
@@ -1286,7 +1318,7 @@ let gen_fields ctx ch fields stat construct =
 				let get = has_getset fields f m in
 				if not get then begin
 					let m = As3code.iget ctx.as3_method_types (As3parse.no_nz m.m3_type) in
-					let t = (match m.mt3_ret with None -> "Dynamic" | Some t -> s_type_path (type_path ctx t)) in
+					let t = (match m.mt3_args with [Some t] -> s_type_path (type_path ctx t) | _ -> "Dynamic") in
 					IO.printf ch "\t%svar %s(null,default) : %s;\n" rights name t
 				end;
 			)
@@ -1356,8 +1388,8 @@ let genhx_class ctx c s =
 		List.iter (fun f -> IO.printf ch "\t%s;\n" f) (List.sort compare enum_fields)
 	else begin
 		let construct = (if not c.cl3_interface && Array.length c.cl3_fields > 0 then Some c.cl3_construct else None) in
-		gen_fields ctx ch c.cl3_fields false construct;
-		gen_fields ctx ch s.st3_fields true None;
+		gen_fields ctx ch c.cl3_fields None construct;
+		gen_fields ctx ch s.st3_fields (Some (Array.to_list c.cl3_fields)) None;
 	end;
 	IO.printf ch "}\n";
 	prerr_endline ";";

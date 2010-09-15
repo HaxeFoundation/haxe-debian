@@ -17,6 +17,13 @@ class TestBasetypes extends Test {
 		eq( a[0], 1 );
 		eq( a[1], 3 );
 		eq( a[2], null );
+
+		var a : Array<Null<Int>> = [1,2,3];
+		a.splice(1,1);
+		eq( a.length, 2 );
+		eq( a[0], 1 );
+		eq( a[1], 3 );
+		eq( a[2], null );
 	}
 
 	function testString() {
@@ -24,8 +31,13 @@ class TestBasetypes extends Test {
 		unspec(function() String.fromCharCode(0));
 		unspec(function() String.fromCharCode(-1));
 		unspec(function() String.fromCharCode(256));
+#if php
+		eq( Std.string(null) + "x", "nullx" );
+		eq( "x" + Std.string(null), "xnull" );
+#else
 		eq( null + "x", "nullx" );
 		eq( "x" + null, "xnull" );
+#end
 
 		var abc = "abc".split("");
 		eq( abc.length, 3 );
@@ -84,6 +96,11 @@ class TestBasetypes extends Test {
 		eq( Std.parseInt(""), null );
 		eq( Std.parseInt("abcd"), null );
 		eq( Std.parseInt(null), null );
+	}
+
+	function testStringTools() {
+		eq( StringTools.hex(0xABCDEF,7), "0ABCDEF" );
+		eq( StringTools.hex(-1,8), "FFFFFFFF" );
 	}
 
 }

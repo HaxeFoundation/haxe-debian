@@ -91,6 +91,7 @@ let classify t =
 	| TInst ({ cl_path = ([],"Float") },[]) -> KFloat
 	| TInst ({ cl_path = ([],"String") },[]) -> KString
 	| TInst ({ cl_kind = KTypeParameter; cl_implements = [{ cl_path = ([],"Float")},[]] },[]) -> KParam t
+	| TInst ({ cl_kind = KTypeParameter; cl_implements = [{ cl_path = ([],"Int")},[]] },[]) -> KParam t
 	| TMono r when !r = None -> KUnk
 	| TDynamic _ -> KDyn
 	| _ -> KOther
@@ -155,7 +156,7 @@ let unify_call_params ctx name el args p inline =
 	let rec loop acc l l2 skip =
 		match l , l2 with
 		| [] , [] ->
-			if not inline && (Common.defined ctx.com "flash" || Common.defined ctx.com "js") then
+			if not (inline && ctx.doinline) && (Common.defined ctx.com "flash" || Common.defined ctx.com "js") then
 				List.rev (no_opt acc)
 			else
 				List.rev (List.map fst acc)
@@ -203,6 +204,7 @@ let rec type_module_type ctx t tparams p =
 			};
 			t_private = true;
 			t_types = [];
+			t_meta = no_meta;
 		} in
 		let e = mk (TTypeExpr (TClassDecl c)) (TType (t_tmp,[])) p in
 		check_locals_masking ctx e;
@@ -217,6 +219,7 @@ let rec type_module_type ctx t tparams p =
 				cf_get = NormalAccess;
 				cf_set = (match follow f.ef_type with TFun _ -> MethodAccess false | _ -> NoAccess);
 				cf_doc = None;
+				cf_meta = no_meta;
 				cf_expr = None;
 				cf_params = [];
 			} acc
@@ -231,6 +234,7 @@ let rec type_module_type ctx t tparams p =
 			};
 			t_private = true;
 			t_types = e.e_types;
+			t_meta = no_meta;
 		} in
 		let e = mk (TTypeExpr (TEnumDecl e)) (TType (t_tmp,types)) p in
 		check_locals_masking ctx e;
@@ -375,6 +379,7 @@ let using_field ctx mode e i p =
 				(match follow t with
 				| TFun ((_,_,t0) :: args,r) ->
 					(try unify_raise ctx e.etype t0 p with Error (Unify _,_) -> raise Not_found);
+					if follow e.etype == t_dynamic && follow t0 != t_dynamic then raise Not_found;
 					let et = type_module_type ctx (TClassDecl c) None p in						
 					AccUsing (mk (TField (et,i)) t p,e)
 				| _ -> raise Not_found)
@@ -503,7 +508,7 @@ let type_matching ctx (enum,params) (e,p) ecases first_case =
 			| TFun (l,_) ->
 				if List.length l <> List.length el then needs (List.length l);
 				List.map (fun (_,_,t) -> apply_params enum.e_types params t) l
-			| TEnum _ -> error "This constructor does not take any paramter" p
+			| TEnum _ -> error "This constructor does not take any parameter" p
 			| _ -> assert false
 		) in
 		let idents = List.map2 (fun (e,_) t ->
@@ -573,6 +578,7 @@ let rec type_field ctx e i p mode =
 				cf_name = i;
 				cf_type = mk_mono();
 				cf_doc = None;
+				cf_meta = no_meta;
 				cf_public = true;
 				cf_get = NormalAccess;
 				cf_set = (match mode with MSet -> NormalAccess | MGet | MCall -> NoAccess);
@@ -588,6 +594,7 @@ let rec type_field ctx e i p mode =
 			cf_name = i;
 			cf_type = mk_mono();
 			cf_doc = None;
+			cf_meta = no_meta;
 			cf_public = true;
 			cf_get = NormalAccess;
 			cf_set = (match mode with MSet -> NormalAccess | MGet | MCall -> NoAccess);
@@ -855,6 +862,7 @@ and type_unop ctx op flag e p =
 		) in
 		match op, e.eexpr with
 		| Neg , TConst (TInt i) -> mk (TConst (TInt (Int32.neg i))) t p
+		| Neg , TConst (TFloat f) when f.[0] != '-' -> mk (TConst (TFloat ("-" ^ f))) t p
 		| _ -> mk (TUnop (op,flag,e)) t p
 	in
 	match acc with
@@ -1252,8 +1260,12 @@ and type_expr ctx ?(need_val=true) (e,p) =
 				let t, pt = Typeload.t_iterator ctx in
 				let i = add_local ctx i pt in
 				let e1 = (match follow e1.etype with
-				| TAnon _
-				| TInst _ ->
+				| TMono _
+				| TDynamic _ ->
+					error "You can't iterate on a Dynamic value, please specify Iterator or Iterable" e1.epos;
+				| TLazy _ ->
+					assert false
+				| _ ->
 					(try
 						unify_raise ctx e1.etype t e1.epos;
 						e1
@@ -1266,12 +1278,6 @@ and type_expr ctx ?(need_val=true) (e,p) =
 						| _ ->
 							error "The field iterator is not a method" e1.epos
 					)
-				| TMono _
-				| TDynamic _ ->
-					error "You can't iterate on a Dynamic value, please specify Iterator or Iterable" e1.epos;
-				| _ ->
-					unify ctx e1.etype t e1.epos;
-					e1
 				) in
 				let e2 = type_expr ~need_val:false ctx e2 in
 				mk (TFor (i,pt,e1,e2)) ctx.api.tvoid p
@@ -1432,35 +1438,25 @@ and type_expr ctx ?(need_val=true) (e,p) =
 		}
 	| ECast (e,None) ->
 		let e = type_expr ctx e in
-		{ e with etype = mk_mono() }
+		mk (TCast (e,None)) (mk_mono()) p
 	| ECast (e, Some t) ->
-		(* // if( Std.is(tmp,T) ) tmp else throw "Class cast error" *)
-		let etmp = (EConst (Ident "tmp"),p) in
+		(* force compilation of class "Std" since we might need it *)
+		ignore(Typeload.load_type_def ctx p { tpackage = []; tparams = []; tname = "Std"; tsub = None });
 		let t = Typeload.load_complex_type ctx (pos e) t in
-		let tname = (match follow t with
+		let texpr = (match follow t with
 		| TInst (_,params) | TEnum (_,params) ->
 			List.iter (fun pt ->
 				if follow pt != t_dynamic then error "Cast type parameters must be Dynamic" p;
 			) params;
 			(match follow t with
-			| TInst (c,_) -> c.cl_path
-			| TEnum (e,_) -> e.e_path
+			| TInst (c,_) -> TClassDecl c
+			| TEnum (e,_) -> TEnumDecl e
 			| _ -> assert false);
 		| _ ->
 			error "Cast type must be a class or an enum" p
 		) in
-		let make_type (path,name) =
-			match path with
-			| [] -> (EConst (Type name),p)
-			| x :: path -> (EType (List.fold_left (fun acc x -> (EField (acc,x),p)) (EConst (Ident x),p) path,name),p)
-		in
-		let cond = (ECall ((EField ((EConst (Type "Std"),p),"is"),p),[etmp;make_type tname]),p) in
-		let e = type_expr ctx (EBlock [
-			(EVars [("tmp",None,Some e)],p);
-			(EIf (cond,etmp,Some (EThrow (EConst (String "Class cast error"),p),p)),p);
-		],p) in
-		{ e with etype = t }
-	| EDisplay e ->
+		mk (TCast (type_expr ctx e,Some texpr)) t p
+	| EDisplay (e,iscall) ->
 		let old = ctx.in_display in
 		ctx.in_display <- true;
 		let e = (try type_expr ctx e with Error (Unknown_ident n,_) -> raise (Parser.TypePath ([n],None))) in
@@ -1505,15 +1501,23 @@ and type_expr ctx ?(need_val=true) (e,p) =
 						match follow (field_type f) with
 						| TFun ((_,_,t) :: args, ret) when (try unify_raise ctx (dup e.etype) t e.epos; true with _ -> false) ->
 							let f = { f with cf_type = TFun (args,ret); cf_params = [] } in
-							acc := PMap.add f.cf_name f (!acc)
+							if follow e.etype == t_dynamic && follow t != t_dynamic then
+								()
+							else
+								acc := PMap.add f.cf_name f (!acc)
 						| _ -> ()
 					) c.cl_ordered_statics
 				| _ -> ());
 				!acc
 		in	
 		let use_methods = loop PMap.empty ctx.local_using in
-		let t = (if PMap.is_empty use_methods then t else match follow t with
-			| TFun _ -> t (* don't provide use methods for functions *)
+		let t = (if iscall then
+			match follow t with
+			| TFun _ -> t
+			| _ -> t_dynamic
+		else if PMap.is_empty use_methods then
+			t
+		else match follow t with
 			| TAnon a -> TAnon { a_fields = PMap.fold (fun f acc -> PMap.add f.cf_name f acc) a.a_fields use_methods; a_status = ref Closed; }
 			| _ -> TAnon { a_fields = use_methods; a_status = ref Closed }
 		) in
@@ -1786,7 +1790,7 @@ let types ctx main excludes =
 		) in
 		let path = ([],"@Main") in
 		let emain = type_type ctx cl null_pos in
-		let c = mk_class path null_pos None false in
+		let c = mk_class path null_pos in
 		let f = {
 			cf_name = "init";
 			cf_type = r;
@@ -1794,6 +1798,7 @@ let types ctx main excludes =
 			cf_get = NormalAccess;
 			cf_set = NormalAccess;
 			cf_doc = None;
+			cf_meta = no_meta;
 			cf_params = [];
 			cf_expr = Some (mk (TCall (mk (TField (emain,"main")) ft null_pos,[])) r null_pos);
 		} in
@@ -1814,6 +1819,7 @@ let create com =
 	let ctx = {
 		com = com;
 		api = com.type_api;
+		core_api = ref None;
 		modules = Hashtbl.create 0;
 		types_module = Hashtbl.create 0;
 		constructs = Hashtbl.create 0;
@@ -1881,4 +1887,5 @@ let create com =
 	ctx
 
 ;;
+Typeload.do_create := create;
 type_field_rec := type_field

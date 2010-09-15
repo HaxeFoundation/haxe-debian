@@ -126,12 +126,12 @@ let type_inline ctx cf f ethis params tret p =
 			Type.map_expr (map term) e
 		| TUnop (op,pref,({ eexpr = TLocal s } as e1)) ->
 			(match op with
-			| Increment | Decrement -> Hashtbl.add lsets s ()
+			| Increment | Decrement -> Hashtbl.add lsets (local s) ()
 			| _ -> ());
 			{ e with eexpr = TUnop (op,pref,map false e1) }
 		| TBinop (op,({ eexpr = TLocal s } as e1),e2) ->
 			(match op with
-			| OpAssign | OpAssignOp _ -> Hashtbl.add lsets s ()
+			| OpAssign | OpAssignOp _ -> Hashtbl.add lsets (local s) ()
 			| _ -> ());
 			{ e with eexpr = TBinop (op,map false e1,map false e2) }
 		| TConst TSuper ->
@@ -330,6 +330,11 @@ let rec reduce_loop ctx is_sub e =
 		| _ , TConst (TInt 1l) when op = OpMult -> e1
 		| _ , TConst (TFloat v) when (match op with OpAdd | OpSub -> float_of_string v = 0. && is_float e1.etype | _ -> false) -> e1 (* bits operations might cause overflow *)
 		| _ , TConst (TFloat v) when op = OpMult && float_of_string v = 1. && is_float e1.etype -> e1
+		| TConst TNull, TConst TNull ->
+			(match op with
+			| OpEq -> { e with eexpr = TConst (TBool true) }
+			| OpNotEq -> { e with eexpr = TConst (TBool false) }
+			| _ -> e)
 		| TConst (TInt a), TConst (TInt b) ->
 			let opt f = try { e with eexpr = TConst (TInt (f a b)) } with Exit -> e in
 			let check_overflow f =
@@ -431,7 +436,7 @@ let rec reduce_loop ctx is_sub e =
 	| TCall ({ eexpr = TFunction func } as ef,el) ->
 		(match follow ef.etype with
 		| TFun (_,rt) ->
-			let cf = { cf_name = ""; cf_params = []; cf_type = ef.etype; cf_public = true; cf_doc = None; cf_get = NormalAccess; cf_set = NoAccess; cf_expr = None } in
+			let cf = { cf_name = ""; cf_params = []; cf_type = ef.etype; cf_public = true; cf_doc = None; cf_meta = no_meta; cf_get = NormalAccess; cf_set = NoAccess; cf_expr = None } in
 			let inl = (try type_inline ctx cf func (mk (TConst TNull) (mk_mono()) e.epos) el rt e.epos with Error (Custom _,_) -> None) in
 			(match inl with
 			| None -> e
