@@ -1,0 +1,94 @@
+# -*- shell-script -*-
+# haxe(1) bash-completion specification.
+# Put in the public domain 2008 by Jens Peter Secher.
+
+# Inputs:
+#   $1 -- name of the command whose arguments are being completed
+#   $2 -- word being completed
+#   $3 -- word preceding the word being completed
+#   $COMP_LINE  -- current command line
+#   $COMP_PONT  -- cursor position
+#   $COMP_WORDS -- array containing individual words in the current
+#                  command line
+#   $COMP_CWORD -- index into ${COMP_WORDS} of the word containing the
+#                  current cursor position
+# Output:
+#   COMPREPLY array variable contains possible completions
+
+_haxe()
+{
+    local cur prev options firstchar
+    COMPREPLY=()
+    cur=${COMP_WORDS[COMP_CWORD]}
+    prev=${COMP_WORDS[COMP_CWORD-1]}
+    ## All available options to haxe.
+    options='-cp -js -as3 -swf -swf9 -as3 -neko -php -cpp -xml -main -lib \
+             -D -v -debug -swf-version -swf-header -swf-lib -x -resource
+             -exclude -prompt -cmd --flash-strict --no-traces \
+             --flash-use-stage --neko-source --gen-hx-classes --next \
+             --display --no-output --times --no-inline --no-opt \
+             --php-front --remap -help --help'
+    case $prev in
+	-cp|-as3)
+            COMPREPLY=( $( compgen -o dirnames -- ${cur} ) )
+            ;;
+	-js)
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*.js" ) )
+            ;;
+	-swf|-swf9)
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*.swf" ) )
+            ;;
+	-swf-lib|-resource)
+            COMPREPLY=( $( compgen -o filenames -- ${cur} ) )
+            ;;
+	-neko)
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*.n" ) )
+            ;;
+	-php|--php-front)
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*.php" ) )
+            ;;
+	-cpp)
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*.cpp" ) )
+            ;;
+	-xml)
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*.xml" ) )
+            ;;
+	-exclude|--gen-hx-classes)
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*.hx" ) )
+            ;;
+        -swf-version)
+	    local swf_versions='6 7 8 9 10'
+	    COMPREPLY=( $( compgen -W "${swf_versions}" -- ${cur} ) )
+	    ;;
+        -swf-header)
+            ## An improvement here would be to restrict to n:n:n:c.
+            ;;
+        -main)
+            ## An improvement here would be to find class Xxx in *.hx
+            ## files, alternatively just Xxx.hx.
+            ;;
+        -lib)
+            if haxelib list 2>&1 > /dev/null; then
+                local libraries=`haxelib list | sed 's/:.*//g'`
+                COMPREPLY=( $( compgen -W "${libraries}" -- ${cur} ) )
+            fi
+            ;;
+        -D)
+            ## An improvement here would be to grep in hx files after #if xxx.
+            ;;
+	*)
+            ## The previous commandline argument is not an option that
+            ## needs a value, so look at current argument.  If first
+            ## character is a dash, complete on options, otherwise do
+            ## normal shell completion.
+            firstchar=`expr substr "${cur}" 1 1`
+            if [ "$firstchar" = "-" ]; then
+	        COMPREPLY=( $( compgen -W "${options}" -- ${cur} ) )
+            else
+	        COMPREPLY=( $( compgen -o default -- ${cur} ) )
+            fi
+	    ;;
+    esac
+    return 0
+}
+complete -F _haxe -o filenames haxe

@@ -1,0 +1,133 @@
+.TH HAXE 1 "Feb 01, 2010" ""
+.SH NAME
+haxe \- compile haXe programs to SWF, Neko, JavaScript, PHP, or C++.
+.SH SYNOPSIS
+\fBhaxe\fR \fB-main\fR \fIclass\fR [\fB-swf9\fR|\fB-swf\fR|\fB-js\fR|\fB-neko\fR|\fB-php\fR|\fB-cpp\fR|\fB-as3\fR] \fIoutput\fR [options...]
+.SH DESCRIPTION
+.B haxe
+is a command-line compiler which compiles haXe programs into Flash SWF,
+JavaScript, ActionScript, PHP, C++, or Neko bytecode.
+.PP
+haXe programs are similar to JavaScript, but have a full-featured type
+system with generics.
+.SH OPTIONS
+.TP
+.BI "\-cp " path
+Add a directory to find source files.
+.TP
+.BI "\-js " file
+Compile code to JavaScript file.
+.TP
+.BI "\-swf " file
+Compile code to Flash SWF file.
+.TP
+.BI "\-swf9 " file
+Compile code to Flash9 SWF file.
+.TP
+.BI "\-as3 " directory
+Generate AS3 code into target directory.
+.TP
+.BI "\-neko " file
+Compile code to Neko Binary.
+.TP
+.BI "\-php " file
+Generate PHP code into target directory.
+.TP
+.BI "\-cpp " file
+Generate C++ code into target directory.
+.TP
+.BI "\-xml " file
+Generate XML types description.
+.TP
+.BI "\-main " class
+Select startup class.
+.TP
+.BI "\-lib " library[:version]
+Use a haxelib library.
+.TP
+.BI "\-D " var
+Define a conditional compilation flag.
+.TP
+.B "\-v"
+Turn on verbose mode.
+.TP
+.B "\-debug"
+Add debug informations to the compiled code.
+.TP
+.BI "\-swf\-version " version
+Change the SWF version (6 to 10).
+.TP
+.BI "\-swf\-header " header
+Define SWF header (width:height:fps:color).
+.TP
+.BI "\-swf\-lib " file
+Add the SWF library to the compiled SWF.
+.TP
+.BI "\-x " file
+Shortcut for compiling and executing a neko file.
+.TP
+.BI "\-resource " file[@name]
+Add a named resource file.
+.TP
+.BI "\-exclude " filename
+Do not generate code for classes listed in this file.
+.TP
+.B "\-prompt"
+Prompt on error.
+.TP
+.B "\-cmd"
+Run the specified command after successful compilation.
+.TP
+.B "\-\-flash\-strict"
+More type strict flash API.
+.TP
+.B "\-\-no\-traces"
+Do not compile trace calls in the program.
+.TP
+.B "\-\-flash\-use\-stage"
+Place objects found on the stage of the SWF lib.
+.TP
+.B "\-\-neko\-source"
+Keep generated neko source.
+.TP
+.BI "\-\-gen\-hx\-classes " file
+Generate hx headers from SWF9 file.
+.TP
+.B "\-\-next"
+Separate several haxe compilations.
+.TP
+.B "\-\-display"
+Display code tips.
+.TP
+.B "\-\-no\-output"
+Compiles but does not generate any file.
+.TP
+.B "\-\-times"
+Measure compilation times.
+.TP
+.B "\-\-no-inline"
+Disable inlining.
+.TP
+.B "\-\-no-opt"
+Disable code optimizations.
+.TP
+.BI "\-\-php-front " file
+Select the name for the php front file.
+.TP
+.BI "\-\-js\-namespace " namespace
+Create a namespace where root types are defined.
+.TP
+.BI "\-\-remap " package:target
+Remap a package to another one.
+.TP
+.B "\-help"
+Display this list of options.
+.TP
+.B "\-\-help"
+Display this list of options.
+.SH AUTHOR
+haXe is written by Nicolas Cannasse for Motion-Twin.
+.SH SEE ALSO
+.BR "haxelib" (1),
+.BR "haxedoc" (1).
+.IR "http://haxe.org" .

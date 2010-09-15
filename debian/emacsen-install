@@ -1,0 +1,32 @@
+#!/bin/sh -e
+#/usr/lib/emacsen-common/packages/install/haxe-mode
+
+FLAVOR=$1
+if [ ${FLAVOR} != emacs22 -a ${FLAVOR} != emacs23 -a ${FLAVOR} != emacs-snapshot ]; then
+    exit 0;
+fi
+
+PACKAGE=haxe-mode
+echo install/${PACKAGE}: Handling install for emacsen flavor ${FLAVOR}
+
+# The byte-compiled files goes into the site-lisp directory.
+BCDIR=/usr/share/${FLAVOR}/site-lisp/${PACKAGE}
+install -m 755 -d ${BCDIR}
+
+# The elisp source files are in the generic site-list directory.
+SRCDIR=/usr/share/emacs/site-lisp/${PACKAGE}
+SRC=`find ${SRCDIR} -name '*.el' -exec basename '{}' ';'`
+
+# Prepare for byte-compiling the source files.
+cd ${BCDIR}
+ln -sf ${SRCDIR}/*.el .
+cat << EOF > path.el
+(setq load-path (cons "." load-path) byte-compile-warnings nil)
+EOF
+
+# Byte-compile elisp files.
+FLAGS="--no-site-file --no-init-file --batch -l path.el -f batch-byte-compile"
+${FLAVOR} ${FLAGS} ${SRC}
+rm -f path.el
+
+exit 0

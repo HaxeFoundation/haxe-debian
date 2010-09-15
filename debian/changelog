@@ -1,0 +1,354 @@
+haxe (1:2.6-1) unstable; urgency=low
+
+  * mercurial-importorig imported new upstream version.
+
+ -- Jens Peter Secher <jps@tarjan>  Wed, 15 Sep 2010 21:42:56 +0200
+
+haxe (1:2.5-1) unstable; urgency=low
+
+  * New upstream version, taken from new upstream subversion repository.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 31 Jan 2010 23:08:43 +0100
+
+haxe (1:2.4-4) unstable; urgency=low
+
+  * Converted to dpkg-source format 3.0 (quilt).
+  * Use mercurial-buildpackage for repository maintenance, so old
+    repository does not exist any more.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 31 Jan 2010 22:37:10 +0100
+
+haxe (1:2.4-3) unstable; urgency=low
+
+  * Rebuild because the i386 had broken dependencies on neko.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 14 Nov 2009 11:29:58 +0100
+
+haxe (1:2.4-2) unstable; urgency=low
+
+  * Reinclude haxe-mode for Emacs after fixing emacs23 problem.
+  * Depend on neko because haxelib and haxedoc need the libraries.
+  * Bumped Standards-Version to 3.8.3, no change.
+
+ -- Jens Peter Secher <jps@debian.org>  Tue, 08 Sep 2009 15:43:54 +0200
+
+haxe (1:2.4-1) unstable; urgency=low
+
+  * New upstream version (CVS 2009-08-01).
+  * Removed obsolete parts of the copyright file now that ExtLib is 
+    not included anymore.
+  * Included patch for Ubuntu location of zlib, thanks to Alessio Treglia.
+    (Closes: #533159)
+  * Removed haxe-mode to get it into its own package.
+    (Closes: #521222)
+  * Included new commands in bash_completion.
+  * Removed obsolete Lintian overrides.
+  * Bumped Standards-Version to 3.8.2, no change.
+
+ -- Jens Peter Secher <jps@debian.org>  Mon, 03 Aug 2009 21:29:45 +0200
+
+haxe (1:2.3-1~bpo40+1) etch-backports; urgency=low
+
+  * Backport to Lenny, adapt to old ocaml and debhelper 5.
+
+ -- Jens Peter Secher <jps@debian.org>  Mon, 15 Jun 2009 21:40:08 +0200
+
+haxe (1:2.3-1~bpo50+1) lenny-backports; urgency=low
+
+  * Backport to Lenny, adapt to old camlp4.
+
+ -- Jens Peter Secher <jps@debian.org>  Thu, 28 May 2009 20:06:08 +0200
+
+haxe (1:2.3-1) unstable; urgency=low
+
+  * New upstream version.
+  * Remove patch ocaml-3.11-compile.diff because it is included upstream.
+  * Bumped debhelper version to 7.
+  * Updated the haxe manpage.
+
+ -- Jens Peter Secher <jps@debian.org>  Mon, 25 May 2009 22:05:05 +0200
+
+haxe (1:2.2-2) unstable; urgency=low
+
+  * Use ocamlfind to locate and use the libraries xml-light and extlib
+    which already exist in Debian as separate packages.
+    (Closes: #519630)
+  * Fixed compile error with camlp4 3.11, thanks to Stéphane Glondu.
+    (Closes: #519627)
+  * Use quilt instead of dpatch for patches, and describe how to use
+    quilt in Debian.source (thanks to Russ Allbery).
+  * Added a Vcs-Hg control filed to indicate the location of the public
+    repository.
+  * Bumped Standards-Version to 3.8.1.
+
+ -- Jens Peter Secher <jps@debian.org>  Wed, 18 Mar 2009 23:09:50 +0100
+
+haxe (1:2.2-1) experimental; urgency=low
+
+  * New upstream release.
+  * Updated install scripts to include OCaml optimisations.
+  * Updated man page to include swf9 option.
+  * Fixed broken bash completion.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 14 Dec 2008 18:22:19 +0100
+
+haxe (1:2.1-1) experimental; urgency=low
+
+  * Fixed build failure when using byte-code version of ocaml.
+    (Closes: #501538)
+  * Synchronise with 2.1 release.
+
+ -- Jens Peter Secher <jps@debian.org>  Thu, 09 Oct 2008 21:30:03 +0200
+
+haxe (1:2.0.1-1) experimental; urgency=low
+
+  * Newest CVS checkout for experimental.
+  * Build against neko 1.8.0.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 05 Oct 2008 11:24:49 +0200
+
+haxe (1:2.0-1~bpo40+1) etch-backports; urgency=low
+
+  * Backport to Etch, which requires dropping the dependency on camlp4
+    and lowering dependency on emacs22 to emacs21.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 03 Aug 2008 14:28:20 +0200
+
+haxe (1:2.0-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Jens Peter Secher <jps@debian.org>  Thu, 31 Jul 2008 13:44:35 +0200
+
+haxe (1:1.19-3) unstable; urgency=low
+
+  * Remove bashism in script.
+    (Closes: #484390)
+  * Upgrade to Policy 3.8.0 by including a README.source explaining how to
+    use dpatch.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 15 Jun 2008 11:04:09 +0200
+
+haxe (1:1.19-2~bpo40+1) etch-backports; urgency=low
+
+  * Backport to Etch, which requires dropping the dependency on camlp4.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 17 May 2008 15:08:08 +0200
+
+haxe (1:1.19-2) unstable; urgency=low
+
+  * Remove bashism in script.
+    (Closes: #477202)
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 26 Apr 2008 11:31:11 +0200
+
+haxe (1:1.19-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Jens Peter Secher <jps@debian.org>  Thu, 10 Apr 2008 21:47:44 +0200
+
+haxe (1:1.18-1~bpo40+1) etch-backports; urgency=low
+
+  * Backport to Etch, which requires dropping the dependency on camlp4.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 01 Mar 2008 12:32:55 +0100
+
+haxe (1:1.18-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Jens Peter Secher <jps@debian.org>  Tue, 26 Feb 2008 19:55:05 +0100
+
+haxe (1:1.17-1~bpo40+2) etch-backports; urgency=low
+
+  * Rebuild with fixed neko backport to get dependency right.
+
+ -- Jens Peter Secher <jps@debian.org>  Tue, 05 Feb 2008 22:10:39 +0100
+
+haxe (1:1.17-1~bpo40+1) etch-backports; urgency=low
+
+  * Backport to Etch, which requires dropping the dependency on camlp4.
+
+ -- Jens Peter Secher <jps@debian.org>  Tue, 05 Feb 2008 22:10:39 +0100
+
+haxe (1:1.17-1) unstable; urgency=low
+
+  * New upstream release.
+  * Added a bash completion specification.
+  * Bumped Standards-Version to 3.7.3.
+
+ -- Jens Peter Secher <jps@debian.org>  Mon, 14 Jan 2008 23:17:46 +0100
+
+haxe (1:1.16-1~bpo40+1) etch-backports; urgency=low
+
+  * Backport to Etch, which requires dropping the dependency on camlp4.
+
+ -- Jens Peter Secher <jps@debian.org>  Mon, 19 Nov 2007 21:31:56 +0100
+
+haxe (1:1.16-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Jens Peter Secher <jps@debian.org>  Wed, 07 Nov 2007 22:15:33 +0100
+
+haxe (1:1.15-2) unstable; urgency=low
+
+  * Make sure there is a Caml Preprocessor & Pretty Printer (camlp4) when
+    building.
+    (Closes: #441510)
+
+ -- Jens Peter Secher <jps@debian.org>  Mon, 10 Sep 2007 23:18:51 +0200
+
+haxe (1:1.15-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Jens Peter Secher <jps@debian.org>  Wed, 29 Aug 2007 21:28:45 +0200
+
+haxe (1:1.14-3) unstable; urgency=low
+
+  * The bytecode compiler should have the same name as the native
+    compiler, which fixes FTBFS on S390, M68k, Arm, and MIPS.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 29 Jul 2007 15:07:57 +0200
+
+haxe (1:1.14-2) unstable; urgency=low
+
+  * Use $CURDIR everywhere in debian/rules.
+    (Closes: #435026)
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 29 Jul 2007 01:11:06 +0200
+
+haxe (1:1.14-1) unstable; urgency=low
+
+  * New upstream release.
+  * Updated man pages.
+  * Prefer emacs22 over emacs21.
+    (Closes: #434918)
+  * Simplify install, removal, and load-path by using symlinks instead of
+    copying source files.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 28 Jul 2007 11:43:58 +0200
+
+haxe (1:1.13-1bpo1) stable; urgency=low
+
+  * Backport to etch (no change).
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 27 May 2007 10:58:46 +0200
+
+haxe (1:1.13-1) unstable; urgency=low
+
+  * New upstream release.
+  * Updated man pages.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 27 May 2007 00:44:04 +0200
+
+haxe (1:1.12-1) unstable; urgency=low
+
+  * Switched to upstream version numbers.
+  * New version of haxe-mode.el which is now properly setup for emacsen
+    (but only for emacs-snapshot or emacs22, since haxe-mode depends on a
+    recent cc-mode).
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 18 Mar 2007 15:25:36 +0100
+
+haxe (20070307-1) experimental; urgency=low
+
+  * New upstream release (~1.12).
+  * Updated man page accordingly.
+
+ -- Jens Peter Secher <jps@debian.org>  Wed,  7 Mar 2007 00:30:04 +0100
+
+haxe (20070224-1) experimental; urgency=low
+
+  * New upstream release (~1.11) matches Neko version 1.5.3.
+  * New version of haxe-mode for Emacs.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 24 Feb 2007 16:10:56 +0100
+
+haxe (20070106-1) experimental; urgency=low
+
+  * New upstream release (~1.10).
+  * Updated manpages.
+  * Include haxe-mode for Emacs.
+  
+ -- Jens Peter Secher <jps@debian.org>  Sat,  6 Jan 2007 19:01:42 +0100
+
+haxe (20061201-1) experimental; urgency=low
+
+  * New upstream release.
+  * Include lintian overrides for unstripped bytecode files.
+
+ -- Jens Peter Secher <jps@debian.org>  Fri,  1 Dec 2006 19:18:02 +0100
+
+haxe (20061106-1bpo1) stable; urgency=low
+
+  * Change the dependencies to backport to Sarge.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 12 Nov 2006 15:16:31 +0100
+
+haxe (20061106-1) experimental; urgency=low
+
+  * New upstream release (~1.08).
+     - Fixes flash6 code generation. 
+       (Closes: #396141)
+  * Use neko to build haxelib and haxedoc executables, both of which
+    searches for the libneko.so by use of -rpath in /usr/lib/neko since we
+    do not want this private library to end up in /usr/lib.
+
+ -- Jens Peter Secher <jps@debian.org>  Mon,  6 Nov 2006 18:21:09 +0100
+
+haxe (20060912-2) unstable; urgency=low
+
+  * Fixed build failure on architectures without a native ocaml compiler.
+  * Added Tag field to control file to test Enrico Zini's
+    debtags-updatecontrol.
+  * Changed description to match that on haxe.org .
+
+ -- Jens Peter Secher <jps@debian.org>  Wed, 13 Sep 2006 09:38:12 +0200
+
+haxe (20060912-1) unstable; urgency=low
+
+  * New upstream release (1.07).
+
+ -- Jens Peter Secher <jps@debian.org>  Tue, 12 Sep 2006 21:39:22 +0200
+
+haxe (20060715-2) unstable; urgency=low
+
+  * Fixed build failure on architectures without a native ocaml compiler,
+    thanks to Samuel Mimram and Paul Wise.
+    (Closes: #378373)
+  * Fixed misspelling in package description.
+    (Closes: #378631)  
+  * Updated manual page.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 22 Jul 2006 10:39:48 +0200
+
+haxe (20060715-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 15 Jul 2006 11:13:35 +0200
+
+haxe (20060606-2) experimental; urgency=low
+
+  * Avoid splitting off the arch-independent library files into a separate
+    package.
+
+ -- Jens Peter Secher <jps@debian.org>  Wed,  7 Jun 2006 23:05:35 +0200
+
+haxe (20060606-1) experimental; urgency=low
+
+  * Included all copyright holders from the OCaml Extended standard
+    Library (ExtLib).
+  * Bumped Standards-Version to 3.7.2.
+
+ -- Jens Peter Secher <jps@debian.org>  Tue,  6 Jun 2006 21:50:56 +0200
+
+haxe (1.0-1) experimental; urgency=low
+
+  * Inital package.
+    (Closes: #365425).
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 30 Apr 2006 00:17:24 +0200

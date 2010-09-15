@@ -1,0 +1,72 @@
+.TH HAXELIB 1 "Nov 6, 2006" ""
+.SH NAME
+haxelib \- Haxe Library Manager
+.SH SYNOPSIS
+.BR "haxelib " "[command] [options...]"
+.SH DESCRIPTION
+.PP
+haxelib is a command-line tool to manage both the global repository and your
+local repository of haXe libraries and projects.
+.SH COMMANDS
+.TP
+.BI "install " "library [version]"
+Install a given library from the global repository.  Once a project is
+installed, you can simply use \fBhaxe \-lib \fR\fB\fIlibrary\fR
+\fI...\fR to be able to use it from your application.  By default, this
+is the current version of the project that is used.  If you want to use
+a specific version of the project, use \fBhaxe \-lib
+\fIlibrary\fR:\fIversion\fR ...
+.TP
+.B "list"
+List all installed libraries and their versions.
+.TP
+.B "upgrade"
+Upgrade all installed libraries to their latest version.
+.TP
+.BI "remove " "library [version]"
+Remove a given library.
+.TP
+.BI "set " "library [version]"
+Set the current version for a library. The version must be already installed.
+.TP
+.BI "search " word
+List global libraries matching a word.
+.TP
+.BI "info " library
+List informations on a given library.
+.TP
+.BI "user " library
+List informations on a given user on the global repository.
+.TP
+.BI "register " name
+Register a new user in the global repository.
+.TP
+.BI "submit " library
+Submit or update a library to the global repository.
+.TP
+.B "setup"
+Set the haxelib repository path.
+.TP
+.BI "config " library
+Print the local repository path.
+.TP
+.BI "path " libraries...
+List the path to the given libraries.
+.TP
+.BI "run " "library [arguments...]"
+Run the specified library with arguments if it provides a run script. Be
+careful about trusting libraries this way since the script can damage
+your system.
+.TP
+.BI "test " library
+install the specified library locally.
+.TP
+.BI "dev"
+Set the development directory for a given project.
+.SH AUTHOR
+haXe is written by Nicolas Cannasse for Motion-Twin.
+.SH SEE ALSO
+.BR "haxe" (1),
+.BR "haxedoc" (1).
+.SH WEB
+.IR "http://haxe.org" .
