@@ -1,9 +1,8 @@
 (* 
  * This file is based on http://haxe.org/file/install.ml and
  * was modified by Jens Peter Secher for the Debian distribution 
- * to use ocamlfind to locate external ocaml libraries.  Also,
- * all non-unix setup was removed.  The original file had the
- * following boilerplate:
+ * to use ocamlfind to locate external ocaml libraries.  The original
+ * file had the following boilerplate:
  *)
 
 (*
@@ -34,14 +33,27 @@ let native = true
 
 (* ------ END CONFIGURATION ----- *)
 
-let ocamloptflags = "-cclib -fno-stack-protector "
+let os_type = Sys.os_type
 
-let zlib = 
-	try
-		List.find Sys.file_exists ["/usr/lib64/libz.so.1";"/usr/lib/libz.so.1";"/usr/lib/libz.so"]
-	with
-		Not_found ->
-			failwith "LibZ was not found on your system, please install it or modify the search directories in the install script"
+(* remove the comment to compile with windows using ocaml cygwin *)
+(* let os_type = "Cygwin" *)
+
+let obj_ext = match os_type with "Win32" -> ".obj" | _ -> ".o"
+let exe_ext = match os_type with "Win32" | "Cygwin" -> ".exe" | _ -> ""
+let ocamloptflags = match os_type with "Unix" -> "-cclib -fno-stack-protector " | _ -> ""
+
+let zlib_path = match os_type with
+	| "Win32" -> "../ocaml/extc/zlib/"
+	| _ -> "./"
+
+let zlib = match os_type with
+	| "Win32" -> zlib_path ^ "zlib.lib"
+	| _ ->
+		try
+			List.find Sys.file_exists ["/usr/lib/libz.dylib";"/usr/lib64/libz.so.1";"/usr/lib/libz.so.1";"/lib/libz.so.1";"/usr/lib/libz.so.4.1"]
+		with
+			Not_found ->
+				failwith "LibZ was not found on your system, please install it or modify the search directories in the install script"
 
 let msg m =
 	prerr_endline m;
@@ -61,21 +73,28 @@ let modules l ext =
 ;;
 
 let compile_libs() =
+	(* EXTLIB *)
+	Sys.chdir "ocaml/extlib-dev";
+	command ("ocaml install.ml -nodoc -d .. " ^ (if bytecode then "-b " else "") ^ (if native then "-n" else ""));
+	msg "";
+	Sys.chdir "../..";
+
 	(* EXTC *)
 	Sys.chdir "ocaml/extc";
 	let c_opts = (if Sys.ocaml_version < "3.08" then " -ccopt -Dcaml_copy_string=copy_string " else " ") in
-	command ("ocamlc" ^ c_opts ^ " -I .." ^ " extc_stubs.c");
+	command ("ocamlfind ocamlc" ^ c_opts ^ " -I .. -I ../" ^ zlib_path ^ " extc_stubs.c");
 
-	let options = "-cclib ../ocaml/extc/extc_stubs.o" ^ " -cclib " ^ zlib ^ " extc.mli extc.ml" in
-	if bytecode then command ("ocamlc -a -o extc.cma " ^ options);
-	if native then command ("ocamlopt -a -o extc.cmxa " ^ options);
+	let options = "-cclib ../ocaml/extc/extc_stubs" ^ obj_ext ^ " -cclib " ^ zlib ^ " extc.ml" in
+	if bytecode then command ("ocamlfind ocamlc -a -I .. -o extc.cma " ^ options);
+	if native then command ("ocamlfind ocamlopt -a -I .. -o extc.cmxa " ^ options);
 	Sys.chdir "../..";
 
 	(* SWFLIB *)
 	Sys.chdir "ocaml/swflib";
-	let files = "-I .. -I ../extc as3.mli as3hl.mli as3code.ml as3parse.ml as3hlparse.ml swf.ml swfZip.ml actionScript.ml swfParser.ml" in
-	if bytecode then command ("ocamlfind ocamlc -a -o swflib.cma -package extlib " ^ files);
-	if native then command ("ocamlfind ocamlopt -a -o swflib.cmxa -package extlib " ^ files);
+
+	let files = "-I .. -I ../extc as3.mli as3hl.mli as3code.ml as3parse.ml as3hlparse.ml swf.ml actionScript.ml swfParser.ml" in
+	if bytecode then command ("ocamlfind ocamlc -a -o swflib.cma " ^ files);
+	if native then command ("ocamlfind ocamlopt -a -o swflib.cmxa " ^ files);
 	Sys.chdir "../..";
 
 in
@@ -90,8 +109,10 @@ let compile() =
 	Sys.chdir "haxe";
 	command "ocamllex lexer.mll";
 	let libs = [
+		"../ocaml/extLib";
 		"../ocaml/extc/extc";
 		"../ocaml/swflib/swflib";
+		"/usr/lib/ocaml/xml-light/xml-light";
 		"unix";
 		"str"
 	] in
@@ -99,17 +120,18 @@ let compile() =
 	let paths = [
 		"../ocaml";
 		"../ocaml/swflib";
+		"/usr/lib/ocaml/xml-light";
 		"../ocaml/extc";
 		neko
 	] in
 	let mlist = [
 		"ast";"lexer";"type";"common";"parser";"typecore";
-		"genxml";"typeload";"codegen";"optimizer";"typer";
+		"genxml";"typeload";"codegen";"optimizer";
 		neko^"/nast";neko^"/binast";neko^"/nxml";
 		"genneko";"genas3";"genjs";"genswf8";"genswf9";"genswf";"genphp";"gencpp";
-		"main";
+		"typer";"main";
 	] in
-	let pkgs_str = " -linkpkg -package extlib,xml-light" in
+	let pkgs_str = " -linkpkg -package xml-light" in
 	let path_str = String.concat " " (List.map (fun s -> "-I " ^ s) paths) in
 	let libs_str ext = " " ^ String.concat " " (List.map (fun l -> l ^ ext) libs) ^ " " in
 	ocamlc (path_str ^ pkgs_str ^ " -pp camlp4o " ^ modules mlist ".ml");

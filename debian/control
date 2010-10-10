@@ -2,7 +2,7 @@ Source: haxe
 Section: devel
 Priority: optional
 Maintainer: Jens Peter Secher <jps@debian.org>
-Standards-Version: 3.8.3
+Standards-Version: 3.9.1
 Build-Depends: debhelper (>= 7), ocaml, ocaml-best-compilers | ocaml-native-compilers, ocaml-findlib, libextlib-ocaml-dev, libxml-light-ocaml-dev, camlp4 (>= 3.11), zlib1g-dev, neko (>= 1.8.1~)
 Vcs-Hg: http://hg.debian.org/hg/collab-maint/haxe
 Homepage: http://haxe.org
