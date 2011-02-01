@@ -7,7 +7,7 @@ extern class KeyboardEvent extends Event {
 	var keyCode : UInt;
 	var keyLocation : flash.ui.KeyLocation;
 	var shiftKey : Bool;
-	function new(type : String, ?bubbles : Bool, ?cancelable : Bool, ?charCode : UInt, ?keyCode : UInt, ?keyLocation : flash.ui.KeyLocation, ?ctrlKey : Bool, ?altKey : Bool, ?shiftKey : Bool) : Void;
+	function new(type : String, bubbles : Bool = true, cancelable : Bool = false, charCodeValue : UInt = 0, keyCodeValue : UInt = 0, keyLocationValue : flash.ui.KeyLocation = 0, ctrlKeyValue : Bool = false, altKeyValue : Bool = false, shiftKeyValue : Bool = false) : Void;
 	function updateAfterEvent() : Void;
 	static var KEY_DOWN : String;
 	static var KEY_UP : String;

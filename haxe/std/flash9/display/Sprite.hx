@@ -8,6 +8,8 @@ extern class Sprite extends DisplayObjectContainer {
 	var soundTransform : flash.media.SoundTransform;
 	var useHandCursor : Bool;
 	function new() : Void;
-	function startDrag(?lockCenter : Bool, ?bounds : flash.geom.Rectangle) : Void;
+	function startDrag(lockCenter : Bool = false, ?bounds : flash.geom.Rectangle) : Void;
+	@:require(flash10_1) function startTouchDrag(touchPointID : Int, lockCenter : Bool = false, ?bounds : flash.geom.Rectangle) : Void;
 	function stopDrag() : Void;
+	@:require(flash10_1) function stopTouchDrag(touchPointID : Int) : Void;
 }

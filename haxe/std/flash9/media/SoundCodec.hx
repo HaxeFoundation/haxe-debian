@@ -1,6 +1,6 @@
 package flash.media;
 
-extern enum SoundCodec {
-	SPEEX;
+@:fakeEnum(String) extern enum SoundCodec {
 	NELLYMOSER;
+	SPEEX;
 }

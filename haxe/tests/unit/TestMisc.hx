@@ -52,6 +52,24 @@ class MyOtherDynamicClass extends MyDynamicClass {
 
 }
 
+interface IDefArgs {
+	public function get( x : Int = 5 ) : Int;
+}
+
+class BaseDefArgs {
+	public function get( x = 3 ) {
+		return x;
+	}
+}
+
+class ExtDefArgs extends BaseDefArgs, implements IDefArgs {
+	public function new() {
+	}
+	override function get( x = 7 ) {
+		return x;
+	}
+}
+
 class TestMisc extends Test {
 
 	function testClosure() {
@@ -149,6 +167,10 @@ class TestMisc extends Test {
 	function opt2( ?x = 5, ?y = "hello" ) {
 		return { x : x, y : y };
 	}
+	
+	function opt3( ?x : Null<Int> = 5, ?y : Null<Float> = 6 ) {
+		return { x : x, y : y };
+	}
 
 	function testOptionalParams() {
 		eq( opt1().x, null );
@@ -158,10 +180,32 @@ class TestMisc extends Test {
 		eq( opt1("str").x, null );
 		eq( opt1("str").y, "str" );
 		eq( opt1(66,"hello").x, 66 );
-		eq( opt1(66,"hello").y, "hello" );
+		eq( opt1(66, "hello").y, "hello" );
 
 		eq( opt2().x, 5 );
 		eq( opt2().y, "hello" );
+		
+		#if !flash9
+		eq( opt2(null, null).x, 5 );
+		#end
+		eq( opt2(0, null).y, "hello" );
+
+		eq( opt3().x, 5 );
+		eq( opt3().y, 6 );
+		eq( opt3(9).x, 9 );
+		eq( opt3(9).y, 6 );
+		eq( opt3(9,10).x, 9 );
+		eq( opt3(9,10).y, 10 );
+		eq( opt3(null,null).x, 5 );
+		eq( opt3(null,null).y, 6 );
+		eq( opt3(null).x, 5 );
+		eq( opt3(null).y, 6 );
+		eq( opt3(null,7).x, 5 );
+		eq( opt3(null, 7).y, 7 );
+		
+		// skipping
+		eq( opt3(7.4).x, 5 );
+		eq( opt3(7.4).y, 7.4 );
 	}
 
 	function testIncr() {
@@ -219,6 +263,7 @@ class TestMisc extends Test {
 		// check that operations are correctly generated
 		var x = 3; // prevent optimization
 		eq( 2 * foo(x), 16 );
+		eq( -foo(x), -8 );
 	}
 
 	function testEvalAccessOrder() {
@@ -243,6 +288,15 @@ class TestMisc extends Test {
 
 	function testStaticVarFun() {
 		eq( add(2,3), 5);
+	}
+	
+	function testDefArgs() {
+		var e = new ExtDefArgs();
+		eq( e.get(), 7 );
+		var b : BaseDefArgs = e;
+		eq( e.get(), 7 );
+		var i : IDefArgs = e;
+		eq( e.get(), 7 );
 	}
 
 }

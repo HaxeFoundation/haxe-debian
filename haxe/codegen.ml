@@ -33,13 +33,13 @@ let fcall e name el ret p =
 	mk (TCall (field e name ft p,el)) ret p
 
 let string com str p =
-	mk (TConst (TString str)) com.type_api.tstring p
+	mk (TConst (TString str)) com.basic.tstring p
 
 let binop op a b t p =
 	mk (TBinop (op,a,b)) t p
 
 let index com e index t p =
-	mk (TArray (e,mk (TConst (TInt (Int32.of_int index))) com.type_api.tint p)) t p
+	mk (TArray (e,mk (TConst (TInt (Int32.of_int index))) com.basic.tint p)) t p
 
 let concat e1 e2 =
 	let e = (match e1.eexpr, e2.eexpr with
@@ -49,6 +49,23 @@ let concat e1 e2 =
 		| _ , _ -> TBlock [e1;e2]
 	) in
 	mk e e2.etype (punion e1.epos e2.epos)
+
+let type_constant com c p =
+	let t = com.basic in
+	match c with
+	| Int s ->
+		if String.length s > 10 && String.sub s 0 2 = "0x" then error "Invalid hexadecimal integer" p;
+		(try
+			mk (TConst (TInt (Int32.of_string s))) t.tint p
+		with
+			_ -> mk (TConst (TFloat s)) t.tfloat p)
+	| Float f -> mk (TConst (TFloat f)) t.tfloat p
+	| String s -> mk (TConst (TString s)) t.tstring p
+	| Ident "true" -> mk (TConst (TBool true)) t.tbool p
+	| Ident "false" -> mk (TConst (TBool false)) t.tbool p
+	| Ident "null" -> mk (TConst TNull) (t.tnull (mk_mono())) p
+	| Ident t | Type t -> error ("Invalid constant :  " ^ t) p
+	| Regexp _ -> error "Invalid constant" p
 
 (* -------------------------------------------------------------------------- *)
 (* REMOTING PROXYS *)
@@ -71,25 +88,25 @@ let extend_remoting ctx c t p async prot =
 	let decls = (try Typeload.parse_module ctx path p with e -> ctx.com.package_rules <- rules; raise e) in
 	ctx.com.package_rules <- rules;
 	let base_fields = [
-		(FVar ("__cnx",None,[],[],Some (TPNormal { tpackage = ["haxe";"remoting"]; tname = if async then "AsyncConnection" else "Connection"; tparams = []; tsub = None }),None),p);
-		(FFun ("new",None,[],[APublic],[],{ f_args = ["c",false,None,None]; f_type = None; f_expr = (EBinop (OpAssign,(EConst (Ident "__cnx"),p),(EConst (Ident "c"),p)),p) }),p);
+		{ cff_name = "__cnx"; cff_pos = p; cff_doc = None; cff_meta = []; cff_access = []; cff_kind = FVar (Some (CTPath { tpackage = ["haxe";"remoting"]; tname = if async then "AsyncConnection" else "Connection"; tparams = []; tsub = None }),None) };
+		{ cff_name = "new"; cff_pos = p; cff_doc = None; cff_meta = []; cff_access = [APublic]; cff_kind = FFun ([],{ f_args = ["c",false,None,None]; f_type = None; f_expr = (EBinop (OpAssign,(EConst (Ident "__cnx"),p),(EConst (Ident "c"),p)),p) }) };
 	] in
-	let tvoid = TPNormal { tpackage = []; tname = "Void"; tparams = []; tsub = None } in
-	let build_field is_public acc (f,p) =
-		match f with
-		| FFun ("new",_,_,_,_,_) ->
+	let tvoid = CTPath { tpackage = []; tname = "Void"; tparams = []; tsub = None } in
+	let build_field is_public acc f =
+		if f.cff_name = "new" then
 			acc
-		| FFun (name,doc,meta,acl,pl,f) when (is_public || List.mem APublic acl) && not (List.mem AStatic acl) ->
-			if List.exists (fun (_,_,t,_) -> t = None) f.f_args then error ("Field " ^ name ^ " type is not complete and cannot be used by RemotingProxy") p;
-			let eargs = [EArrayDecl (List.map (fun (a,_,_,_) -> (EConst (Ident a),p)) f.f_args),p] in
-			let ftype = (match f.f_type with Some (TPNormal { tpackage = []; tname = "Void" }) -> None | _ -> f.f_type) in
+		else match f.cff_kind with
+		| FFun (pl,fd) when (is_public || List.mem APublic f.cff_access) && not (List.mem AStatic f.cff_access) ->
+			if List.exists (fun (_,_,t,_) -> t = None) fd.f_args then error ("Field " ^ f.cff_name ^ " type is not complete and cannot be used by RemotingProxy") p;
+			let eargs = [EArrayDecl (List.map (fun (a,_,_,_) -> (EConst (Ident a),p)) fd.f_args),p] in
+			let ftype = (match fd.f_type with Some (CTPath { tpackage = []; tname = "Void" }) -> None | _ -> fd.f_type) in
 			let fargs, eargs = if async then match ftype with
-				| Some tret -> f.f_args @ ["__callb",true,Some (TPFunction ([tret],tvoid)),None], eargs @ [EConst (Ident "__callb"),p]
-				| _ -> f.f_args, eargs @ [EConst (Ident "null"),p]
+				| Some tret -> fd.f_args @ ["__callb",true,Some (CTFunction ([tret],tvoid)),None], eargs @ [EConst (Ident "__callb"),p]
+				| _ -> fd.f_args, eargs @ [EConst (Ident "null"),p]
 			else
-				f.f_args, eargs
+				fd.f_args, eargs
 			in
-			let id = (EConst (String name), p) in
+			let id = (EConst (String f.cff_name), p) in
 			let id = if prot then id else ECall ((EConst (Ident "__unprotect__"),p),[id]),p in
 			let expr = ECall (
 				(EField (
@@ -98,12 +115,12 @@ let extend_remoting ctx c t p async prot =
 				,p),eargs),p
 			in
 			let expr = if async || ftype = None then expr else (EReturn (Some expr),p) in
-			let f = {
+			let fd = {
 				f_args = fargs;
 				f_type = if async then None else ftype;
 				f_expr = (EBlock [expr],p);
 			} in
-			(FFun (name,None,[],[APublic],pl,f),p) :: acc
+			{ cff_name = f.cff_name; cff_pos = p; cff_doc = None; cff_meta = []; cff_access = [APublic]; cff_kind = FFun (pl,fd) } :: acc
 		| _ -> acc
 	in
 	let decls = List.map (fun d ->
@@ -143,6 +160,7 @@ let rec build_generic ctx c p tl =
 		let path = (match follow t with
 			| TInst (c,_) -> c.cl_path
 			| TEnum (e,_) -> e.e_path
+			| TMono _ -> error "Type parameter must be explicit when creating a haxe.rtti.Generic instance" p
 			| _ -> error "Type parameter must be a class or enum instance" p
 		) in
 		match path with
@@ -154,14 +172,14 @@ let rec build_generic ctx c p tl =
 	else try
 		Typeload.load_instance ctx { tpackage = pack; tname = name; tparams = []; tsub = None } p false
 	with Error(Module_not_found path,_) when path = (pack,name) ->
-		let m = (try Hashtbl.find ctx.modules (Hashtbl.find ctx.types_module c.cl_path) with Not_found -> assert false) in
+		let m = (try Hashtbl.find ctx.g.modules (Hashtbl.find ctx.g.types_module c.cl_path) with Not_found -> assert false) in
 		let ctx = { ctx with local_types = m.mtypes @ ctx.local_types } in
 		let cg = mk_class (pack,name) c.cl_pos in
 		let mg = {
 			mpath = cg.cl_path;
 			mtypes = [TClassDecl cg];
 		} in
-		Hashtbl.add ctx.modules mg.mpath mg;
+		Hashtbl.add ctx.g.modules mg.mpath mg;
 		let rec loop l1 l2 =
 			match l1, l2 with
 			| [] , [] -> []
@@ -174,7 +192,7 @@ let rec build_generic ctx c p tl =
 			match t with
 			| TInst ({ cl_kind = KGeneric } as c2,tl2) ->
 				(* maybe loop, or generate cascading generics *)
-				let _, _, f = ctx.api.build_instance (TClassDecl c2) p in
+				let _, _, f = ctx.g.do_build_instance ctx (TClassDecl c2) p in
 				f (List.map build_type tl2)
 			| _ ->
 				try List.assq t subst with Not_found -> Type.map build_type t
@@ -201,7 +219,7 @@ let rec build_generic ctx c p tl =
 		cg.cl_interface <- c.cl_interface;
 		cg.cl_constructor <- (match c.cl_constructor with None -> None | Some c -> Some (build_field c));
 		cg.cl_implements <- List.map (fun (i,tl) ->
-			(match build_type (TInst (i, List.map build_type tl)) with
+			(match follow (build_type (TInst (i, List.map build_type tl))) with
 			| TInst (i,tl) -> i, tl
 			| _ -> assert false)
 		) c.cl_implements;
@@ -219,14 +237,13 @@ let extend_xml_proxy ctx c t file p =
 	let t = Typeload.load_complex_type ctx p t in
 	let file = (try Common.find_file ctx.com file with Not_found -> file) in
 	let used = ref PMap.empty in
-	let rec delay() =
-		if !(ctx.delays) <> [] then ctx.delays := !(ctx.delays) @ [[delay]]
-		else PMap.iter (fun id used ->
+	let print_results() =
+		PMap.iter (fun id used ->
 			if not used then ctx.com.warning (id ^ " is not used") p;
 		) (!used)
 	in
 	let check_used = Common.defined ctx.com "check-xml-proxy" in
-	if check_used then delay();
+	if check_used then ctx.g.hook_generate <- print_results :: ctx.g.hook_generate;
 	try
 		let rec loop = function
 			| Xml.Element (_,attrs,childs) ->
@@ -244,8 +261,7 @@ let extend_xml_proxy ctx c t file p =
 						cf_public = true;
 						cf_doc = None;
 						cf_meta = no_meta;
-						cf_get = ResolveAccess;
-						cf_set = NoAccess;
+						cf_kind = Var { v_read = AccResolve; v_write = AccNo };
 						cf_params = [];
 						cf_expr = None;
 					} in
@@ -264,25 +280,41 @@ let extend_xml_proxy ctx c t file p =
 (* BUILD META DATA OBJECT *)
 
 let build_metadata com t =
-	let api = com.type_api in
+	let api = com.basic in
 	let p, meta, fields, statics = (match t with
 		| TClassDecl c ->
-			let fields = List.map (fun f -> f.cf_name,f.cf_meta()) (c.cl_ordered_fields @ (match c.cl_constructor with None -> [] | Some f -> [{ f with cf_name = "_" }])) in
-			let statics =  List.map (fun f -> f.cf_name,f.cf_meta()) c.cl_ordered_statics in
-			(c.cl_pos, ["",c.cl_meta()],fields,statics)
+			let fields = List.map (fun f -> f.cf_name,f.cf_meta) (c.cl_ordered_fields @ (match c.cl_constructor with None -> [] | Some f -> [{ f with cf_name = "_" }])) in
+			let statics =  List.map (fun f -> f.cf_name,f.cf_meta) c.cl_ordered_statics in
+			(c.cl_pos, ["",c.cl_meta],fields,statics)
 		| TEnumDecl e ->
-			(e.e_pos, ["",e.e_meta()],List.map (fun n -> n, (PMap.find n e.e_constrs).ef_meta()) e.e_names, [])
+			(e.e_pos, ["",e.e_meta],List.map (fun n -> n, (PMap.find n e.e_constrs).ef_meta) e.e_names, [])
 		| TTypeDecl t ->
-			(t.t_pos, ["",t.t_meta()],(match follow t.t_type with TAnon a -> PMap.fold (fun f acc -> (f.cf_name,f.cf_meta()) :: acc) a.a_fields [] | _ -> []),[])
+			(t.t_pos, ["",t.t_meta],(match follow t.t_type with TAnon a -> PMap.fold (fun f acc -> (f.cf_name,f.cf_meta) :: acc) a.a_fields [] | _ -> []),[])
 	) in
-	let filter l = 
-		let l = List.map (fun (n,ml) -> n, List.filter (fun (m,_) -> m.[0] <> ':') ml) l in
+	let filter l =
+		let l = List.map (fun (n,ml) -> n, List.filter (fun (m,_,_) -> m.[0] <> ':') ml) l in
 		List.filter (fun (_,ml) -> ml <> []) l
 	in
 	let meta, fields, statics = filter meta, filter fields, filter statics in
+	let rec loop (e,p) =
+		match e with
+		| EConst c ->
+			type_constant com c p
+		| EParenthesis e ->
+			loop e
+		| EObjectDecl el ->
+			mk (TObjectDecl (List.map (fun (n,e) -> n, loop e) el)) (TAnon { a_fields = PMap.empty; a_status = ref Closed }) p
+		| EArrayDecl el ->
+			mk (TArrayDecl (List.map loop el)) (com.basic.tarray t_dynamic) p
+		| _ ->
+			error "Metadata should be constant" p
+	in
 	let make_meta_field ml =
-		mk (TObjectDecl (List.map (fun (f,l) -> 
-			f, mk (match l with [] -> TConst TNull | _ -> TArrayDecl l) (api.tarray t_dynamic) p
+		let h = Hashtbl.create 0 in
+		mk (TObjectDecl (List.map (fun (f,el,p) ->
+			if Hashtbl.mem h f then error ("Duplicate metadata '" ^ f ^ "'") p;
+			Hashtbl.add h f ();
+			f, mk (match el with [] -> TConst TNull | _ -> TArrayDecl (List.map loop el)) (api.tarray t_dynamic) p
 		) ml)) (api.tarray t_dynamic) p
 	in
 	let make_meta l =
@@ -292,10 +324,10 @@ let build_metadata com t =
 		None
 	else
 		let meta_obj = [] in
-		let meta_obj = (if fields = [] then meta_obj else ("fields",make_meta fields) :: meta_obj) in		
+		let meta_obj = (if fields = [] then meta_obj else ("fields",make_meta fields) :: meta_obj) in
 		let meta_obj = (if statics = [] then meta_obj else ("statics",make_meta statics) :: meta_obj) in
 		let meta_obj = (try ("obj", make_meta_field (List.assoc "" meta)) :: meta_obj with Not_found -> meta_obj) in
-		Some (mk (TObjectDecl meta_obj) t_dynamic p)		
+		Some (mk (TObjectDecl meta_obj) t_dynamic p)
 
 (* -------------------------------------------------------------------------- *)
 (* API EVENTS *)
@@ -312,7 +344,7 @@ let build_instance ctx mtype p =
 					unify_raise ctx (build_generic ctx c p pl) t p;
 					t
 				) in
-				ctx.delays := [fun() -> ignore ((!r)())] :: !(ctx.delays);
+				delay ctx (fun() -> ignore ((!r)()));
 				TLazy r
 			| _ ->
 				TInst (c,pl)
@@ -325,13 +357,13 @@ let build_instance ctx mtype p =
 
 let on_inherit ctx c p h =
 	match h with
-	| HExtends { tpackage = ["haxe";"remoting"]; tname = "Proxy"; tparams = [TPType(TPNormal t)] } ->
+	| HExtends { tpackage = ["haxe";"remoting"]; tname = "Proxy"; tparams = [TPType(CTPath t)] } ->
 		extend_remoting ctx c t p false true;
 		false
-	| HExtends { tpackage = ["haxe";"remoting"]; tname = "AsyncProxy"; tparams = [TPType(TPNormal t)] } ->
+	| HExtends { tpackage = ["haxe";"remoting"]; tname = "AsyncProxy"; tparams = [TPType(CTPath t)] } ->
 		extend_remoting ctx c t p true true;
 		false
-	| HExtends { tpackage = ["mt"]; tname = "AsyncProxy"; tparams = [TPType(TPNormal t)] } ->
+	| HExtends { tpackage = ["mt"]; tname = "AsyncProxy"; tparams = [TPType(CTPath t)] } ->
 		extend_remoting ctx c t p true false;
 		false
 	| HImplements { tpackage = ["haxe";"rtti"]; tname = "Generic"; tparams = [] } ->
@@ -355,22 +387,28 @@ let on_generate ctx t =
 	| TClassDecl c ->
 		List.iter (fun m ->
 			match m with
-			| ":native",[{ eexpr = TConst (TString name) }] ->
-				(match List.rev (ExtString.String.nsplit name ".") with
-				| [] -> assert false
-				| name :: path -> c.cl_path <- (List.rev path,name))
+			| ":native",[Ast.EConst (Ast.String name),p],mp ->
+				c.cl_meta <- (":real",[Ast.EConst (Ast.String (s_type_path c.cl_path)),p],mp) :: c.cl_meta;
+				c.cl_path <- parse_path name;
 			| _ -> ()
-		) (c.cl_meta());
+		) c.cl_meta;
 		if has_rtti c && not (PMap.mem "__rtti" c.cl_statics) then begin
-			let f = mk_field "__rtti" ctx.api.tstring in
+			let f = mk_field "__rtti" ctx.t.tstring in
 			let str = Genxml.gen_type_string ctx.com t in
 			f.cf_expr <- Some (mk (TConst (TString str)) f.cf_type c.cl_pos);
 			c.cl_ordered_statics <- f :: c.cl_ordered_statics;
 			c.cl_statics <- PMap.add f.cf_name f c.cl_statics;
 		end;
+		if not ctx.in_macro then List.iter (fun f ->
+			match f.cf_kind with
+			| Method MethMacro ->
+				c.cl_statics <- PMap.remove f.cf_name c.cl_statics;
+				c.cl_ordered_statics <- List.filter (fun f2 -> f != f2) c.cl_ordered_statics;
+			| _ -> ()
+		) c.cl_ordered_statics;
 		(match build_metadata ctx.com t with
 		| None -> ()
-		| Some e -> 
+		| Some e ->
 			let f = mk_field "__meta__" t_dynamic in
 			f.cf_expr <- Some e;
 			c.cl_ordered_statics <- f :: c.cl_ordered_statics;
@@ -458,7 +496,7 @@ let rec local_usage f e =
 	This way, each value is captured independantly.
 *)
 
-let block_vars ctx e =
+let block_vars com e =
 
 	let uid = ref 0 in
 	let gen_unique() =
@@ -466,7 +504,7 @@ let block_vars ctx e =
 		"$t" ^ string_of_int !uid;
 	in
 
-	let t = ctx.type_api in
+	let t = com.basic in
 
 	let rec mk_init v vt vtmp pos =
 		let at = t.tarray vt in
@@ -550,7 +588,7 @@ let block_vars ctx e =
 					v, o, vt
 			) f.tf_args in
 			let e = { e with eexpr = TFunction { f with tf_args = fargs; tf_expr = !fexpr } } in
-			(match ctx.platform with
+			(match com.platform with
 			| Cpp -> e
 			| _ ->
 				let args = List.map (fun (v,t) -> v, None, t) vars in
@@ -628,7 +666,7 @@ let block_vars ctx e =
 	local_usage collect_vars e;
 	if PMap.is_empty !used then e else wrap !used e
 	in
-	match ctx.platform with
+	match com.platform with
 	| Neko | Php | Cross -> e
 	| Cpp -> all_vars e
 	| _ -> out_loop e
@@ -759,9 +797,8 @@ let check_local_vars_init e =
 (* -------------------------------------------------------------------------- *)
 (* POST PROCESS *)
 
-let post_process ctx filters tfilters =
+let post_process ctx filters =
 	List.iter (fun t ->
-		List.iter (fun f -> f t) tfilters;
 		match t with
 		| TClassDecl c ->
 			let process_field f =
@@ -800,7 +837,7 @@ type stack_context = {
 }
 
 let stack_context_init com stack_var exc_var pos_var tmp_var use_add p =
-	let t = com.type_api in
+	let t = com.basic in
 	let st = t.tarray t.tstring in
 	let stack_e = mk (TLocal stack_var) st p in
 	let exc_e = mk (TLocal exc_var) st p in
@@ -888,7 +925,7 @@ let stack_block ctx c m e =
 	on some platforms which doesn't support type parameters, we must have the
 	exact same type for overriden/implemented function as the original one
 *)
-let fix_override c f fd =
+let fix_override com c f fd =
 	c.cl_fields <- PMap.remove f.cf_name c.cl_fields;
 	let rec find_field c interf =
 		try
@@ -915,21 +952,45 @@ let fix_override c f fd =
 	let f = (match f2 with
 		| Some (interf,f2) ->
 			let targs, tret = (match follow f2.cf_type with TFun (args,ret) -> args, ret | _ -> assert false) in
-			let fd2 = { fd with tf_args = List.map2 (fun (n,c,t) (_,_,t2) -> (n,c,t2)) fd.tf_args targs; tf_type = tret } in
+			let changed_args = ref [] in
+			let prefix = "_tmp_" in
+			let nargs = List.map2 (fun ((n,c,t) as cur) (_,_,t2) ->
+				try
+					type_eq EqStrict t t2;
+					cur
+				with Unify_error _ ->
+					changed_args := (n,t,t2) :: !changed_args;
+					(prefix ^ n,c,t2)
+			) fd.tf_args targs in
+			let fd2 = {
+				tf_args = nargs;
+				tf_type = tret;
+				tf_expr = (match List.rev !changed_args with
+					| [] -> fd.tf_expr
+					| args ->
+						let e = fd.tf_expr in
+						let el = (match e.eexpr with TBlock el -> el | _ -> [e]) in
+						let p = (match el with [] -> e.epos | e :: _ -> e.epos) in
+						let v = mk (TVars (List.map (fun (n,t,t2) ->
+							(n,t,Some (mk (TCast (mk (TLocal (prefix ^ n)) t2 p,None)) t p))
+						) args)) com.basic.tvoid p in
+						{ e with eexpr = TBlock (v :: el) }
+				);
+			} in
 			let fde = (match f.cf_expr with None -> assert false | Some e -> e) in
-			{ f with cf_expr = Some { fde with eexpr = TFunction fd2 } }
+			{ f with cf_expr = Some { fde with eexpr = TFunction fd2 }; cf_type = TFun(targs,tret) }
 		| _ -> f
 	) in
 	c.cl_fields <- PMap.add f.cf_name f c.cl_fields;
 	f
 
 let fix_overrides com t =
-	match com.platform, t with
-	| Flash9, TClassDecl c ->
+	match t with
+	| TClassDecl c ->
 		c.cl_ordered_fields <- List.map (fun f ->
-			match f.cf_expr with
-			| Some { eexpr = TFunction fd } when f.cf_set <> NormalAccess && f.cf_set <> MethodAccess true ->
-				fix_override c f fd
+			match f.cf_expr, f.cf_kind with
+			| Some { eexpr = TFunction fd }, Method (MethNormal | MethInline) ->
+				fix_override com c f fd
 			| _ ->
 				f
 		) c.cl_ordered_fields
@@ -1009,7 +1070,8 @@ let rec is_volatile t =
 
 let set_default ctx a c t p =
 	let ve = mk (TLocal a) t p in
-	mk (TIf (mk (TBinop (OpEq,ve,mk (TConst TNull) t p)) ctx.type_api.tbool p, mk (TBinop (OpAssign,ve,mk (TConst c) t p)) t p,None)) ctx.type_api.tvoid p
+	let cond =  TBinop (OpEq,ve,mk (TConst TNull) t p) in
+	mk (TIf (mk cond ctx.basic.tbool p, mk (TBinop (OpAssign,ve,mk (TConst c) t p)) t p,None)) ctx.basic.tvoid p
 
 let bytes_serialize data =
 	let b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%:" in
@@ -1060,7 +1122,7 @@ let dump_types com =
 		| Type.TClassDecl c ->
 			let print_field stat f =
 				print "\t%s%s%s%s" (if stat then "static " else "") (if f.cf_public then "public " else "") f.cf_name (params f.cf_params);
-				print "(%s,%s) : %s" (s_access f.cf_get) (s_access f.cf_set) (s_type f.cf_type);
+				print "(%s) : %s" (s_kind f.cf_kind) (s_type f.cf_type);
 				(match f.cf_expr with
 				| None -> ()
 				| Some e -> print "\n\n\t = %s" (Type.s_expr s_type e));
@@ -1097,17 +1159,16 @@ let dump_types com =
 	{ var $t = <e>; if( Std.is($t,<t>) ) $t else throw "Class cast error"; }
 *)
 let default_cast ?(vtmp="$t") com e texpr t p =
-	let api = com.type_api in
+	let api = com.basic in
 	let mk_texpr = function
 		| TClassDecl c -> TAnon { a_fields = PMap.empty; a_status = ref (Statics c) }
 		| TEnumDecl e -> TAnon { a_fields = PMap.empty; a_status = ref (EnumStatics e) }
 		| TTypeDecl _ -> assert false
-	in	
+	in
 	let var = mk (TVars [(vtmp,e.etype,Some e)]) api.tvoid p in
 	let vexpr = mk (TLocal vtmp) e.etype p in
 	let texpr = mk (TTypeExpr texpr) (mk_texpr texpr) p in
-	let std = (match (api.load_module ([],"Std") p).mtypes with [std] -> std | _ -> assert false) in
-	(*Typeload.load_type_def ctx p { tpackage = []; tname = "Std"; tparams = []; tsub = None } in *)
+	let std = (try List.find (fun t -> t_path t = ([],"Std")) com.types with Not_found -> assert false) in
 	let std = mk (TTypeExpr std) (mk_texpr std) p in
 	let is = mk (TField (std,"is")) (tfun [t_dynamic;t_dynamic] api.tbool) p in
 	let is = mk (TCall (is,[vexpr;texpr])) api.tbool p in

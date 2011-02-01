@@ -34,10 +34,11 @@ type ctx = {
 	mutable handle_break : bool;
 	mutable id_counter : int;
 	mutable curmethod : (string * bool);
+	mutable type_accessor : module_type -> string;
+	mutable separator : bool;
 }
 
 let s_path ctx = function
-	| ([],"@Main") -> "$Main"
 	| ([],p) -> 
 		(match ctx.namespace with
 		| None -> p
@@ -58,15 +59,16 @@ let kwds =
 
 let field s = if Hashtbl.mem kwds s then "[\"" ^ s ^ "\"]" else "." ^ s
 let ident s = if Hashtbl.mem kwds s then "$" ^ s else s
+let anon_field s = if Hashtbl.mem kwds s then "'" ^ s ^ "'" else s
 
-let spr ctx s = Buffer.add_string ctx.buf s
-let print ctx = Printf.kprintf (fun s -> Buffer.add_string ctx.buf s)
+let spr ctx s = ctx.separator <- false; Buffer.add_string ctx.buf s
+let print ctx = ctx.separator <- false; Printf.kprintf (fun s -> Buffer.add_string ctx.buf s)
 
 let unsupported p = error "This expression cannot be compiled to Javascript" p
 
-let newline ctx =
+let newline ctx =	
 	match Buffer.nth ctx.buf (Buffer.length ctx.buf - 1) with
-	| '}' | '{' | ':' -> print ctx "\n%s" ctx.tabs
+	| '}' | '{' | ':' when not ctx.separator -> print ctx "\n%s" ctx.tabs	
 	| _ -> print ctx ";\n%s" ctx.tabs
 
 let rec concat ctx s f = function
@@ -147,19 +149,19 @@ let rec gen_call ctx e el =
 	match e.eexpr , el with
 	| TConst TSuper , params ->
 		(match ctx.current.cl_super with
-		| None -> assert false
+		| None -> error "Missing setDebugInfos current class" e.epos
 		| Some (c,_) ->
-			print ctx "%s.apply(%s,[" (s_path ctx c.cl_path) (this ctx);
-			concat ctx "," (gen_value ctx) params;
-			spr ctx "])";
+			print ctx "%s.call(%s" (ctx.type_accessor (TClassDecl c)) (this ctx);
+			List.iter (fun p -> print ctx ","; gen_value ctx p) params;
+			spr ctx ")";
 		);
 	| TField ({ eexpr = TConst TSuper },name) , params ->
 		(match ctx.current.cl_super with
-		| None -> assert false
+		| None -> error "Missing setDebugInfos current class" e.epos
 		| Some (c,_) ->
-			print ctx "%s.prototype%s.apply(%s,[" (s_path ctx c.cl_path) (field name) (this ctx);
-			concat ctx "," (gen_value ctx) params;
-			spr ctx "])";
+			print ctx "%s.prototype%s.call(%s" (ctx.type_accessor (TClassDecl c)) (field name) (this ctx);
+			List.iter (fun p -> print ctx ","; gen_value ctx p) params;
+			spr ctx ")";
 		);
 	| TCall (x,_) , el when x.eexpr <> TLocal "__js__" ->
 		spr ctx "(";
@@ -197,35 +199,21 @@ let rec gen_call ctx e el =
 		concat ctx "," (gen_value ctx) el;
 		spr ctx ")"
 
-and gen_value_op ctx e =
-	match e.eexpr with
-	| TBinop (op,_,_) when op = Ast.OpAnd || op = Ast.OpOr || op = Ast.OpXor ->
-		spr ctx "(";
-		gen_value ctx e;
-		spr ctx ")";
-	| _ ->
-		gen_value ctx e
-
 and gen_expr ctx e =
 	match e.eexpr with
 	| TConst c -> gen_constant ctx e.epos c
 	| TLocal s -> spr ctx (ident s)
 	| TEnumField (e,s) ->
-		print ctx "%s%s" (s_path ctx e.e_path) (field s)
+		print ctx "%s%s" (ctx.type_accessor (TEnumDecl e)) (field s)
 	| TArray (e1,e2) ->
 		gen_value ctx e1;
 		spr ctx "[";
 		gen_value ctx e2;
 		spr ctx "]";
-	| TBinop (op,{ eexpr = TField (e1,s) },e2) ->
-		gen_value_op ctx e1;
-		spr ctx (field s);
-		print ctx " %s " (Ast.s_binop op);
-		gen_value_op ctx e2;
 	| TBinop (op,e1,e2) ->
-		gen_value_op ctx e1;
+		gen_value ctx e1;
 		print ctx " %s " (Ast.s_binop op);
-		gen_value_op ctx e2;
+		gen_value ctx e2;
 	| TField (x,s) ->
 		gen_value ctx x;
 		spr ctx (field s)
@@ -236,7 +224,7 @@ and gen_expr ctx e =
 		gen_constant ctx e.epos (TString s);
 		spr ctx ")";
 	| TTypeExpr t ->
-		spr ctx (s_path ctx (t_path t))
+		spr ctx (ctx.type_accessor t)
 	| TParenthesis e ->
 		spr ctx "(";
 		gen_value ctx e;
@@ -270,7 +258,7 @@ and gen_expr ctx e =
 		ctx.in_value <- false;
 		ctx.in_loop <- false;
 		if snd ctx.curmethod then
-			ctx.curmethod <- (fst ctx.curmethod ^ "@" ^ string_of_int (Lexer.find_line_index ctx.com.lines e.epos), true)
+			ctx.curmethod <- (fst ctx.curmethod ^ "@" ^ string_of_int (Lexer.get_error_line e.epos), true)
 		else
 			ctx.curmethod <- (fst ctx.curmethod, true);
 		print ctx "function(%s) " (String.concat "," (List.map ident (List.map arg_name f.tf_args)));
@@ -300,7 +288,7 @@ and gen_expr ctx e =
 				gen_value ctx e
 		) vl;
 	| TNew (c,_,el) ->
-		print ctx "new %s(" (s_path ctx c.cl_path);
+		print ctx "new %s(" (ctx.type_accessor (TClassDecl c));
 		concat ctx "," (gen_value ctx) el;
 		spr ctx ")"
 	| TIf (cond,e,eelse) ->
@@ -336,8 +324,9 @@ and gen_expr ctx e =
 		handle_break();
 	| TObjectDecl fields ->
 		spr ctx "{ ";
-		concat ctx ", " (fun (f,e) -> print ctx "%s : " f; gen_value ctx e) fields;
-		spr ctx "}"
+		concat ctx ", " (fun (f,e) -> print ctx "%s : " (anon_field f); gen_value ctx e) fields;
+		spr ctx "}";
+		ctx.separator <- true
 	| TFor (v,_,it,e) ->
 		let handle_break = handle_break ctx e in
 		let id = ctx.id_counter in
@@ -388,7 +377,7 @@ and gen_expr ctx e =
 				newline ctx;
 				spr ctx "}"
 			| Some t ->
-				print ctx "if( js.Boot.__instanceof($e%d," id;
+				print ctx "if( %s.__instanceof($e%d," (ctx.type_accessor (TClassDecl { null_class with cl_path = ["js"],"Boot" })) id;
 				gen_value ctx (mk (TTypeExpr t) (mk_mono()) e.epos);
 				spr ctx ") ) {";
 				let bend = open_block ctx in
@@ -448,9 +437,13 @@ and gen_expr ctx e =
 		newline ctx;
 		List.iter (fun (el,e2) ->
 			List.iter (fun e ->
-				spr ctx "case ";
-				gen_value ctx e;
-				spr ctx ":";
+				match e.eexpr with
+				| TConst(c) when c = TNull ->
+					spr ctx "case null: case undefined:";
+				| _ ->
+					spr ctx "case ";
+					gen_value ctx e;
+					spr ctx ":"
 			) el;
 			gen_expr ctx (mk_block e2);
 			print ctx "break";
@@ -553,7 +546,12 @@ and gen_value ctx e =
 		loop el;
 		v();
 	| TIf (cond,e,eo) ->
-		spr ctx "(";
+		(* remove parenthesis unless it's an operation with higher precedence than ?: *)
+		let cond = (match cond.eexpr with
+			| TParenthesis { eexpr = TBinop ((Ast.OpAssign | Ast.OpAssignOp _),_,_) } -> cond
+			| TParenthesis e -> e
+			| _ -> cond
+		) in
 		gen_value ctx cond;
 		spr ctx "?";
 		gen_value ctx e;
@@ -561,7 +559,6 @@ and gen_value ctx e =
 		(match eo with
 		| None -> spr ctx "null"
 		| Some e -> gen_value ctx e);
-		spr ctx ")"
 	| TSwitch (cond,cases,def) ->
 		let v = value true in
 		gen_expr ctx (mk (TSwitch (cond,
@@ -600,7 +597,14 @@ let generate_package_create ctx (p,_) =
 	in
 	loop [] p
 
+let check_field_name c f =
+	match f.cf_name with
+	| "prototype" | "__proto__" | "constructor" -> 
+		error ("The field name '" ^ f.cf_name ^ "'  is not allowed in JS") (match f.cf_expr with None -> c.cl_pos | Some e -> e.epos);
+	| _ -> ()
+
 let gen_class_static_field ctx c f =
+	check_field_name c f;
 	match f.cf_expr with
 	| None ->
 		print ctx "%s%s = null" (s_path ctx c.cl_path) (field f.cf_name);
@@ -617,6 +621,7 @@ let gen_class_static_field ctx c f =
 			ctx.statics <- (c,f.cf_name,e) :: ctx.statics
 
 let gen_class_field ctx c f =
+	check_field_name c f;
 	print ctx "%s.prototype%s = " (s_path ctx c.cl_path) (field f.cf_name);
 	match f.cf_expr with
 	| None ->
@@ -628,6 +633,16 @@ let gen_class_field ctx c f =
 		gen_value ctx e;
 		newline ctx
 
+let gen_constructor ctx e =
+	match e.eexpr with
+	| TFunction f  ->
+		let args  = List.map arg_name f.tf_args in
+		let a, args = (match args with [] -> "p" , ["p"] | x :: _ -> x, args) in
+		print ctx "function(%s) { if( %s === $_ ) return; " (String.concat "," (List.map ident args)) a;
+		gen_expr ctx (fun_block ctx f e.epos);
+		print ctx "}";
+	| _ -> assert false
+
 let generate_class ctx c =
 	ctx.current <- c;
 	ctx.curmethod <- ("new",true);
@@ -636,15 +651,7 @@ let generate_class ctx c =
 	generate_package_create ctx c.cl_path;
 	print ctx "%s = " p;
 	(match c.cl_constructor with
-	| Some { cf_expr = Some e } ->
-		(match e with
-		| { eexpr = TFunction f } ->
-			let args  = List.map arg_name f.tf_args in
-			let a, args = (match args with [] -> "p" , ["p"] | x :: _ -> x, args) in
-			print ctx "function(%s) { if( %s === $_ ) return; " (String.concat "," (List.map ident args)) a;
-			gen_expr ctx (fun_block ctx f e.epos);
-			print ctx "}";
-		| _ -> assert false)
+	| Some { cf_expr = Some e } -> gen_constructor ctx e
 	| _ -> print ctx "function() { }");
 	newline ctx;
 	print ctx "%s.__name__ = [%s]" p (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" (Ast.s_escape s)) (fst c.cl_path @ [snd c.cl_path])));
@@ -659,7 +666,7 @@ let generate_class ctx c =
 		newline ctx;
 	);
 	List.iter (gen_class_static_field ctx c) c.cl_ordered_statics;
-	PMap.iter (fun _ f -> if f.cf_get <> ResolveAccess then gen_class_field ctx c f) c.cl_fields;
+	List.iter (fun f -> match f.cf_kind with Var { v_read = AccResolve } -> () | _ -> gen_class_field ctx c f) c.cl_ordered_fields;
 	print ctx "%s.prototype.__class__ = %s" p p;
 	newline ctx;
 	match c.cl_implements with
@@ -674,7 +681,8 @@ let generate_enum ctx e =
 	let ename = List.map (fun s -> Printf.sprintf "\"%s\"" (Ast.s_escape s)) (fst e.e_path @ [snd e.e_path]) in
 	print ctx "%s = { __ename__ : [%s], __constructs__ : [%s] }" p (String.concat "," ename) (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" s) e.e_names));
 	newline ctx;
-	PMap.iter (fun _ f ->
+	List.iter (fun n ->
+		let f = PMap.find n e.e_constrs in
 		print ctx "%s%s = " p (field f.ef_name);
 		(match f.ef_type with
 		| TFun (args,_) ->
@@ -688,7 +696,7 @@ let generate_enum ctx e =
 			print ctx "%s%s.__enum__ = %s" p (field f.ef_name) p;
 		);
 		newline ctx
-	) e.e_constrs;
+	) e.e_names;
 	match Codegen.build_metadata ctx.com (TEnumDecl e) with
 	| None -> ()
 	| Some e ->
@@ -712,7 +720,7 @@ let generate_type ctx = function
 	| TEnumDecl e -> generate_enum ctx e
 	| TTypeDecl _ -> ()
 
-let generate com =
+let alloc_ctx com =
 	let ctx = {
 		com = com;
 		stack = Codegen.stack_init com false;
@@ -728,8 +736,29 @@ let generate com =
 		handle_break = false;
 		id_counter = 0;
 		curmethod = ("",false);
+		type_accessor = (fun _ -> assert false);
+		separator = false;
 	} in
+	ctx.type_accessor <- (fun t -> s_path ctx (t_path t));
+	ctx
+
+let gen_single_expr ctx e constr =
+	if constr then gen_constructor ctx e else gen_value ctx e;
+	let str = Buffer.contents ctx.buf in
+	Buffer.reset ctx.buf;
+	ctx.id_counter <- 0;
+	str
+
+let set_debug_infos ctx c m s =
+	ctx.current <- c;
+	ctx.curmethod <- (m,s)
+
+let generate com =
 	let t = Common.timer "generate js" in
+	(match com.js_gen with
+	| Some g -> g()
+	| None ->
+	let ctx = alloc_ctx com in
 	print ctx "$estr = function() { return js.Boot.__string_rec(this,''); }";
 	newline ctx;
 	(match ctx.namespace with
@@ -760,8 +789,11 @@ let generate com =
 		newline ctx;
 	) (List.rev ctx.inits);
 	List.iter (generate_static ctx) (List.rev ctx.statics);
+	(match com.main with
+	| None -> ()
+	| Some e -> gen_expr ctx e);
 	let ch = open_out_bin com.file in
 	output_string ch (Buffer.contents ctx.buf);
-	close_out ch;
+	close_out ch);
 	t()
 

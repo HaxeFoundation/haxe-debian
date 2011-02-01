@@ -34,8 +34,7 @@ type platform =
 
 type pos = Ast.pos
 
-type context_type_api = {
-	(* basic types *)
+type basic_types = {
 	mutable tvoid : t;
 	mutable tint : t;
 	mutable tfloat : t;
@@ -43,21 +42,16 @@ type context_type_api = {
 	mutable tnull : t -> t;
 	mutable tstring : t;
 	mutable tarray : t -> t;
-	(* api *)
-	mutable load_module : path -> pos -> module_def;
-	mutable build_instance : module_type -> pos -> ((string * t) list * path * (t list -> t));
-	mutable on_generate : module_type -> unit;
-	mutable get_type_module : module_type -> module_def;
-	mutable optimize : texpr -> texpr;
-	mutable load_extern_type : (path -> pos -> Ast.package) list;
 }
 
 type context = {
 	(* config *)
 	version : int;
+	mutable display : bool;
 	mutable debug : bool;
 	mutable verbose : bool;
 	mutable foptimize : bool;
+	mutable dead_code_elimination : bool;
 	mutable platform : platform;
 	mutable std_path : string list;
 	mutable class_path : string list;
@@ -67,29 +61,36 @@ type context = {
 	mutable error : string -> pos -> unit;
 	mutable warning : string -> pos -> unit;
 	mutable js_namespace : string option;
+	mutable load_extern_type : (path -> pos -> Ast.package option) list; (* allow finding types which are not in sources *)
+	mutable filters : (unit -> unit) list;
 	(* output *)
 	mutable file : string;
-	mutable flash_version : int;
+	mutable flash_version : float;
+	mutable modules : Type.module_def list;
+	mutable main : Type.texpr option;
 	mutable types : Type.module_type list;
 	mutable resources : (string,string) Hashtbl.t;
 	mutable php_front : string option;
+	mutable php_lib : string option;
 	mutable swf_libs : (string * (unit -> Swf.swf) * (unit -> ((string list * string),As3hl.hl_class) Hashtbl.t)) list;
+	mutable js_gen : (unit -> unit) option;
 	(* typing *)
-	mutable type_api : context_type_api;
-	mutable lines : Lexer.line_index;
+	mutable basic : basic_types;
 }
 
 exception Abort of string * Ast.pos
 
-let display = ref false
+let display_default = ref false
 
 let create v =
 	let m = Type.mk_mono() in
 	{
 		version = v;
 		debug = false;
+		display = !display_default;
 		verbose = false;
 		foptimize = true;
+		dead_code_elimination = false;
 		platform = Cross;
 		std_path = [];
 		class_path = [];
@@ -98,14 +99,20 @@ let create v =
 		package_rules = PMap.empty;
 		file = "";
 		types = [];
-		flash_version = 8;
+		filters = [];
+		modules = [];
+		main = None;
+		flash_version = 10.;
 		resources = Hashtbl.create 0;
 		php_front = None;
+		php_lib = None;
 		swf_libs = [];
 		js_namespace = None;
+		js_gen = None;
+		load_extern_type = [];
 		warning = (fun _ _ -> assert false);
 		error = (fun _ _ -> assert false);
-		type_api = {
+		basic = {
 			tvoid = m;
 			tint = m;
 			tfloat = m;
@@ -113,15 +120,30 @@ let create v =
 			tnull = (fun _ -> assert false);
 			tstring = m;
 			tarray = (fun _ -> assert false);
-			load_module = (fun _ _ -> assert false);
-			build_instance = (fun _ _ -> assert false);
-			on_generate = (fun _ -> ());
-			get_type_module = (fun _ -> assert false);
-			optimize = (fun _ -> assert false);
-			load_extern_type = [];
-		};
-		lines = Lexer.build_line_index();
+		};		
 	}
+
+let clone com =
+	let t = com.basic in
+	{ com with basic = { t with tvoid = t.tvoid } }
+
+let platforms = [
+	Flash;
+	Js;
+	Neko;
+	Flash9;
+	Php;
+	Cpp
+]
+
+let platform_name = function
+	| Cross -> "cross"
+	| Flash -> "flash"
+	| Js -> "js"
+	| Neko -> "neko"
+	| Flash9 -> "flash9"
+	| Php -> "php"
+	| Cpp -> "cpp"
 
 let defined ctx v = PMap.mem v ctx.defines
 
@@ -130,9 +152,19 @@ let define ctx v =
 	let v = String.concat "_" (ExtString.String.nsplit v "-") in
 	ctx.defines <- PMap.add v () ctx.defines
 
+let init_platform com pf =
+	com.platform <- pf;
+	let name = platform_name pf in
+	let forbid acc p = if p = name || PMap.mem p acc then acc else PMap.add p Forbidden acc in
+	com.package_rules <- List.fold_left forbid com.package_rules (List.map platform_name platforms);
+	define com name
+
 let error msg p = raise (Abort (msg,p))
 
 let platform ctx p = ctx.platform = p
+
+let add_filter ctx f =
+	ctx.filters <- f :: ctx.filters
 
 let find_file ctx f =
 	let rec loop = function
@@ -171,12 +203,18 @@ let new_timer name =
 
 let curtime = ref []
 
+let close t =
+	let dt = get_time() -. t.start in
+	t.total <- t.total +. dt;
+	curtime := List.tl !curtime;
+	List.iter (fun ct -> ct.start <- ct.start +. dt) !curtime
+
 let timer name =
 	let t = new_timer name in
 	curtime := t :: !curtime;
-	(function() ->
-		let dt = get_time() -. t.start in
-		t.total <- t.total +. dt;
-		curtime := List.tl !curtime;
-		List.iter (fun ct -> ct.start <- ct.start +. dt) !curtime
-	)
+	(function() -> close t)
+
+let rec close_time() =
+	match !curtime with
+	| [] -> ()
+	| t :: _ -> close t	

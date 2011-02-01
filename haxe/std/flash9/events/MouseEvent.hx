@@ -5,13 +5,14 @@ extern class MouseEvent extends Event {
 	var buttonDown : Bool;
 	var ctrlKey : Bool;
 	var delta : Int;
+	@:require(flash10) var isRelatedObjectInaccessible : Bool;
 	var localX : Float;
 	var localY : Float;
 	var relatedObject : flash.display.InteractiveObject;
 	var shiftKey : Bool;
 	var stageX(default,null) : Float;
 	var stageY(default,null) : Float;
-	function new(type : String, ?bubbles : Bool, ?cancelable : Bool, ?localX : Float, ?localY : Float, ?relatedObject : flash.display.InteractiveObject, ?ctrlKey : Bool, ?altKey : Bool, ?shiftKey : Bool, ?buttonDown : Bool, ?delta : Int) : Void;
+	function new(type : String, bubbles : Bool = true, cancelable : Bool = false, ?localX : Float, ?localY : Float, ?relatedObject : flash.display.InteractiveObject, ctrlKey : Bool = false, altKey : Bool = false, shiftKey : Bool = false, buttonDown : Bool = false, delta : Int = 0) : Void;
 	function updateAfterEvent() : Void;
 	static var CLICK : String;
 	static var DOUBLE_CLICK : String;

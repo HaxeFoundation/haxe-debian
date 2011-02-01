@@ -93,6 +93,7 @@ type push_style =
 	| VReg of int
 	| VThis
 	| VNull
+	| VUndefined
 	| VSuper
 
 let stack_delta = function
@@ -242,6 +243,8 @@ let push ctx items =
 			PReg 1
 		| VNull ->
 			PNull
+		| VUndefined ->
+			PUndefined
 		| VSuper ->
 			PReg 2
 		| VReg n ->
@@ -884,6 +887,8 @@ and gen_call ctx e el =
 		write ctx AEval
 	| TLocal "__gettimer__", [] ->
 		write ctx AGetTimer
+	| TLocal "__undefined__", [] ->
+		push ctx [VUndefined]		
 	| TLocal "__geturl__" , url :: target :: post ->
 		gen_expr ctx true url;
 		gen_expr ctx true target;
@@ -1016,7 +1021,7 @@ and gen_expr_2 ctx retval e =
 		let old_meth = ctx.curmethod in
 		let reg_super = Codegen.local_find true "super" f.tf_expr in
 		if snd ctx.curmethod then
-			ctx.curmethod <- (fst ctx.curmethod ^ "@" ^ string_of_int (Lexer.find_line_index ctx.com.lines e.epos), true)
+			ctx.curmethod <- (fst ctx.curmethod ^ "@" ^ string_of_int (Lexer.get_error_line e.epos), true)
 		else
 			ctx.curmethod <- (fst ctx.curmethod, true);
 		(* only keep None bindings, for protect *)
@@ -1402,7 +1407,7 @@ let gen_type_def ctx t =
 		let flag = is_protected ctx ~stat:true (TInst (c,[])) "" in
 		List.iter (gen_class_static_field ctx c flag) c.cl_ordered_statics;
 		let flag = is_protected ctx (TInst (c,[])) "" in
-		PMap.iter (fun _ f -> if f.cf_get <> ResolveAccess then gen_class_field ctx flag f) c.cl_fields;
+		PMap.iter (fun _ f -> match f.cf_kind with Var { v_read = AccResolve } -> () | _ -> gen_class_field ctx flag f) c.cl_fields;
 	| TEnumDecl e when e.e_extern ->
 		()
 	| TEnumDecl e ->
@@ -1489,7 +1494,7 @@ let generate com =
 	let ctx = {
 		com = com;
 		stack = Codegen.stack_init com true;
-		flash6 = com.flash_version = 6;
+		flash6 = com.flash_version = 6.;
 		segs = [];
 		opcodes = DynArray.create();
 		code_pos = 0;
@@ -1547,6 +1552,9 @@ let generate com =
 	List.iter (gen_expr ctx false) (List.rev ctx.inits);
 	let global_try = gen_try ctx in
 	List.iter (gen_class_static_init ctx) (List.rev ctx.statics);
+	(match com.main with
+	| None -> ()
+	| Some e -> gen_expr ctx false e);
 	ctx.static_init <- false;
 	let end_try = global_try() in
 	(* flash.Boot.__trace(exc) *)

@@ -25,6 +25,7 @@ type error_msg =
 	| Unclosed_macro
 	| Unimplemented
 	| Missing_type
+	| Custom of string
 
 exception Error of error_msg * pos
 exception TypePath of string list * string option
@@ -37,6 +38,7 @@ let error_msg = function
 	| Unclosed_macro -> "Unclosed macro"
 	| Unimplemented -> "Not implemented for current platform"
 	| Missing_type -> "Missing type declaration"
+	| Custom s -> s
 
 let error m p = raise (Error (m,p))
 let display_error : (error_msg -> pos -> unit) ref = ref (fun _ _ -> assert false)
@@ -58,37 +60,34 @@ let display e = raise (Display e)
 
 let is_resuming p =
 	let p2 = !resume_display in
-	p.pmax = p2.pmin && String.lowercase (Common.get_full_path p.pfile) = p2.pfile
+	p.pmax = p2.pmin && String.lowercase (Common.get_full_path p.pfile) = String.lowercase p2.pfile
 
-let priority = function
-	| OpAssign | OpAssignOp _ -> -4
-	| OpBoolOr -> -3
-	| OpBoolAnd -> -2
-	| OpInterval -> -2
-	| OpEq | OpNotEq | OpGt | OpLt | OpGte | OpLte -> -1
-	| OpOr | OpAnd | OpXor -> 0
-	| OpShl | OpShr | OpUShr -> 1
-	| OpAdd | OpSub -> 2
-	| OpMult | OpDiv -> 3
-	| OpMod -> 4
+let precedence op =
+	let left = true and right = false in
+	match op with
+	| OpMod -> 0, left
+	| OpMult | OpDiv -> 1, left
+	| OpAdd | OpSub -> 2, left
+	| OpShl | OpShr | OpUShr -> 3, left
+	| OpOr | OpAnd | OpXor -> 4, left
+	| OpEq | OpNotEq | OpGt | OpLt | OpGte | OpLte -> 5, left
+	| OpInterval -> 6, left
+	| OpBoolAnd -> 7, left
+	| OpBoolOr -> 8, left
+	| OpAssign | OpAssignOp _ -> 9, right
 
 let is_not_assign = function
 	| OpAssign | OpAssignOp _ -> false
 	| _ -> true
 
-let swap _op op =
-	let p1 = priority _op in
-	let p2 = priority op in
-	if p1 < p2 then
-		is_not_assign _op || is_not_assign op
-	else if p1 = p2 && p1 >= 0 then (* numerical ops are left-assoc *)
-		is_not_assign _op || is_not_assign op
-	else
-		false
+let swap op1 op2 =
+	let p1, left1 = precedence op1 in
+	let p2, _ = precedence op2 in
+	left1 && p1 <= p2
 
 let rec make_binop op e ((v,p2) as e2) =
 	match v with
-	| EBinop (_op,_e,_e2) when swap _op op ->
+	| EBinop (_op,_e,_e2) when swap op _op ->
 		let _e = make_binop op e _e in
 		EBinop (_op,_e,_e2) , punion (pos _e) (pos _e2)
 	| ETernary (e1,e2,e3) when is_not_assign op ->
@@ -100,6 +99,7 @@ let rec make_binop op e ((v,p2) as e2) =
 let rec make_unop op ((v,p2) as e) p1 =
 	match v with
 	| EBinop (bop,e,e2) -> EBinop (bop, make_unop op e p1 , e2) , (punion p1 p2)
+	| ETernary (e1,e2,e3) -> ETernary (make_unop op e1 p1 , e2, e3), punion p1 p2
 	| _ ->
 		EUnop (op,Prefix,e), punion p1 p2
 
@@ -163,8 +163,8 @@ let rec	parse_file s =
 
 and parse_type_decl s =
 	match s with parser
-	| [< '(Kwd Import,p1); t = parse_type_path_normal; p2 = semicolon >] -> EImport t, punion p1 p2
-	| [< '(Kwd Using,p1); t = parse_type_path_normal; p2 = semicolon >] -> EUsing t, punion p1 p2
+	| [< '(Kwd Import,p1); t = parse_type_path; p2 = semicolon >] -> EImport t, punion p1 p2
+	| [< '(Kwd Using,p1); t = parse_type_path; p2 = semicolon >] -> EUsing t, punion p1 p2
 	| [< meta = parse_meta; c = parse_common_flags; s >] ->
 		match s with parser
 		| [< n , p1 = parse_enum_flags; doc = get_doc; '(Const (Type name),_); tl = parse_constraint_params; '(BrOpen,_); l = plist parse_enum; '(BrClose,p2) >] ->
@@ -189,7 +189,7 @@ and parse_type_decl s =
 				d_flags = List.map fst c @ n @ hl;
 				d_data = fl;
 			}, punion p1 p2)
-		| [< '(Kwd Typedef,p1); doc = get_doc; '(Const (Type name),p2); tl = parse_constraint_params; '(Binop OpAssign,_); t = parse_type_path; s >] ->
+		| [< '(Kwd Typedef,p1); doc = get_doc; '(Const (Type name),p2); tl = parse_constraint_params; '(Binop OpAssign,_); t = parse_complex_type; s >] ->
 			(match s with parser
 			| [< '(Semicolon,_) >] -> ()
 			| [< >] -> ());
@@ -207,40 +207,37 @@ and parse_package s = psep Dot ident s
 and parse_class_field_resume s =
 	if not (do_resume()) then
 		plist parse_class_field s
-	else
+	else try
+		let c = parse_class_field s in
+		c :: parse_class_field_resume s
+	with Stream.Error _ | Stream.Failure -> try
 		(* junk all tokens until we reach next variable/function or next type declaration *)
 		let rec loop() =
 			(match List.map fst (Stream.npeek 2 s) with
-			| At :: _ | Kwd Public :: _ | Kwd Static :: _ | Kwd Var :: _ | Kwd Override :: _ | Kwd Dynamic :: _ ->
+			| At :: _ | Kwd Public :: _ | Kwd Static :: _ | Kwd Var :: _ | Kwd Override :: _ | Kwd Dynamic :: _ | Kwd Inline :: _ ->
 				raise Exit
 			| [] | Eof :: _ | Kwd Import :: _ | Kwd Using :: _ | Kwd Extern :: _ | Kwd Class :: _ | Kwd Interface :: _ | Kwd Enum :: _ | Kwd Typedef :: _ ->
 				raise Not_found
-			| [Kwd Private; Kwd Function]
-			| [Kwd Private; Kwd Var] ->
-				raise Exit
 			| [Kwd Private; Kwd Class]
 			| [Kwd Private; Kwd Interface]
 			| [Kwd Private; Kwd Enum]
 			| [Kwd Private; Kwd Typedef] ->
 				raise Not_found
+			| Kwd Private :: _ ->
+				raise Exit
 			| [Kwd Function; Const _]
 			| [Kwd Function; Kwd New] ->
 				raise Exit
+			| [BrClose; At] ->
+				raise Not_found
 			| _ -> ());
 			Stream.junk s;
 			loop();
 		in
-		try
-			loop();
-		with
-			| Not_found ->
-				[]
-			| Exit ->
-				try
-					let c = parse_class_field s in
-					c :: parse_class_field_resume s
-				with
-					Stream.Error _ | Stream.Failure -> parse_class_field_resume s
+		loop()
+	with
+		| Not_found -> [] (* we have reached the next type declaration *)
+		| Exit -> parse_class_field_resume s
 
 and parse_common_flags = parser
 	| [< '(Kwd Private,_); l = parse_common_flags >] -> (HPrivate, EPrivate) :: l
@@ -248,17 +245,17 @@ and parse_common_flags = parser
 	| [< >] -> []
 
 and parse_meta = parser
-	| [< '(At,_); name = meta_name; s >] ->		
+	| [< '(At,_); name,p = meta_name; s >] ->
 		(match s with parser
-		| [< '(POpen,_); params = psep Comma expr; '(PClose,_); s >] -> (name,params) :: parse_meta s
-		| [< >] -> (name,[]) :: parse_meta s)
+		| [< '(POpen,_); params = psep Comma expr; '(PClose,_); s >] -> (name,params,p) :: parse_meta s
+		| [< >] -> (name,[],p) :: parse_meta s)
 	| [< >] -> []
 
 and meta_name = parser
-	| [< '(Const (Ident i),_) >] -> i
-	| [< '(Const (Type t),_) >] -> t
-	| [< '(Kwd k,_) >] -> s_keyword k
-	| [< '(DblDot,_); s >] -> ":" ^ meta_name s
+	| [< '(Const (Ident i),p) >] -> i, p
+	| [< '(Const (Type t),p) >] -> t, p
+	| [< '(Kwd k,p) >] -> s_keyword k,p
+	| [< '(DblDot,_); s >] -> let n, p = meta_name s in ":" ^ n, p
 
 and parse_enum_flags = parser
 	| [< '(Kwd Enum,p) >] -> [] , p
@@ -268,26 +265,26 @@ and parse_class_flags = parser
 	| [< '(Kwd Interface,p) >] -> [HInterface] , p
 
 and parse_type_opt = parser
-	| [< '(DblDot,_); t = parse_type_path >] -> Some t
+	| [< '(DblDot,_); t = parse_complex_type >] -> Some t
 	| [< >] -> None
 
-and parse_type_path = parser
-	| [< '(POpen,_); t = parse_type_path; '(PClose,_); s >] -> parse_type_path_next (TPParent t) s
+and parse_complex_type = parser
+	| [< '(POpen,_); t = parse_complex_type; '(PClose,_); s >] -> parse_complex_type_next (CTParent t) s
 	| [< '(BrOpen,_); s >] ->
 		let t = (match s with parser
-			| [< name = any_ident >] -> TPAnonymous (parse_type_anonymous_resume name s)
-			| [< '(Binop OpGt,_); t = parse_type_path_normal; '(Comma,_); s >] ->
+			| [< name = any_ident >] -> CTAnonymous (parse_type_anonymous_resume name s)
+			| [< '(Binop OpGt,_); t = parse_type_path; '(Comma,_); s >] ->
 				(match s with parser
-				| [< name = any_ident; l = parse_type_anonymous_resume name >] -> TPExtend (t,l)
-				| [< l = plist (parse_signature_field None); '(BrClose,_) >] -> TPExtend (t,l)
+				| [< name = any_ident; l = parse_type_anonymous_resume name >] -> CTExtend (t,l)
+				| [< l = plist (parse_signature_field None); '(BrClose,_) >] -> CTExtend (t,l)
 				| [< >] -> serror())
-			| [< l = plist (parse_signature_field None); '(BrClose,_) >] -> TPAnonymous l
+			| [< l = plist (parse_signature_field None); '(BrClose,_) >] -> CTAnonymous l
 			| [< >] -> serror()
 		) in
-		parse_type_path_next t s
-	| [< t = parse_type_path_normal; s >] -> parse_type_path_next (TPNormal t) s
+		parse_complex_type_next t s
+	| [< t = parse_type_path; s >] -> parse_complex_type_next (CTPath t) s
 
-and parse_type_path_normal s = parse_type_path1 [] s
+and parse_type_path s = parse_type_path1 [] s
 
 and parse_type_path1 pack = parser
 	| [< '(Const (Ident name),_); '(Dot,p); s >] ->
@@ -320,19 +317,19 @@ and parse_type_path_or_const = parser
 	| [< '(Const (String s),_) >] -> TPConst (String s)
 	| [< '(Const (Int i),_) >] -> TPConst (Int i)
 	| [< '(Const (Float f),_) >] -> TPConst (Float f)
-	| [< t = parse_type_path >] -> TPType t
+	| [< t = parse_complex_type >] -> TPType t
 
-and parse_type_path_next t = parser
-	| [< '(Arrow,_); t2 = parse_type_path >] ->
+and parse_complex_type_next t = parser
+	| [< '(Arrow,_); t2 = parse_complex_type >] ->
 		(match t2 with
-		| TPFunction (args,r) ->
-			TPFunction (t :: args,r)
+		| CTFunction (args,r) ->
+			CTFunction (t :: args,r)
 		| _ ->
-			TPFunction ([t] , t2))
+			CTFunction ([t] , t2))
 	| [< >] -> t
 
 and parse_type_anonymous_resume name = parser
-	| [< '(DblDot,p); t = parse_type_path; s >] ->
+	| [< '(DblDot,p); t = parse_complex_type; s >] ->
 		(name, None, AFVar t, p) ::
 		match s with parser
 		| [< '(BrClose,_) >] -> []
@@ -354,25 +351,25 @@ and parse_enum s =
 		| [< >] -> serror()
 
 and parse_enum_param = parser
-	| [< '(Question,_); name = any_ident; '(DblDot,_); t = parse_type_path >] -> (name,true,t)
-	| [< name = any_ident; '(DblDot,_); t = parse_type_path >] -> (name,false,t)
+	| [< '(Question,_); name = any_ident; '(DblDot,_); t = parse_complex_type >] -> (name,true,t)
+	| [< name = any_ident; '(DblDot,_); t = parse_complex_type >] -> (name,false,t)
 
 and parse_class_field s =
 	doc := None;
 	match s with parser
-	| [< meta = parse_meta; l = parse_cf_rights true []; doc = get_doc; s >] ->
-		match s with parser
+	| [< meta = parse_meta; al = parse_cf_rights true []; doc = get_doc; s >] ->
+		let name, pos, k = (match s with parser
 		| [< '(Kwd Var,p1); name = any_ident; s >] ->
 			(match s with parser
-			| [< '(POpen,_); i1 = property_ident; '(Comma,_); i2 = property_ident; '(PClose,_); '(DblDot,_); t = parse_type_path; p2 = semicolon >] ->
-				(FProp (name,doc,meta,l,i1,i2,t),punion p1 p2)
+			| [< '(POpen,_); i1 = property_ident; '(Comma,_); i2 = property_ident; '(PClose,_); '(DblDot,_); t = parse_complex_type; p2 = semicolon >] ->
+				name, punion p1 p2, FProp (i1,i2,t)
 			| [< t = parse_type_opt; s >] ->
 				let e , p2 = (match s with parser
-				| [< '(Binop OpAssign,_) when List.mem AStatic l; e = toplevel_expr; p2 = semicolon >] -> Some e , p2
+				| [< '(Binop OpAssign,_) when List.mem AStatic al; e = toplevel_expr; p2 = semicolon >] -> Some e , p2
 				| [< '(Semicolon,p2) >] -> None , p2
 				| [< >] -> serror()
 				) in
-				(FVar (name,doc,meta,l,t,e),punion p1 p2))
+				name, punion p1 p2, FVar (t,e))
 		| [< '(Kwd Function,p1); name = parse_fun_name; pl = parse_constraint_params; '(POpen,_); al = psep Comma parse_fun_param; '(PClose,_); t = parse_type_opt; s >] ->
 			let e = (match s with parser
 				| [< e = toplevel_expr >] -> e
@@ -384,17 +381,26 @@ and parse_class_field s =
 				f_type = t;
 				f_expr = e;
 			} in
-			(FFun (name,doc,meta,l,pl,f),punion p1 (pos e))
+			name, punion p1 (pos e), FFun (pl,f)
 		| [< >] ->
-			if l = [] then raise Stream.Failure else serror()
+			if al = [] then raise Stream.Failure else serror()
+		) in
+		{
+			cff_name = name;
+			cff_doc = doc;
+			cff_meta = meta;
+			cff_access = al;
+			cff_pos = pos;
+			cff_kind = k;
+		}
 
 and parse_signature_field flag = parser
 	| [< '(Kwd Var,p1); name = any_ident; s >] ->
 		(match s with parser
-		| [< '(DblDot,_); t = parse_type_path; p2 = semicolon >] -> (name,flag,AFVar t,punion p1 p2)
-		| [< '(POpen,_); i1 = property_ident; '(Comma,_); i2 = property_ident; '(PClose,_); '(DblDot,_); t = parse_type_path; p2 = semicolon >] -> (name,flag,AFProp (t,i1,i2),punion p1 p2)
+		| [< '(DblDot,_); t = parse_complex_type; p2 = semicolon >] -> (name,flag,AFVar t,punion p1 p2)
+		| [< '(POpen,_); i1 = property_ident; '(Comma,_); i2 = property_ident; '(PClose,_); '(DblDot,_); t = parse_complex_type; p2 = semicolon >] -> (name,flag,AFProp (t,i1,i2),punion p1 p2)
 		| [< >] -> serror())
-	| [< '(Kwd Function,p1); name = any_ident; '(POpen,_); al = psep Comma parse_fun_param_type; '(PClose,_); '(DblDot,_); t = parse_type_path; p2 = semicolon >] ->
+	| [< '(Kwd Function,p1); name = any_ident; '(POpen,_); al = psep Comma parse_fun_param_type; '(PClose,_); '(DblDot,_); t = parse_complex_type; p2 = semicolon >] ->
 		(name,flag,AFFun (al,t),punion p1 p2)
 	| [< '(Kwd Private,_) when flag = None; s >] -> parse_signature_field (Some false) s
 	| [< '(Kwd Public,_) when flag = None; s >] -> parse_signature_field (Some true) s
@@ -422,8 +428,8 @@ and parse_fun_param_value = parser
 	| [< >] -> None
 
 and parse_fun_param_type = parser
-	| [< '(Question,_); name = any_ident; '(DblDot,_); t = parse_type_path >] -> (name,true,t)
-	| [< name = any_ident; '(DblDot,_); t = parse_type_path >] -> (name,false,t)
+	| [< '(Question,_); name = any_ident; '(DblDot,_); t = parse_complex_type >] -> (name,true,t)
+	| [< name = any_ident; '(DblDot,_); t = parse_complex_type >] -> (name,false,t)
 
 and parse_constraint_params = parser
 	| [< '(Binop OpLt,_); l = psep Comma parse_constraint_param; '(Binop OpGt,_) >] -> l
@@ -434,14 +440,14 @@ and parse_constraint_param = parser
 		match s with parser
 		| [< '(DblDot,_); s >] ->
 			(match s with parser
-			| [< '(POpen,_); l = psep Comma parse_type_path_normal; '(PClose,_) >] -> (name,l)
-			| [< t = parse_type_path_normal >] -> (name,[t])
+			| [< '(POpen,_); l = psep Comma parse_type_path; '(PClose,_) >] -> (name,l)
+			| [< t = parse_type_path >] -> (name,[t])
 			| [< >] -> serror())
 		| [< >] -> (name,[])
 
 and parse_class_herit = parser
-	| [< '(Kwd Extends,_); t = parse_type_path_normal >] -> HExtends t
-	| [< '(Kwd Implements,_); t = parse_type_path_normal >] -> HImplements t
+	| [< '(Kwd Extends,_); t = parse_type_path >] -> HExtends t
+	| [< '(Kwd Implements,_); t = parse_type_path >] -> HImplements t
 
 and block1 = parser
 	| [< '(Const (Ident name),p); s >] -> block2 name true p s
@@ -514,34 +520,48 @@ and expr = parser
 		(match s with parser
 		| [< '(POpen,_); e = expr; s >] ->
 			(match s with parser
-			| [< '(Comma,_); t = parse_type_path; '(PClose,p2); s >] -> expr_next (ECast (e,Some t),punion p1 p2) s
+			| [< '(Comma,_); t = parse_complex_type; '(PClose,p2); s >] -> expr_next (ECast (e,Some t),punion p1 p2) s
 			| [< '(PClose,p2); s >] -> expr_next (ECast (e,None),punion p1 (pos e)) s
 			| [< >] -> serror())
 		| [< e = expr; s >] -> expr_next (ECast (e,None),punion p1 (pos e)) s
 		| [< >] -> serror())
 	| [< '(Kwd Throw,p); e = expr >] -> (EThrow e,p)
-	| [< '(Kwd New,p1); t = parse_type_path_normal; '(POpen,p); s >] ->
+	| [< '(Kwd New,p1); t = parse_type_path; '(POpen,p); s >] ->
 		if is_resuming p then display (EDisplayNew t,punion p1 p);
 		(match s with parser
 		| [< al = psep Comma expr; '(PClose,p2); s >] -> expr_next (ENew (t,al),punion p1 p2) s
 		| [< >] -> serror())
 	| [< '(POpen,p1); e = expr; '(PClose,p2); s >] -> expr_next (EParenthesis e, punion p1 p2) s
 	| [< '(BkOpen,p1); l = parse_array_decl; '(BkClose,p2); s >] -> expr_next (EArrayDecl l, punion p1 p2) s
-	| [< '(Kwd Function,p1); '(POpen,_); al = psep Comma parse_fun_param; '(PClose,_); t = parse_type_opt; s >] ->
+	| [< '(Kwd Function,p1); name = popt any_ident; '(POpen,_); al = psep Comma parse_fun_param; '(PClose,_); t = parse_type_opt; s >] ->
 		let make e =
 			let f = {
 				f_type = t;
 				f_args = al;
 				f_expr = e;
 			} in
-			EFunction f, punion p1 (pos e)
+			EFunction (name,f), punion p1 (pos e)
 		in
 		(try
 			expr_next (make (expr s)) s
 		with
 			Display e -> display (make e))
 	| [< '(Unop op,p1) when is_prefix op; e = expr >] -> make_unop op e p1
-	| [< '(Binop OpSub,p1); e = expr >] -> make_unop Neg e p1
+	| [< '(Binop OpSub,p1); e = expr >] ->
+		let neg s =
+			if s.[0] = '-' then String.sub s 1 (String.length s - 1) else "-" ^ s
+		in
+		(match make_unop Neg e p1 with
+		| EUnop (Neg,Prefix,(EConst (Int i),pc)),p -> EConst (Int (neg i)),p
+		| EUnop (Neg,Prefix,(EConst (Float j),pc)),p -> EConst (Float (neg j)),p
+		| e -> e)
+	(*/* removed unary + : this cause too much syntax errors go unnoticed, such as "a + + 1" (missing 'b')
+						without adding anything to the language
+	| [< '(Binop OpAdd,p1); s >] ->
+		(match s with parser
+		| [< '(Const (Int i),p); e = expr_next (EConst (Int i),p) >] -> e
+		| [< '(Const (Float f),p); e = expr_next (EConst (Float f),p) >] -> e
+		| [< >] -> serror()) */*)
 	| [< '(Kwd For,p); '(POpen,_); name = any_ident; '(Kwd In,_); it = expr; '(PClose,_); s >] ->
 		(try
 			let e = expr s in
@@ -633,12 +653,12 @@ and expr_next e1 = parser
 
 and parse_switch_cases eswitch cases = parser
 	| [< '(Kwd Default,p1); '(DblDot,_); s >] ->
-		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,cases,Some e),p1)) in
+		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,cases,Some e),punion (pos eswitch) (pos e))) in
 		let l , def = parse_switch_cases eswitch cases s in
 		(match def with None -> () | Some (e,p) -> error Duplicate_default p);
 		l , Some (b,p1)
 	| [< '(Kwd Case,p1); el = psep Comma expr; '(DblDot,_); s >] ->
-		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,List.rev ((el,e) :: cases),None),p1)) in
+		let b = EBlock (try block [] s with Display e -> display (ESwitch (eswitch,List.rev ((el,e) :: cases),None),punion (pos eswitch) (pos e))) in
 		parse_switch_cases eswitch ((el,(b,p1)) :: cases) s
 	| [< >] ->
 		List.rev cases , None
@@ -646,13 +666,13 @@ and parse_switch_cases eswitch cases = parser
 and parse_catch etry = parser
 	| [< '(Kwd Catch,p); '(POpen,_); name = any_ident; s >] ->
 		match s with parser
-		| [< '(DblDot,_); t = parse_type_path; '(PClose,_); s >] ->
+		| [< '(DblDot,_); t = parse_complex_type; '(PClose,_); s >] ->
 			(try
 				match s with parser
 				| [< e = expr >] ->	(name,t,e)
 				| [< >] -> serror()
 			with
-				Display e -> display (ETry (etry,[name,t,e]),p))
+				Display e -> display (ETry (etry,[name,t,e]),punion (pos etry) (pos e)))
 		| [< '(_,p) >] -> error Missing_type p
 
 and parse_call_params ec s =
@@ -661,7 +681,7 @@ and parse_call_params ec s =
 		| [< e = expr >] -> Some e
 		| [< >] -> None
 	with Display e ->
-		display (ECall (ec,[e]),pos ec)
+		display (ECall (ec,[e]),punion (pos ec) (pos e))
 	) in
 	let rec loop acc =
 		try
@@ -669,11 +689,29 @@ and parse_call_params ec s =
 			| [< '(Comma,_); e = expr >] -> loop (e::acc)
 			| [< >] -> List.rev acc
 		with Display e ->
-			display (ECall (ec,List.rev (e::acc)),pos ec)
+			display (ECall (ec,List.rev (e::acc)),punion (pos ec) (pos e))
 	in
 	match e with
 	| None -> []
 	| Some e -> loop [e]
+
+and parse_macro_cond allow_op s =
+	match s with parser
+	| [< '(Const (Ident t | Type t),p) >] ->
+		let e = (EConst (Ident t),p) in
+		if not allow_op then
+			None, e
+		else (match Stream.peek s with
+			| Some (Binop op,_) ->
+				Stream.junk s;
+				let tk, e2 = (try parse_macro_cond true s with Stream.Failure -> serror()) in
+				tk, make_binop op e e2
+			| tk ->
+				tk, e);
+	| [< '(POpen, p1); _,e = parse_macro_cond true; '(PClose, p2) >] ->
+		None, (EParenthesis e,punion p1 p2)
+	| [< '(Unop op,p); tk, e = parse_macro_cond allow_op >] ->
+		tk, make_unop op e p
 
 and toplevel_expr s =
 	try
@@ -681,14 +719,14 @@ and toplevel_expr s =
 	with
 		Display e -> e
 
-let parse ctx code file =
+let parse ctx code =
 	let old = Lexer.save() in
 	let old_cache = !cache in
 	let mstack = ref [] in
 	cache := DynArray.create();
 	doc := None;
-	Lexer.init file;
 	Lexer.skip_header code;
+	let sraw = Stream.from (fun _ -> Some (Lexer.token code)) in
 	let rec next_token() = process_token (Lexer.token code)
 
 	and process_token tk =
@@ -716,48 +754,36 @@ let parse ctx code file =
 		| Macro "if" ->
 			process_token (enter_macro (snd tk))
 		| Macro "error" ->
-			error Unimplemented (snd tk)
+			(match Lexer.token code with
+			| (Const (String s),p) -> error (Custom s) p
+			| _ -> error Unimplemented (snd tk))
 		| Macro "line" ->
 			let line = (match next_token() with
 				| (Const (Int s),_) -> int_of_string s
 				| (t,p) -> error (Unexpected t) p
 			) in
-			Lexer.cur_line := line - 1;
+			!(Lexer.cur).Lexer.lline <- line - 1;
 			next_token();
 		| _ ->
 			tk
 
 	and enter_macro p =
-		let ok , tk = eval_macro false in
-		if ok then begin
+		let rec loop (e,p) =
+			match e with
+			| EConst (Ident i) -> Common.defined ctx i
+			| EBinop (OpBoolAnd, e1, e2) -> loop e1 && loop e2
+			| EBinop (OpBoolOr, e1, e2) -> loop e1 || loop e2
+			| EUnop (Not, _, e) -> not (loop e)
+			| EParenthesis e -> loop e
+			| _ -> error Unclosed_macro p
+		in
+		let tk, e = parse_macro_cond false sraw in
+		let tk = (match tk with None -> Lexer.token code | Some tk -> tk) in
+		if loop e then begin
 			mstack := p :: !mstack;
 			tk
 		end else
 			skip_tokens_loop p true tk
-
-	and eval_macro allow_expr =
-		match Lexer.token code with
-		| (Const (Ident s),p) | (Const (Type s),p) ->
-			let ok = Common.defined ctx s in
-			(match Lexer.token code with
-			| (Binop OpBoolOr,_) when allow_expr ->
-				let ok2 , tk = eval_macro allow_expr in
-				(ok || ok2) , tk
-			| (Binop OpBoolAnd,_) when allow_expr ->
-				let ok2 , tk = eval_macro allow_expr in
-				(ok && ok2) , tk
-			| tk ->
-				ok , tk)
-		| (Unop Not,_) ->
-			let ok , tk = eval_macro allow_expr in
-			not ok, tk
-		| (POpen,_) ->
-			let ok , tk = eval_macro true in
-			(match tk with
-			| (PClose,_) -> ok, Lexer.token code
-			| _ -> raise Exit)
-		| _ ->
-			raise Exit
 
 	and skip_tokens_loop p test tk =
 		match fst tk with

@@ -1,9 +1,9 @@
 package flash.ui;
 
-extern enum MouseCursor {
+@:fakeEnum(String) extern enum MouseCursor {
+	ARROW;
+	AUTO;
 	BUTTON;
 	HAND;
 	IBEAM;
-	ARROW;
-	AUTO;
 }

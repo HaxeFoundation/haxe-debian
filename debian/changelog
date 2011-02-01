@@ -1,3 +1,9 @@
+haxe (1:2.7+20110131-1) experimental; urgency=low
+
+  * mercurial-importorig imported new upstream version.
+
+ -- Jens Peter Secher <jps@debian.org>  Tue, 01 Feb 2011 01:24:23 +0100
+
 haxe (1:2.6-1) experimental; urgency=low
 
   * New upstream version, which uses new features not present in the

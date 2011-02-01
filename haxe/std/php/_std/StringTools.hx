@@ -86,4 +86,13 @@
 			s = lpad(s, '0', digits);
 		return s.toUpperCase();
 	}
+
+	public static inline function fastCodeAt( s : String, index : Int ) : Int {
+		return untyped s.cca(index);
+	}
+
+	public static inline function isEOF( c : Int ) : Bool {
+		return untyped __physeq__(c, 0);
+	}
+
 }

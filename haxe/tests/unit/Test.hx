@@ -7,7 +7,7 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 
 	function eq<T>( v : T, v2 : T, ?pos ) {
 		count++;
-		if( v != v2 ) report(v+" should be "+v2,pos);
+		if( v != v2 ) report(Std.string(v)+" should be "+Std.string(v2),pos);
 	}
 
 	function feq( v : Float, v2 : Float, ?pos ) {
@@ -110,7 +110,7 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 	static var AMAX = 3;
 	static var timer : haxe.Timer;
 
-	dynamic static function report( msg : String, pos : haxe.PosInfos ) {
+	dynamic static function report( msg : String, ?pos : haxe.PosInfos ) {
 		if( reportInfos != null ) {
 			msg += " ("+reportInfos+")";
 			reportInfos = null;
@@ -119,14 +119,14 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 		reportCount++;
 		if( reportCount == 10 ) {
 			trace("Too many errors");
-			report = function(msg,pos) {};
+			report = function(msg,?pos) {};
 		}
 	}
 
 	static function checkDone() {
 		if( asyncWaits.length != 0 ) return;
 		if( asyncCache.length == 0 ) {
-			report("DONE ["+count+" tests]",here);
+			report("DONE ["+count+" tests]");
 			return;
 		}
 		resetTimer();
@@ -152,6 +152,16 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 		#end
 	}
 
+	static function onError( e : Dynamic, msg : String, context : String ) {
+		var msg = "???";
+		var stack = haxe.Stack.toString(haxe.Stack.exceptionStack());
+		try msg = Std.string(e) catch( e : Dynamic ) {};
+		reportCount = 0;
+		report("ABORTED : "+msg+" in "+context);
+		reportInfos = null;
+		trace("STACK :\n"+stack);
+	}
+
 	static function main() {
 		#if neko
 		if( neko.Web.isModNeko )
@@ -171,6 +181,7 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 		tf.selectable = true;
 		#end
 		var classes = [
+			new TestOps(),
 			new TestBasetypes(),
 			new TestReflect(),
 			new TestBytes(),
@@ -182,7 +193,9 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 			new TestResource(),
 			new TestEReg(),
 			new TestType(),
+			#if !macro
 			new TestXML(),
+			#end
 			new TestMeta(),
 //			new TestRemoting(),
 		];
@@ -193,23 +206,26 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 				current = Type.getClass(inst);
 				for( f in Type.getInstanceFields(current) )
 					if( f.substr(0,4) == "test" ) {
-						Reflect.callMethod(inst,Reflect.field(inst,f),[]);
+						try {
+							Reflect.callMethod(inst,Reflect.field(inst,f),[]);
+						}
+						#if !as3
+						catch( e : Dynamic ) {
+							onError(e,"EXCEPTION",Type.getClassName(current)+"."+f);
+						}
+						#end
 						reportInfos = null;
 					}
 			}
 			asyncWaits.remove(null);
 			checkDone();
 		}
-		catch( e : #if as3 Test #else Dynamic #end ) {
+		#if !as3
+		catch( e : Dynamic ) {
 			asyncWaits.remove(null);
-			var msg = "???";
-			var stack = haxe.Stack.toString(haxe.Stack.exceptionStack());
-			try msg = Std.string(e) catch( e : Dynamic ) {};
-			reportCount = 0;
-			report("ABORTED : "+msg+" in "+Type.getClassName(current),here);
-			reportInfos = null;
-			trace("STACK :\n"+stack);
+			onError(e,"ABORTED",Type.getClassName(current));
 		}
+		#end
 	}
 
 }

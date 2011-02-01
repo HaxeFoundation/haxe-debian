@@ -23,7 +23,11 @@ open Nxml
 open Common
 
 type context = {
-	com : Common.context;	
+	com : Common.context;
+	packages : (string list, unit) Hashtbl.t;
+	globals : (string list * string, string) Hashtbl.t;
+	mutable curglobal : int;
+	mutable macros : bool;
 	mutable curclass : string;
 	mutable curmethod : string;
 	mutable locals : (string , bool) PMap.t;
@@ -34,7 +38,12 @@ type context = {
 let files = Hashtbl.create 0
 
 let pos ctx p =
-	let file = (match ctx.com.debug with
+	if ctx.macros then
+		{
+			psource = p.pfile;
+			pline = p.pmin lor (p.pmax lsl 16);
+		}
+	else let file = (match ctx.com.debug with
 		| true -> ctx.curclass ^ "::" ^ ctx.curmethod
 		| false ->
 			try
@@ -56,8 +65,20 @@ let pos ctx p =
 	) in
 	{
 		psource = file;
-		pline = Lexer.find_line_index ctx.com.lines p;
+		pline = Lexer.get_error_line p;
 	}
+
+let gen_global_name ctx path =
+	match path with
+	| [], name -> name
+	| _ ->
+	try
+		Hashtbl.find ctx.globals path
+	with Not_found ->
+		let name = "@G" ^ string_of_int ctx.curglobal in
+		ctx.curglobal <- ctx.curglobal + 1;
+		Hashtbl.add ctx.globals path name;
+		name
 
 let add_local ctx v p =
 	let rec loop flag e =
@@ -217,7 +238,7 @@ and gen_call ctx p e el =
 			array p (List.map (gen_expr ctx) el)
 		]
 	| TLocal "__resources__", [] ->
-		call p (builtin p "array") (Hashtbl.fold (fun name data acc -> 
+		call p (builtin p "array") (Hashtbl.fold (fun name data acc ->
 			(EObject [("name",gen_constant ctx e.epos (TString name));("data",gen_big_string ctx p data)],p) :: acc
 		) ctx.com.resources [])
 	| TField ({ eexpr = TConst TSuper; etype = t },f) , _ ->
@@ -260,7 +281,10 @@ and gen_expr ctx e =
 			let tmp = ident p "@tmp" in
 			EBlock [
 				(EVars ["@tmp", Some (gen_expr ctx e2); "@fun", Some (field p tmp f)] , p);
-				call p (ident p ("@closure" ^ string_of_int n)) [tmp;ident p "@fun"]
+				if ctx.macros then
+					call p (builtin p "closure") [ident p "@fun";tmp]
+				else
+					call p (ident p ("@closure" ^ string_of_int n)) [tmp;ident p "@fun"]
 			] , p
 		| _ -> assert false)
 	| TTypeExpr t ->
@@ -486,7 +510,9 @@ let gen_method ctx p c acc =
 	ctx.curmethod <- c.cf_name;
 	match c.cf_expr with
 	| None ->
-		if c.cf_get = ResolveAccess then acc else (c.cf_name, null p) :: acc
+		(match c.cf_kind with
+		| Var { v_read = AccResolve } -> acc
+		| _ -> (c.cf_name, null p) :: acc)
 	| Some e ->
 		match e.eexpr with
 		| TCall ({ eexpr = TField ({ eexpr = TTypeExpr (TClassDecl { cl_path = (["neko"],"Lib") }) }, load)},[{ eexpr = TConst (TString m) };{ eexpr = TConst (TString f) };{ eexpr = TConst (TInt n) }]) when load = "load" || load = "loadLazy" ->
@@ -594,15 +620,17 @@ let gen_enum ctx e =
 	ctx.curclass <- s_type_path e.e_path;
 	ctx.curmethod <- "$init";
 	let p = pos ctx e.e_pos in
-	let path = gen_type_path p (fst e.e_path,snd e.e_path) in
+	let path = gen_type_path p e.e_path in
+	let uname = (EConst (Ident (gen_global_name ctx e.e_path)),p) in
 	(EBlock (
-		(EBinop ("=",path, call p (builtin p "new") [null p]),p) ::
-		(EBinop ("=",field p path "prototype", (EObject [
-			"__enum__" , path;
+		(EBinop ("=",uname, call p (builtin p "new") [null p]),p) ::
+		(EBinop ("=",path, uname),p) ::
+		(EBinop ("=",field p uname "prototype", (EObject [
+			"__enum__" , uname;
 			"__serialize" , ident p "@serialize";
 			"__string" , ident p "@enum_to_string"
 		],p)),p) ::
-		pmap_list (gen_enum_constr ctx path) e.e_constrs @
+		pmap_list (gen_enum_constr ctx uname) e.e_constrs @
 		(match e.e_path with
 		| [] , name -> [EBinop ("=",field p (ident p "@classes") name,ident p name),p]
 		| _ -> [])
@@ -614,7 +642,7 @@ let gen_type ctx t acc =
 		(match c.cl_init with
 		| None -> ()
 		| Some e -> ctx.inits <- (c,e) :: ctx.inits);
-		if c.cl_extern || c.cl_path = ([],"@Main") then
+		if c.cl_extern then
 			acc
 		else
 			gen_class ctx c :: acc
@@ -649,16 +677,16 @@ let gen_static_vars ctx t =
 						),p) :: acc
 			) c.cl_ordered_statics []
 
-let gen_package ctx h t =
+let gen_package ctx t =
 	let rec loop acc p =
 		match p with
 		| [] -> []
 		| x :: l ->
 			let path = acc @ [x] in
-			if not (Hashtbl.mem h path) then begin
+			if not (Hashtbl.mem ctx.packages path) then begin
 				let p = pos ctx (match t with TClassDecl c -> c.cl_pos | TEnumDecl e -> e.e_pos | TTypeDecl t -> t.t_pos) in
 				let e = (EBinop ("=",gen_type_path p (acc,x),call p (builtin p "new") [null p]),p) in
-				Hashtbl.add h path ();
+				Hashtbl.add ctx.packages path ();
 				(match acc with
 				| [] ->
 					let reg = (EBinop ("=",field p (ident p "@classes") x,ident p x),p) in
@@ -687,14 +715,14 @@ let gen_name ctx acc t =
 		let path = gen_type_path p e.e_path in
 		let setname = (EBinop ("=",field p path "__ename__",arr),p) in
 		let arr = call p (field p (ident p "Array") "new1") [array p (List.map (fun n -> gen_constant ctx e.e_pos (TString n)) e.e_names); int p (List.length e.e_names)] in
-		let setconstrs = (EBinop ("=", field p path "__constructs__", arr),p) in		
+		let setconstrs = (EBinop ("=", field p path "__constructs__", arr),p) in
 		let meta = (match Codegen.build_metadata ctx.com (TEnumDecl e) with
 			| None -> []
 			| Some e -> [EBinop ("=",field p path "__meta__", gen_expr ctx e),p]
 		) in
 		setname :: setconstrs :: meta @ acc
 	| TClassDecl c ->
-		if c.cl_extern || c.cl_path = ([],"@Main") then
+		if c.cl_extern then
 			acc
 		else
 			let p = pos ctx c.cl_pos in
@@ -726,58 +754,91 @@ let generate_libs_init = function
 			acc ^ "$loader.path = $array(" ^ (if full_path then "" else "@b + ") ^ "\"" ^ Nast.escape l ^ "\" + @s,$loader.path);"
 		) boot libs
 
-let generate com libs =
-	let ctx = {
-		com = com;		
+let new_context com macros =
+	{
+		com = com;
+		globals = Hashtbl.create 0;
+		curglobal = 0;
+		packages = Hashtbl.create 0;
+		macros = macros;
 		curclass = "$boot";
 		curmethod = "$init";
 		inits = [];
 		curblock = [];
 		locals = PMap.empty;
-	} in
-	let t = Common.timer "neko compilation" in
-	let h = Hashtbl.create 0 in
-	let header = ENeko (
-		"@classes = $new(null);" ^
-		"@Main = $new(null);" ^
-		"@enum_to_string = function() { return neko.Boot.__enum_str(this); };" ^
-		"@serialize = function() { return neko.Boot.__serialize(this); };" ^
-		"@tag_serialize = function() { return neko.Boot.__tagserialize(this); };" ^
-		"@lazy_error = function(e) return $varargs(function(_) $throw(e));" ^
-		"@closure0 = function(@this,@fun) if( @fun == null ) null else function() { this = @this; @fun(); };" ^
-		"@closure1 = function(@this,@fun) if( @fun == null ) null else function(a) { this = @this; @fun(a); };" ^
-		"@closure2 = function(@this,@fun) if( @fun == null ) null else function(a,b) { this = @this; @fun(a,b); };" ^
-		"@closure3 = function(@this,@fun) if( @fun == null ) null else function(a,b,c) { this = @this; @fun(a,b,c); };" ^
-		"@closure4 = function(@this,@fun) if( @fun == null ) null else function(a,b,c,d) { this = @this; @fun(a,b,c,d); };" ^
-		"@closure5 = function(@this,@fun) if( @fun == null ) null else function(a,b,c,d,e) { this = @this; @fun(a,b,c,d,e); };" ^
-		generate_libs_init libs
-	) , { psource = "<header>"; pline = 1; } in
-	let packs = List.concat (List.map (gen_package ctx h) com.types) in
-	let names = List.fold_left (gen_name ctx) [] com.types in
-	let methods = List.rev (List.fold_left (fun acc t -> gen_type ctx t acc) [] com.types) in
+	}
+
+let header() =
+	let p = { psource = "<header>"; pline = 1 } in
+	let fields l =
+		let rec loop = function
+			| [] -> assert false
+			| [x] -> ident p x
+			| x :: l -> field p (loop l) x
+		in
+		loop (List.rev l)
+	in
+	let func pl e =
+		(EFunction (pl,(EReturn (Some e),p)),p)
+	in
+	let inits = [
+		"@classes",call p (builtin p "new") [null p];
+		"@enum_to_string",func [] (call p (fields ["neko";"Boot";"__enum_str"]) [this p]);
+		"@serialize",func [] (call p (fields ["neko";"Boot";"__serialize"]) [this p]);
+		"@tag_serialize",func [] (call p (fields ["neko";"Boot";"__tagserialize"]) [this p]);
+		"@lazy_error",func ["e"] (call p (builtin p "varargs") [func ["_"] (call p (builtin p "throw") [ident p "e"])]);
+	] in
+	let inits = inits @ List.map (fun nargs ->
+		let args = Array.to_list (Array.init nargs (fun i -> Printf.sprintf "%c" (char_of_int (int_of_char 'a' + i)))) in
+		let efun = (EFunction (args,(EBlock [
+			(EBinop ("=",(EConst This,p),ident p "@this"),p);
+			call p (ident p "@fun") (List.map (ident p) args);
+		],p)),p) in
+		let eif = EIf ((EBinop ("==",ident p "@fun",null p),p),null p,Some efun) in
+		let e = func ["@this";"@fun"] (eif,p) in
+		"@closure" ^ string_of_int nargs, e
+	) [0;1;2;3;4;5] in
+	List.map (fun (v,e)-> EBinop ("=",ident p v,e),p) inits
+
+let build ctx types =
+	let packs = List.concat (List.map (gen_package ctx) types) in
+	let names = List.fold_left (gen_name ctx) [] types in
+	let methods = List.rev (List.fold_left (fun acc t -> gen_type ctx t acc) [] types) in
 	let boot = gen_boot ctx in
-	let inits = List.map (fun (c,e) -> 
+	let inits = List.map (fun (c,e) ->
 		ctx.curclass <- s_type_path c.cl_path;
 		ctx.curmethod <- "__init__";
 		gen_expr ctx e
 	) (List.rev ctx.inits) in
-	let vars = List.concat (List.map (gen_static_vars ctx) com.types) in
-	let e = (EBlock (header :: packs @ methods @ boot :: names @ inits @ vars), null_pos) in
+	ctx.inits <- [];
+	let vars = List.concat (List.map (gen_static_vars ctx) types) in
+	packs @ methods @ boot :: names @ inits @ vars
+
+let generate com libs =
+	let ctx = new_context com false in
+	let t = Common.timer "neko generation" in
+	let libs = (ENeko (generate_libs_init libs) , { psource = "<header>"; pline = 1; }) in	
+	let el = build ctx com.types in
+	let emain = (match com.main with None -> [] | Some e -> [gen_expr ctx e]) in
+	let e = (EBlock ((header()) @ libs :: el @ emain), null_pos) in
 	let neko_file = (try Filename.chop_extension com.file with _ -> com.file) ^ ".neko" in
 	let ch = IO.output_channel (open_out_bin neko_file) in
 	let source = Common.defined com "neko_source" in
 	if source then Nxml.write ch (Nxml.to_xml e) else Binast.write ch e;
 	IO.close_out ch;
+	t();
 	let command cmd = try Sys.command cmd with _ -> -1 in
 	if source then begin
 		if command ("nekoc -p \"" ^ neko_file ^ "\"") <> 0 then failwith "Failed to print neko code";
 		Sys.remove neko_file;
 		Sys.rename ((try Filename.chop_extension com.file with _ -> com.file) ^ "2.neko") neko_file;
 	end;
-	t();
 	let c = Common.timer "neko compilation" in
 	if command ("nekoc \"" ^ neko_file ^ "\"") <> 0 then failwith "Neko compilation failure";
 	c();
 	let output = Filename.chop_extension neko_file ^ ".n" in
-	if output <> com.file then Sys.rename output com.file;
+	if output <> com.file then begin
+		(try Sys.remove com.file with _ -> ());
+		Sys.rename output com.file;
+	end;
 	if not source then Sys.remove neko_file

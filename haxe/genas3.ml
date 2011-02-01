@@ -38,7 +38,6 @@ type context = {
 	mutable locals : (string,string) PMap.t;
 	mutable inv_locals : (string,string) PMap.t;
 	mutable local_types : t list;
-	mutable inits : texpr list;
 	mutable constructor_block : bool;
 }
 
@@ -67,6 +66,10 @@ let s_path ctx stat path p =
 		"XML"
 	| (["flash";"xml"],"XMLList") ->
 		"XMLList"
+	| ["flash";"utils"],"QName" ->
+		"QName"
+	| ["flash";"utils"],"Namespace" ->
+		"Namespace"
 	| (["haxe"],"Int32") when not stat ->
 		"int"
 	| (pack,name) ->
@@ -82,6 +85,8 @@ let reserved =
 	["is";"as";"int";"uint";"const";"getTimer";"typeof";"parseInt";"parseFloat";
 	(* AS3 keywords which are not haXe ones *)
 	"each";"label";"finally";"with";"final";"internal";"native";"const";"namespace";"include";"delete";
+	(* some globals give some errors with Flex SDK as well *)
+	"print";
 	(* we don't include get+set since they are not 'real' keywords, but they can't be used as method names *)
 	];
 	h
@@ -116,7 +121,6 @@ let init infos path =
 		locals = PMap.empty;
 		inv_locals = PMap.empty;
 		local_types = [];
-		inits = [];
 		get_sets = Hashtbl.create 0;
 		constructor_block = false;
 	}
@@ -196,8 +200,17 @@ let rec type_str ctx t p =
 		if e.e_extern then (match e.e_path with
 			| [], "Void" -> "void"
 			| [], "Bool" -> "Boolean"
-			| "flash" :: _ , _ -> "String"
-			| _ -> "Object"
+			| _ -> 
+				let rec loop = function
+					| [] -> "Object"
+					| (":fakeEnum",[Ast.EConst (Ast.Type n),_],_) :: _ ->
+						(match n with
+						| "Int" -> "int"
+						| "UInt" -> "uint"
+						| _ -> n)
+					| _ :: l -> loop l
+				in
+				loop e.e_meta
 		) else
 			s_path ctx true e.e_path p
 	| TInst ({ cl_path = ["flash"],"Vector" },[pt]) ->
@@ -281,7 +294,15 @@ let gen_function_header ctx name f params p =
 	let old_t = ctx.local_types in
 	ctx.in_value <- None;
 	ctx.local_types <- List.map snd params @ ctx.local_types;
-	print ctx "function%s(" (match name with None -> "" | Some n -> " " ^ n);
+	print ctx "function%s(" (match name with None -> "" | Some (n,meta) ->
+		let rec loop = function
+			| [] -> n
+			| (":getter",[Ast.EConst (Ast.Ident i | Ast.Type i),_],_) :: _ -> "get " ^ i
+			| (":setter",[Ast.EConst (Ast.Ident i | Ast.Type i),_],_) :: _ -> "set " ^ i
+			| _ :: l -> loop l
+		in
+		" " ^ loop meta
+	);
 	concat ctx "," (fun (arg,c,t) ->
 		let arg = define_local ctx arg in
 		let tstr = type_str ctx t p in
@@ -381,13 +402,6 @@ let rec gen_call ctx e el r =
 		spr ctx ")"
 	| TField ({ eexpr = TTypeExpr (TClassDecl { cl_path = (["flash"],"Lib") }) },f), args ->
 		(match f, args with
-		| "vectorOfArray", [e] | "vectorConvert", [e] ->
-			(match follow r with
-			| TInst ({ cl_path = (["flash"],"Vector") },[t]) ->
-				print ctx "Vector.<%s>(" (type_str ctx t e.epos);
-				gen_value ctx e;
-				print ctx ")";
-			| _ -> assert false)
 		| "as", [e1;e2] ->
 			gen_value ctx e1;
 			spr ctx " as ";
@@ -397,6 +411,16 @@ let rec gen_call ctx e el r =
 			spr ctx "(";
 			concat ctx "," (gen_value ctx) el;
 			spr ctx ")")
+	| TField ({ eexpr = TTypeExpr (TClassDecl { cl_path = (["flash"],"Vector") }) },f), args ->
+		(match f, args with
+		| "ofArray", [e] | "convert", [e] ->
+			(match follow r with
+			| TInst ({ cl_path = (["flash"],"Vector") },[t]) ->
+				print ctx "Vector.<%s>(" (type_str ctx t e.epos);
+				gen_value ctx e;
+				print ctx ")";
+			| _ -> assert false)
+		| _ -> assert false)
 	| _ ->
 		gen_value ctx e;
 		spr ctx "(";
@@ -430,6 +454,8 @@ and gen_field_access ctx t s =
 			print ctx "[\"toStringHX\"]"
 		| [], "String", "cca" ->
 			print ctx ".charCodeAt"
+		| ["flash";"xml"], "XML", "namespace" ->
+			print ctx ".namespace"
 		| _ ->
 			print ctx ".%s" (s_ident s)
 	in
@@ -451,10 +477,7 @@ and gen_expr ctx e =
 	| TEnumField (en,s) ->
 		print ctx "%s.%s" (s_path ctx true en.e_path e.epos) (s_ident s)
 	| TArray ({ eexpr = TLocal "__global__" },{ eexpr = TConst (TString s) }) ->
-		let path = (match List.rev (ExtString.String.nsplit s ".") with
-			| [] -> assert false
-			| x :: l -> List.rev l , x
-		) in
+		let path = Ast.parse_path s in
 		spr ctx (s_path ctx false path e.epos)
 	| TArray (e1,e2) ->
 		gen_value ctx e1;
@@ -822,11 +845,6 @@ and gen_value ctx e =
 		)) e.etype e.epos);
 		v()
 
-let generate_boot_init ctx =
-	print ctx "private static function init() : void {";
-	List.iter (gen_expr ctx) ctx.inits;
-	print ctx "}"
-
 let generate_field ctx static f =
 	newline ctx;
 	ctx.in_static <- static;
@@ -835,8 +853,8 @@ let generate_field ctx static f =
 	let public = f.cf_public || Hashtbl.mem ctx.get_sets (f.cf_name,static) || (f.cf_name = "main" && static) || f.cf_name = "resolve" in
 	let rights = (if static then "static " else "") ^ (if public then "public" else "protected") in
 	let p = ctx.curclass.cl_pos in
-	match f.cf_expr with
-	| Some { eexpr = TFunction fd } when f.cf_set = MethodAccess false || f.cf_set = NeverAccess ->
+	match f.cf_expr, f.cf_kind with
+	| Some { eexpr = TFunction fd }, Method (MethNormal | MethInline) ->
 		print ctx "%s " rights;
 		let rec loop c =
 			match c.cl_super with
@@ -848,14 +866,13 @@ let generate_field ctx static f =
 					loop c
 		in
 		if not static then loop ctx.curclass;
-		let h = gen_function_header ctx (Some (s_ident f.cf_name)) fd f.cf_params p in
+		let h = gen_function_header ctx (Some (s_ident f.cf_name, f.cf_meta)) fd f.cf_params p in
 		gen_expr ctx (mk_block fd.tf_expr);
 		h();
 		newline ctx
 	| _ ->
-		if ctx.curclass.cl_path = (["flash"],"Boot") && f.cf_name = "init" then
-			generate_boot_init ctx
-		else if ctx.curclass.cl_interface then
+		let is_getset = (match f.cf_kind with Var { v_read = AccCall _ } | Var { v_write = AccCall _ } -> true | _ -> false) in
+		if ctx.curclass.cl_interface then
 			match follow f.cf_type with
 			| TFun (args,r) ->
 				print ctx "function %s(" f.cf_name;
@@ -865,41 +882,45 @@ let generate_field ctx static f =
 					if o then print ctx " = %s" (default_value tstr);
 				) args;
 				print ctx ") : %s " (type_str ctx r p);
-			| _ when (match f.cf_get with CallAccess m -> true | _ -> match f.cf_set with CallAccess m -> true | _ -> false) -> 
+			| _ when is_getset -> 
 				let t = type_str ctx f.cf_type p in
 				let id = s_ident f.cf_name in
-				(match f.cf_get with
-				| NormalAccess | CallAccess _ -> print ctx "function get %s() : %s;" id t;
-				| _ -> ());
-				(match f.cf_set with
-				| NormalAccess | CallAccess _ -> print ctx "function set %s( __v : %s ) : void;" id t;
-				| _ -> ());
+				(match f.cf_kind with
+				| Var v ->
+					(match v.v_read with
+					| AccNormal | AccCall _ -> print ctx "function get %s() : %s;" id t;
+					| _ -> ());
+					(match v.v_write with
+					| AccNormal | AccCall _ -> print ctx "function set %s( __v : %s ) : void;" id t;
+					| _ -> ());
+				| _ -> assert false)
 			| _ -> ()
 		else
-		if (match f.cf_get with CallAccess m -> true | _ -> match f.cf_set with CallAccess m -> true | _ -> false) then begin
+		if is_getset then begin
 			let t = type_str ctx f.cf_type p in
 			let id = s_ident f.cf_name in
-			(match f.cf_get with
-			| NormalAccess ->
+			let v = (match f.cf_kind with Var v -> v | _ -> assert false) in
+			(match v.v_read with
+			| AccNormal ->
 				print ctx "%s function get %s() : %s { return $%s; }" rights id t id;
 				newline ctx
-			| CallAccess m ->
+			| AccCall m ->
 				print ctx "%s function get %s() : %s { return %s(); }" rights id t m;
 				newline ctx
-			| NoAccess | NeverAccess ->
-				print ctx "%s function get %s() : %s { return $%s; }" (if f.cf_set = NoAccess then "protected" else "private") id t id;
+			| AccNo | AccNever ->
+				print ctx "%s function get %s() : %s { return $%s; }" (if v.v_read = AccNo then "protected" else "private") id t id;
 				newline ctx
 			| _ ->
 				());
-			(match f.cf_set with
-			| NormalAccess ->
+			(match v.v_write with
+			| AccNormal ->
 				print ctx "%s function set %s( __v : %s ) : void { $%s = __v; }" rights id t id;
 				newline ctx
-			| CallAccess m ->
+			| AccCall m ->
 				print ctx "%s function set %s( __v : %s ) : void { %s(__v); }" rights id t m;
 				newline ctx
-			| NoAccess | NeverAccess ->
-				print ctx "%s function set %s( __v : %s ) : void { $%s = __v; }" (if f.cf_set = NoAccess then "protected" else "private") id t id;
+			| AccNo | AccNever ->
+				print ctx "%s function set %s( __v : %s ) : void { $%s = __v; }" (if v.v_write = AccNo then "protected" else "private") id t id;
 				newline ctx
 			| _ -> ());
 			print ctx "protected var $%s : %s" (s_ident f.cf_name) (type_str ctx f.cf_type p);
@@ -917,8 +938,11 @@ let rec define_getset ctx stat c =
 		Hashtbl.add ctx.get_sets (name,stat) f.cf_name
 	in
 	let field f =
-		(match f.cf_get with CallAccess m -> def f m | _ -> ());
-		(match f.cf_set with CallAccess m -> def f m | _ -> ())
+		match f.cf_kind with
+		| Method _ -> ()
+		| Var v ->
+			(match v.v_read with AccCall m -> def f m | _ -> ());
+			(match v.v_write with AccCall m -> def f m | _ -> ())
 	in
 	List.iter field (if stat then c.cl_ordered_statics else c.cl_ordered_fields);
 	match c.cl_super with
@@ -949,7 +973,7 @@ let generate_class ctx c =
 		let f = { f with
 			cf_name = snd c.cl_path;
 			cf_public = true;
-			cf_set = MethodAccess false;
+			cf_kind = Method MethNormal;
 		} in
 		ctx.constructor_block <- true;
 		generate_field ctx false f;
@@ -964,24 +988,24 @@ let generate_class ctx c =
 	print ctx "}";
 	newline ctx
 
-let generate_main ctx c =
-	ctx.curclass <- c;
+let generate_main ctx inits =
+	ctx.curclass <- { null_class with cl_path = [],"__main__" };
 	let pack = open_block ctx in
-	print ctx "\tpublic class __main__ extends %s {" (s_path ctx true (["flash";"display"],"MovieClip") c.cl_pos);
+	print ctx "\timport flash.Lib";
+	newline ctx;
+	print ctx "public class __main__ extends %s {" (s_path ctx true (["flash"],"Boot") Ast.null_pos);
 	let cl = open_block ctx in
 	newline ctx;
-	(match c.cl_ordered_statics with
-	| [{ cf_expr = Some e }] ->
-		spr ctx "public function __main__() {";
-		let f = open_block ctx in
-		newline ctx;
-		print ctx "new %s(this)" (s_path ctx true (["flash"],"Boot") c.cl_pos);
-		newline ctx;
-		gen_value ctx e;
-		f();
-		newline ctx;
-		spr ctx "}";
-	| _ -> assert false);
+	spr ctx "public function __main__() {";
+	let fl = open_block ctx in
+	newline ctx;
+	spr ctx "super()";
+	newline ctx;
+	spr ctx "flash.Lib.current = this";
+	List.iter (fun e -> newline ctx; gen_expr ctx e) inits;
+	fl();
+	newline ctx;
+	print ctx "}";
 	cl();
 	newline ctx;
 	print ctx "}";
@@ -1057,7 +1081,6 @@ let generate com =
 	let ctx = init infos ([],"enum") in
 	generate_base_enum ctx;
 	close ctx;
-	let boot = ref None in
 	let inits = ref [] in
 	List.iter (fun t ->
 		match t with
@@ -1071,17 +1094,10 @@ let generate com =
 			| Some e -> inits := e :: !inits);
 			if c.cl_extern then
 				()
-			else (match c.cl_path with
-			| [], "@Main" ->
-				let ctx = init infos ([],"__main__") in
-				generate_main ctx c;
-				close ctx;
-			| ["flash"], "Boot" ->
-				boot := Some c;
-			| _ ->
+			else
 				let ctx = init infos c.cl_path in
 				generate_class ctx c;
-				close ctx)
+				close ctx
 		| TEnumDecl e ->
 			let pack,name = e.e_path in
 			let e = { e with e_path = (pack,protect name) } in
@@ -1094,316 +1110,9 @@ let generate com =
 		| TTypeDecl t ->
 			()
 	) com.types;
-	match !boot with
-	| None -> assert false
-	| Some c ->
-		let ctx = init infos c.cl_path in
-		ctx.inits <- List.rev !inits;
-		generate_class ctx c;
-		close ctx
-
-(* ----------------------------------------------------------------------------------------
-
-	HX generation
-
-   ---------------------------------------------------------------------------------------- *)
-open As3
-
-type access =
-	| APublic
-	| AProtected
-	| APrivate
-
-let cur_package = ref []
-
-let s_type_path = Ast.s_type_path
-
-let ident ctx p =
-	As3code.iget ctx.as3_idents p
-
-let package ctx idx =
-	match As3code.iget ctx.as3_namespaces idx with
-	| A3NPrivate (Some id)
-	| A3NPublic (Some id)
-	| A3NInternal (Some id)
-	| A3NProtected id
-	| A3NExplicit id
-	| A3NStaticProtected (Some id) ->
-		let pack = ident ctx id in
-		ExtString.String.nsplit pack "."
-	| A3NNamespace id ->
-		["/* namespace " ^ ident ctx id ^ "*/"]
-	| A3NPrivate None | A3NPublic None | A3NInternal None | A3NStaticProtected None ->
-		[]
-
-let rec real_type_path ctx p =
-	let rec loop = function
-		| A3MName (id,pack) ->
-			let name = ident ctx id in
-			let pack = package ctx pack in
-			pack , name
-		| A3MMultiName (Some id,pack) ->
-			let name = ident ctx id in
-			let pack = package ctx (List.hd (As3code.iget ctx.as3_nsets pack)) in
-			pack , name
-		| A3MMultiName (None,_) ->
-			[] , "$MultiName"
-		| A3MMultiNameLate _ ->
-			[] , "$MultiNameLate"
-		| A3MRuntimeName _ ->
-			[] , "$RuntimeName"
-		| A3MRuntimeNameLate ->
-			[] , "$RuntimeNameLate"
-		| A3MAttrib n ->
-			let path, name = loop n in
-			"$Attrib" :: path, name
-		| A3MParams (n,pl) ->
-			let t = type_path ctx n in
-			let params = "<" ^ (String.concat "," (List.map (fun t -> s_type_path (type_path ctx t)) pl)) ^ ">" in
-			fst t, (snd t ^ params)
-	in
-	loop (As3code.iget ctx.as3_names p)
-
-and type_path ctx p =
-	match real_type_path ctx p with
-	| [] , "Object" -> [] , "Dynamic"
-	| [] , "Boolean" -> [] , "Bool"
-	| [] , "int" -> [] , "Int"
-	| [] , "uint" -> [] , "UInt"
-	| [] , "Number" -> [] , "Float"
-	| [] , "Array" -> [] , "Array<Dynamic>"
-	| [] , "void" -> [] , "Void"
-	| [] , "Function" -> [] , "Dynamic"
-	| [] , "Class" -> [] , "Class<Dynamic>"
-	| [] , "Error" -> ["flash";"errors"], "Error"
-	| [] , "XML" -> ["flash";"xml"], "XML"
-	| [] , "XMLList" -> ["flash";"xml"], "XMLList"
-	| [] , "QName" -> ["flash";"utils"], "QName"
-	| [] , "Namespace" -> ["flash";"utils"], "Namespace"
-	| ["__AS3__";"vec"] , "Vector" -> ["flash"], "Vector"
-	| pack, cl when pack = !cur_package -> [], cl
-	| path -> path
-
-let ident_rights ctx id =
-	match As3code.iget ctx.as3_names id with
-	| A3MName (id,r) ->
-		let name = ident ctx id in
-		(match As3code.iget ctx.as3_namespaces r with
-		| A3NNamespace i when As3code.iget ctx.as3_idents i = "http://www.adobe.com/2006/flex/mx/internal" -> APublic, "$" ^ name
-		| A3NPublic _ | A3NNamespace _ -> APublic, name
-		| A3NProtected _ -> AProtected, name
-		| _ -> APrivate, name)
-	| _ -> APublic, "???"
-
-let rec create_dir acc = function
-	| [] -> ()
-	| d :: l ->
-		let path = acc ^ "/" ^ d in
-		(try Unix.mkdir path 0o777 with _ -> ());
-		create_dir path l
-
-let value_type = function
-	| A3VNone
-	| A3VNull -> "Dynamic"
-	| A3VBool _ -> "Bool"
-	| A3VString _ -> "String"
-	| A3VInt _ -> "Int"
-	| A3VUInt _ -> "UInt"
-	| A3VFloat _ -> "Float"
-	| A3VNamespace _ -> "$Namespace"
-
-let type_val ctx t v =
-	match t with
-	| None ->
-		(match v with
-		| None -> "Dynamic"
-		| Some v -> value_type v)
-	| Some t ->
-		s_type_path (type_path ctx t)
-
-let has_getset ml f m =
-	List.exists (fun f2 ->
-		match f2.f3_kind with
-		| A3FMethod m2 when f.f3_name = f2.f3_name ->
-			(match m.m3_kind , m2.m3_kind with
-			| MK3Getter , MK3Setter | MK3Setter , MK3Getter -> true
-			| _ -> false)
-		| _ -> false
-	) ml
-
-let gen_method ctx ch name mt =
-	let m = As3code.iget ctx.as3_method_types (As3parse.no_nz mt) in
-	let ret = (match m.mt3_ret with
-		| None -> if name = "new" then "Void" else "Dynamic"
-		| Some t -> s_type_path (type_path ctx t)
-	) in
-	let p = ref 0 in
-	let params = List.map (fun a ->
-		let name = (match m.mt3_pnames with
-			| None -> "p" ^ string_of_int !p
-			| Some l ->
-				match List.nth l !p with
-				| None -> "p" ^ string_of_int !p
-				| Some i -> ident ctx i
-		) in
-		let opt_val = (match m.mt3_dparams with
-			| None -> None
-			| Some l ->
-				try
-					Some (List.nth l (!p - List.length m.mt3_args + List.length l))
-				with
-					_ -> None
-		) in
-		let t = type_val ctx a opt_val in
-		incr p;
-		(if opt_val <> None then "?" else "") ^ name ^ " : " ^ t
-	) m.mt3_args in
-	let vargs = if m.mt3_var_args then
-		(if m.mt3_args = [] then "" else ",") ^ " ?p1 : Dynamic, ?p2 : Dynamic, ?p3 : Dynamic, ?p4 : Dynamic, ?p5 : Dynamic "
-	else
-		""
-	in
-	IO.printf ch "function %s(%s%s) : %s;\n" name (String.concat ", " params) vargs ret
-
-let is_fun = function
-	| A3FMethod m -> m.m3_kind = MK3Normal
-	| _ -> false
-
-let sort_fields ctx f1 f2 =
-	let acc1, name1 = ident_rights ctx f1.f3_name in
-	let acc2, name2 = ident_rights ctx f2.f3_name in
-	let fun1 = is_fun f1.f3_kind in
-	let fun2 = is_fun f2.f3_kind in
-	compare (acc1,fun1,name1) (acc2,fun2,name2)
-
-let gen_fields ctx ch fields others construct =
-	let stat = others <> None in
-	let fields = List.sort (sort_fields ctx) (Array.to_list fields) in
-	let construct = ref construct in
-	let gen_construct() =
-		match !construct with
-		| None -> ()
-		| Some c ->
-			construct := None;
-			IO.printf ch "\t";
-			gen_method ctx ch "new" c;
-	in
-	List.iter (fun f ->
-		let acc, name = ident_rights ctx f.f3_name in
-		let rights = (match acc with APrivate -> "//private " | AProtected -> "private " | APublic -> "") ^ (if stat then "static " else "") in
-		let rights = (match others with
-			| Some l when List.exists (fun cf -> snd (ident_rights ctx cf.f3_name) = name) l -> 
-				"// -- ignored because a nonstatic field has the same name -- " ^ rights
-			| _ -> rights 
-		) in
-		if acc <> APublic || is_fun f.f3_kind then gen_construct();
-		if name.[0] = '$' || acc = APrivate then
-			()
-		else match f.f3_kind with
-		| A3FMethod m ->
-			if m.m3_override then
-				()
-			else
-			(match m.m3_kind with
-			| MK3Normal ->
-				IO.printf ch "\t%s" rights;
-				gen_method ctx ch name m.m3_type
-			| MK3Getter ->
-				let set = has_getset fields f m in
-				let set_str = if set then "" else "(default,null)" in
-				let m = As3code.iget ctx.as3_method_types (As3parse.no_nz m.m3_type) in
-				let t = (match m.mt3_ret with None -> "Dynamic" | Some t -> s_type_path (type_path ctx t)) in
-				IO.printf ch "\t%svar %s%s : %s;\n" rights name set_str t
-			| MK3Setter ->
-				let get = has_getset fields f m in
-				if not get then begin
-					let m = As3code.iget ctx.as3_method_types (As3parse.no_nz m.m3_type) in
-					let t = (match m.mt3_args with [Some t] -> s_type_path (type_path ctx t) | _ -> "Dynamic") in
-					IO.printf ch "\t%svar %s(null,default) : %s;\n" rights name t
-				end;
-			)
-		| A3FVar v ->
-			let t = type_val ctx v.v3_type (Some v.v3_value) in
-			IO.printf ch "\t%svar %s : %s;\n" rights name t
-		| A3FFunction _ ->
-			assert false
-		| A3FClass _ ->
-			IO.printf ch "\t// ????\n"
-	) fields;
-	gen_construct()
-
-let genhx_class ctx c s =
-	let base_path = "hxclasses" in
-	cur_package := [];
-	let pack , name = real_type_path ctx c.cl3_name in
-	cur_package := pack;
-	let skip = (match pack with
-		| [_;x] when String.length x > 3 && String.sub x 0 3 = "as$" -> true
-		| _ when name.[0] = '_' -> true
-		| _ -> false
-	) in
-	if skip then
-		prerr_endline ("// skip " ^ s_type_path (pack,name))
-	else
-	let () = prerr_string ("import " ^ s_type_path (pack,name)) in
-	create_dir "." (base_path :: pack);
-	let f = open_out (base_path ^ "/" ^ (match pack with [] -> "" | l -> String.concat "/" l ^ "/") ^ name ^ ".hx") in
-	let ch = IO.output_channel f in
-	if pack <> [] then IO.printf ch "package %s;\n\n" (String.concat "." pack);
-	let enum_fields, isenum = (try
-		if Array.length c.cl3_fields > 0 || c.cl3_interface || Array.length s.st3_fields = 0 then raise Exit;
-		(match c.cl3_super with None -> () | Some p -> if type_path ctx p <> ([],"Dynamic") then raise Exit);
-		let etype = ref None in
-		let fields = List.map (fun f ->
-			(match f.f3_kind with
-			| A3FVar v ->
-				let t = type_val ctx v.v3_type (Some v.v3_value) in
-				(match !etype with
-				| None -> etype := Some t
-				| Some t2 -> if t <> t2 then raise Exit);
-			| _ -> raise Exit);
-			let prot, name = ident_rights ctx f.f3_name in
-			if prot <> APublic then raise Exit;
-			name
-		) (Array.to_list s.st3_fields) in
-		fields, true
-	with Exit -> [], false) in
-	IO.printf ch "extern %s %s" (if isenum then "enum" else if c.cl3_interface then "interface" else "class") name;
-	let prev = ref (match c.cl3_super with
-	| None -> false
-	| Some p ->
-		match type_path ctx p with
-		| [] , "Dynamic" -> false
-		| path ->
-			IO.printf ch " extends %s" (s_type_path path);
-			true
-	) in
-	Array.iter (fun i ->
-		if !prev then IO.printf ch ",";
-		prev := true;
-		IO.printf ch " implements %s" (s_type_path (type_path ctx i));
-	) c.cl3_implements;
-	IO.printf ch " {\n";
-	if isenum then
-		List.iter (fun f -> IO.printf ch "\t%s;\n" f) (List.sort compare enum_fields)
-	else begin
-		let construct = (if not c.cl3_interface && Array.length c.cl3_fields > 0 then Some c.cl3_construct else None) in
-		gen_fields ctx ch c.cl3_fields None construct;
-		gen_fields ctx ch s.st3_fields (Some (Array.to_list c.cl3_fields)) None;
-	end;
-	IO.printf ch "}\n";
-	prerr_endline ";";
-	IO.close_out ch
-
-let genhx com =
-	let file = (try Common.find_file com com.file with Not_found -> failwith ("File not found : " ^ com.file)) in
-	let ch = IO.input_channel (open_in_bin file) in
-	SwfParser.full_parsing := true;
-	let _, swf = Swf.parse ch in
-	SwfParser.full_parsing := false;
-	IO.close_in ch;
-	List.iter (fun t ->
-		match t.Swf.tdata with
-		| Swf.TActionScript3 (_,t) -> Array.iteri (fun i c -> genhx_class t c t.as3_statics.(i)) t.as3_classes
-		| _ -> ()
-	) swf
+	(match com.main with
+	| None -> ()
+	| Some e -> inits := e :: !inits);
+	let ctx = init infos ([],"__main__") in
+	generate_main ctx (List.rev !inits);
+	close ctx
