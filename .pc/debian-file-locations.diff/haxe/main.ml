@@ -277,7 +277,7 @@ try
 	with
 		Not_found ->
 			if Sys.os_type = "Unix" then
-				com.class_path <- ["./haxe/std/";"/usr/share/haxe/std/";"";"/"]
+				com.class_path <- ["/usr/lib/haxe/std/";"/usr/local/lib/haxe/std/";"";"/"]
 			else
 				let base_path = normalize_path (try executable_path() with _ -> "./") in
 				com.class_path <- [base_path ^ "std/";""]);

@@ -129,7 +129,7 @@ let compile() =
 		"genxml";"typeload";"codegen";"optimizer";
 		neko^"/nast";neko^"/binast";neko^"/nxml";
 		"genneko";"genas3";"genjs";"genswf8";"genswf9";"genswf";"genphp";"gencpp";
-		"typer";"main";
+		"interp";"typer";"main";
 	] in
 	let pkgs_str = " -linkpkg -package xml-light" in
 	let path_str = String.concat " " (List.map (fun s -> "-I " ^ s) paths) in

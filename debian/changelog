@@ -1,8 +1,12 @@
 haxe (1:2.7+20110131-1) experimental; urgency=low
 
-  * mercurial-importorig imported new upstream version.
+  * New upstream version.
+  * Install standard library in /usr/share/haxe/std to cater for the haXe
+    executable mangling of the class path: the path has to end in /std.
+  * Include the upstream repository in Debian version to allow updating
+    the upstream tarball.
 
- -- Jens Peter Secher <jps@debian.org>  Tue, 01 Feb 2011 01:24:23 +0100
+ -- Jens Peter Secher <jps@debian.org>  Tue, 01 Feb 2011 00:29:31 +0100
 
 haxe (1:2.6-1) experimental; urgency=low
 

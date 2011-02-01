@@ -17,8 +17,13 @@ endif
 # The upstream CVS repository.
 motiontwin := :pserver:anonymous@cvs.motion-twin.com:/cvsroot
 cvs := cvs -z3 -d $(motiontwin)
+
+# The Debian version must be of the format <epoch>:<main>.<minor>+<YYYYMMDD>
 version := $(shell dpkg-parsechangelog | grep ^Version | cut -d' ' -f2 | cut -d':' -f2 | cut -d'-' -f1)
-date := 2010-08-18
+year := $(shell echo $(version) | cut -d'+' -f2 | cut -c'1-4')
+month := $(shell echo $(version) | cut -d'+' -f2 | cut -c'5-6')
+day := $(shell echo $(version) | cut -d'+' -f2 | cut -c'7-8')
+date := $(year)-$(month)-$(day)
 repackdir := $(package)-$(version)
 
 # Repackage the source.
