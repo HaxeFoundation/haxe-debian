@@ -44,48 +44,62 @@ enum XmlType {
 	public var nodeValue(getNodeValue,setNodeValue) : String;
 	public var parent(getParent,null) : Xml;
 
-	static var _map : flash.utils.Dictionary;
+	var _map : flash.utils.Dictionary;
 	var _node : flash.xml.XML;
 
 	public static function parse( str : String ) : Xml {
 		XML.ignoreWhitespace = false;
 		XML.ignoreProcessingInstructions = false;
 		XML.ignoreComments = false;
-		var root = new flash.xml.XML("<__document>" + str + "</__document>");
-		return wrap( root, Xml.Document );
+		var prefix = "<__document";
+		var root = null;
+		while( root == null ) {
+			try {
+				root = new flash.xml.XML(prefix+">" + str + "</__document>");
+			} catch( e : flash.errors.TypeError ) {
+				// if we miss a namespace, let's add it !
+				var r = ~/"([^"]+)"/; //"
+				if( e.errorID == 1083 && r.match(e.message) ) {
+					var ns = r.matched(1);
+					prefix += " xmlns:" + ns + '="@' + ns + '"';
+				} else
+					throw e;
+			}
+		}
+		return wrap( null, root, Xml.Document );
 	}
 
 	private function new() : Void {}
 
 	public static function createElement( name : String ) : Xml {
-		return wrap( new flash.xml.XML("<"+name+"/>"), Xml.Element );
+		return wrap( null, new flash.xml.XML("<"+name+"/>"), Xml.Element );
 	}
 
 	public static function createPCData( data : String ) : Xml {
 		XML.ignoreWhitespace = false;
-		return wrap( new flash.xml.XML(data), Xml.PCData );
+		return wrap( null, new flash.xml.XML(data), Xml.PCData );
 	}
 
 	public static function createCData( data : String ) : Xml {
-		return wrap( new flash.xml.XML("<![CDATA[ "+data+" ]]>"), Xml.CData );
+		return wrap( null, new flash.xml.XML("<![CDATA["+data+"]]>"), Xml.CData );
 	}
 
 	public static function createComment( data : String ) : Xml {
 		XML.ignoreComments = false;
-		return wrap( new flash.xml.XML("<!-- "+data+" -->"), Xml.Comment );
+		return wrap( null, new flash.xml.XML("<!--"+data+"-->"), Xml.Comment );
 	}
 
 	public static function createDocType( data : String ) : Xml {
-		return wrap( new flash.xml.XML("<!DOCTYPE "+data+">"), Xml.DocType );
+		return wrap( null, new flash.xml.XML("<!DOCTYPE "+data+">"), Xml.DocType );
 	}
 
 	public static function createProlog( data : String ) : Xml {
 		XML.ignoreProcessingInstructions = false;
-		return wrap( new flash.xml.XML("<?"+data+"?>"), Xml.Prolog );
+		return wrap( null, new flash.xml.XML("<?"+data+"?>"), Xml.Prolog );
 	}
 
 	public static function createDocument() : Xml {
-		return wrap( new flash.xml.XML("<__document/>"), Xml.Document );
+		return wrap( null, new flash.xml.XML("<__document/>"), Xml.Document );
 	}
 
 	private static function getNodeType( node : flash.xml.XML ) : XmlType {
@@ -125,34 +139,53 @@ enum XmlType {
 	}
 
 	private function getNodeValue() : String {
-		if( _node.hasComplexContent() )
+		var nodeType = nodeType;
+		if( nodeType == Xml.Element || nodeType == Xml.Document )
 			throw "bad nodeType";
+		if( nodeType == Xml.Comment )
+			return _node.toString().substr(4,-7);
 		return _node.toString();
 	}
 
 	private function setNodeValue( v : String ) : String {
-		if( _node.hasComplexContent() || _node.children() == null )
+		var nodeType = nodeType;
+		var x = null;
+		if( nodeType == Xml.Element || nodeType == Xml.Document )
 			throw "bad nodeType";
-		var children = _node.children();
-		untyped __delete__(children, Reflect.fields(children)[0]);
-		_node.appendChild(new XML(v));
+		else if( nodeType == Xml.PCData )
+			x = createPCData(v);
+		else if( nodeType == Xml.CData )
+			x = createCData(v);
+		else if( nodeType == Xml.Comment )
+			x = createComment(v);
+		else if( nodeType == Xml.DocType )
+			x = createDocType(v);
+		else
+			x = createProlog(v);
+		var p = _node.parent();
+		if( p != null ) {
+			p.insertChildAfter(_node, x._node);
+			var i = _node.childIndex();
+			var children = p.children();
+			untyped __delete__(children, Reflect.fields(children)[i]);
+		}
+		_node = x._node;
+		untyped _map[_node] = this;
 		return v;
 	}
 
 	private function getParent() :Xml {
-		return wrap( _node.parent() );
+		return wrap( _map, _node.parent() );
 	}
 
-	private static function wrap( node : XML, ?type : XmlType ) : Xml {
-		var map : Dynamic = _map;
-		if( map == null ) {
-			map = new flash.utils.Dictionary(true);
-			_map = map;
-		}
-		var x = untyped map[node];
+	private static function wrap( map : flash.utils.Dictionary, node : XML, ?type : XmlType ) : Xml {
+		if( map == null )
+			map = new flash.utils.Dictionary();
+		var x : Xml = untyped map[node];
 		if( x == null ) {
 			x = new Xml();
 			x._node = node;
+			x._map = map;
 			x.nodeType = (type != null) ? type : getNodeType( node );
 			untyped map[node] = x;
 		}
@@ -162,24 +195,37 @@ enum XmlType {
 	private function wraps( xList : XMLList ) : Array<Xml> {
 		var out = new Array<Xml>();
 		for( i in 0...xList.length() )
-			out.push( wrap(xList[i]) );
+			out.push( wrap(_map,xList[i]) );
 		return out;
 	}
 
-	function getAttribNS( ns : Array<String> ) : XMLList {
-		return _node.attribute(new flash.utils.QName(_node.namespace(ns[0]).uri,ns[1]));
+	function getAttribNS( cur : XML, ns : Array<String> ) : XMLList {
+		var n = cur.namespace(ns[0]);
+		if( n == null ) {
+			var parent = cur.parent();
+			if( parent == null ) {
+				n = new flash.utils.Namespace(ns[0], "@"+ns[0]);
+				cur.addNamespace(n);
+			} else
+				return getAttribNS(parent, ns);
+		}
+		return _node.attribute(new flash.utils.QName(n,ns[1]));
 	}
 
 	public function get( att : String ) : String {
 		if( nodeType != Xml.Element )
 			throw "bad nodeType";
 		var ns = att.split(":");
+		if( ns[0] == "xmlns" ) {
+			var n = _node.namespace((ns[1] == null) ? "" : ns[1]);
+			return (n == null) ? null : n.uri;
+		}
 		if( ns.length == 1 ) {
 			if( !Reflect.hasField(_node,"@"+att) )
 				return null;
 			return Reflect.field(_node, "@"+att);
 		}
-		var a = getAttribNS(ns);
+		var a = getAttribNS(_node,ns);
 		return (a.length() == 0) ? null : a.toString();
 	}
 
@@ -187,10 +233,19 @@ enum XmlType {
 		if( nodeType != Xml.Element )
 			throw "bad nodeType";
 		var ns = att.split(":");
+		if( ns[0] == "xmlns" ) {
+			var n = _node.namespace((ns[1] == null) ? "" : ns[1]);
+			if( n != null )
+				throw "Can't modify namespace";
+			if( ns[1] == null )
+				throw "Can't set default namespace";
+			_node.addNamespace(new flash.utils.Namespace(ns[1], value));
+			return;
+		}
 		if( ns.length == 1 )
 			Reflect.setField(_node, "@"+att, value);
 		else {
-			var a = getAttribNS(ns);
+			var a = getAttribNS(_node,ns);
 			untyped a[0] = value;
 		}
 	}
@@ -202,16 +257,18 @@ enum XmlType {
 		if( ns.length == 1 )
 			Reflect.deleteField(_node, "@"+att);
 		else
-			untyped __delete__(getAttribNS(ns),0);
+			untyped __delete__(getAttribNS(_node,ns),0);
 	}
 
 	public function exists( att : String ) : Bool {
 		if( nodeType != Xml.Element )
 			throw "bad nodeType";
 		var ns = att.split(":");
+		if( ns[0] == "xmlns" )
+			return _node.namespace((ns[1] == null) ? "" : ns[1]) != null;
 		if( ns.length == 1 )
 			return Reflect.hasField(_node, "@"+att);
-		return getAttribNS(ns).length() > 0;
+		return getAttribNS(_node,ns).length() > 0;
 	}
 
 	public function attributes() : Iterator<String> {
@@ -293,7 +350,7 @@ enum XmlType {
 			throw "bad nodetype";
 		if( children.length() == 0 )
 			return null;
-		return wrap( children[0] );
+		return wrap( _map, children[0] );
 	}
 
 	public function firstElement() : Xml {
@@ -302,7 +359,7 @@ enum XmlType {
 			throw "bad nodetype";
 		if( elements.length() == 0 )
 			return null;
-		return wrap( elements[0] );
+		return wrap( _map, elements[0] );
 	}
 
 	public function addChild( x : Xml ) : Void {
@@ -336,10 +393,10 @@ enum XmlType {
 	public function toString() : String {
 		XML.prettyPrinting = false;
 		if( nodeType == Xml.Document ) {
-			var str = "";
-			var c = _node.children();
-			for( i in 0...c.length() )
-				str += c[i].toXMLString();
+			var str = _node.toXMLString();
+			// remove <__document xmlns....>STR</__document> wrapper
+			str = str.substr(str.indexOf(">") + 1);
+			str = str.substr(0, str.length - 13);
 			return str;
 		}
 		return _node.toXMLString();

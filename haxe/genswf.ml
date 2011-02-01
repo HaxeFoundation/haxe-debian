@@ -153,24 +153,25 @@ let rec make_tpath = function
 			| [], "Boolean" -> [], "Bool"
 			| [], "Object" | [], "Function" -> [], "Dynamic"
 			| [],"Class" | [],"Array" -> pdyn := true; pack, name
+			| [], "Error" -> ["flash";"errors"], "Error"
+			| [] , "XML" -> ["flash";"xml"], "XML"
+			| [] , "XMLList" -> ["flash";"xml"], "XMLList"
+			| [] , "QName" -> ["flash";"utils"], "QName"
+			| [] , "Namespace" -> ["flash";"utils"], "Namespace"
+			| ["__AS3__";"vec"] , "Vector" -> ["flash"], "Vector"
 			| _ -> pack, name
 		in
 		{
 			tpackage = pack;
 			tname = name;
-			tparams = if !pdyn then [TPType (TPNormal { tpackage = []; tname = "Dynamic"; tparams = []; tsub = None; })] else[];
+			tparams = if !pdyn then [TPType (CTPath { tpackage = []; tname = "Dynamic"; tparams = []; tsub = None; })] else[];
 			tsub = None;
 		}
-	| HMName (id,_) ->
+	| HMName (id,ns) ->
 		{
-			tpackage = [];
-			tname = id;
-			tparams = [];
-			tsub = None;
-		}
-	| HMMultiName (Some id,[HNPublic (Some ns)]) ->
-		{
-			tpackage = ExtString.String.nsplit ns ".";
+			tpackage = (match ns with
+				| HNInternal (Some ns) -> ExtString.String.nsplit ns "."
+				| _ -> []);
 			tname = id;
 			tparams = [];
 			tsub = None;
@@ -185,23 +186,20 @@ let rec make_tpath = function
 		assert false
 	| HMAttrib _ ->
 		assert false
+	| HMAny ->
+		assert false
 	| HMParams (t,params) ->
-		let params = List.map (fun t -> TPType (TPNormal (make_tpath t))) params in
+		let params = List.map (fun t -> TPType (CTPath (make_tpath t))) params in
 		{ (make_tpath t) with tparams = params }
 
 let make_param cl p =
-	{ tpackage = fst cl; tname = snd cl; tparams = [TPType (TPNormal { tpackage = fst p; tname = snd p; tparams = []; tsub = None })]; tsub = None }
+	{ tpackage = fst cl; tname = snd cl; tparams = [TPType (CTPath { tpackage = fst p; tname = snd p; tparams = []; tsub = None })]; tsub = None }
 
 let make_topt = function
 	| None -> { tpackage = []; tname = "Dynamic"; tparams = []; tsub = None }
 	| Some t -> make_tpath t
 
-let make_type f t = 
-	TPNormal (match f, t with
-	| "opaqueBackground", Some (HMPath ([],"Object")) -> make_param ([],"Null") ([],"UInt")
-	| "getObjectsUnderPoint", Some (HMPath ([],"Array")) -> make_param ([],"Array") (["flash";"display"],"DisplayObject")
-	| "blendMode", Some (HMPath ([],"String")) -> { tpackage = ["flash";"display"]; tname = "BlendMode"; tparams = []; tsub = None }
-	| _ -> make_topt t)
+let make_type t = CTPath (make_topt t)
 
 let build_class com c file =
 	let path = make_tpath c.hlc_name in
@@ -212,53 +210,78 @@ let build_class com c file =
 		| None | Some (HMPath ([],"Object")) -> flags
 		| Some s -> HExtends (make_tpath s) :: flags
 	) in
-	let flags = List.map (fun i -> HImplements (make_tpath i)) (Array.to_list c.hlc_implements) @ flags in
+	let flags = List.map (fun i ->
+		let i = (match i with
+			| HMMultiName (Some id,ns) ->
+				let rec loop = function
+					| [] -> HMPath ([],id)
+					| HNPublic (Some ns) :: _ -> HMPath (ExtString.String.nsplit ns ".",id)
+					| _ :: l -> loop l
+				in
+				loop (List.rev ns)
+			| _ -> assert false
+		) in
+		HImplements (make_tpath i)
+	) (Array.to_list c.hlc_implements) @ flags in
 	let flags = if c.hlc_sealed || Common.defined com "flash_strict" then flags else HImplements (make_tpath (HMPath ([],"Dynamic"))) :: flags in
   (* make fields *)
 	let pos = { pfile = file ^ "@" ^ s_type_path (path.tpackage,path.tname); pmin = 0; pmax = 0 } in
 	let getters = Hashtbl.create 0 in
 	let setters = Hashtbl.create 0 in
 	let as3_native = Common.defined com "as3_native" in
+	let is_xml = (match path.tpackage, path.tname with
+		| ["flash";"xml"], ("XML" | "XMLList") -> true
+		| _ -> false
+	) in
 	let make_field stat acc f =
-		let meta = ref None in
+		let meta = ref [] in
 		let flags = (match f.hlf_name with
 			| HMPath _ -> [APublic]
 			| HMName (_,ns) ->
 				(match ns with
 				| HNPrivate _ | HNNamespace "http://www.adobe.com/2006/flex/mx/internal" -> []
 				| HNNamespace ns ->
-					meta := Some (":ns",[String ns]);
+					if not (c.hlc_interface || is_xml) then meta := (":ns",[String ns]) :: !meta;
 					[APublic]
 				| HNExplicit _ | HNInternal _ | HNPublic _ ->
 					[APublic]
 				| HNStaticProtected _ | HNProtected _ ->
-					if as3_native then meta := Some (":protected",[]);
+					if as3_native then meta := (":protected",[]) :: !meta;
 					[APrivate])
 			| _ -> []
 		) in
 		if flags = [] then acc else
 		let flags = if stat then AStatic :: flags else flags in
-		let meta = (match !meta with None -> [] | Some (s,cl) -> [s,List.map (fun c -> EConst c,pos) cl]) in
 		let name = (make_tpath f.hlf_name).tname in
+		let mk_meta() =
+			List.map (fun (s,cl) -> s, List.map (fun c -> EConst c,pos) cl, pos) (!meta)
+		in
+		let cf = {
+			cff_name = name;
+			cff_doc = None;
+			cff_pos = pos;
+			cff_meta = mk_meta();
+			cff_access = flags;
+			cff_kind = FVar (None,None);
+		} in
 		match f.hlf_kind with
 		| HFVar v ->
-			let v = if v.hlv_const then
-				FProp (name,None,meta,flags,"default","never",make_type name v.hlv_type)
+			if v.hlv_const then
+				cf.cff_kind <- FProp ("default","never",make_type v.hlv_type)
 			else
-				FVar (name,None,meta,flags,Some (make_type name v.hlv_type),None)
-			in
-			v :: acc
+				cf.cff_kind <- FVar (Some (make_type v.hlv_type),None);
+			cf :: acc
 		| HFMethod m when not m.hlm_override ->
 			(match m.hlm_kind with
 			| MK3Normal ->
 				let t = m.hlm_type in
-				let p = ref 0 in
+				let p = ref 0 and pn = ref 0 in
 				let args = List.map (fun at ->
 					let aname = (match t.hlmt_pnames with
-						| None -> "p" ^ string_of_int !p
+						| None -> incr pn; "p" ^ string_of_int !pn
 						| Some l ->
 							match List.nth l !p with
-							| None -> "p" ^ string_of_int !p
+							| None -> incr pn; "p" ^ string_of_int !pn
 							| Some i -> i
 					) in
 					let opt_val = (match t.hlmt_dparams with
@@ -270,14 +293,38 @@ let build_class com c file =
 								_ -> None
 					) in
 					incr p;
-					(aname,opt_val <> None,Some (make_type name at),None)
+					let t = make_type at in
+					let def_val = match opt_val with
+						| None -> None
+						| Some v ->
+							let v = (match v with
+							| HVNone | HVNull | HVNamespace _ | HVString _ -> None
+							| HVBool b ->
+								Some (Ident (if b then "true" else "false"))
+							| HVInt i | HVUInt i ->
+								Some (Int (Int32.to_string i))
+							| HVFloat f ->
+								Some (Float (string_of_float f))
+							) in
+							match v with
+							| None -> None
+							| Some v ->
+								meta := (":defparam",[String aname;v]) :: !meta;
+								Some (EConst v,pos)
+					in
+					(aname,opt_val <> None,Some t,def_val)
 				) t.hlmt_args in
+				let args = if t.hlmt_var_args then
+					args @ List.map (fun _ -> incr pn; ("p" ^ string_of_int !pn,true,Some (make_type None),None)) [1;2;3;4;5]
+				else args in
 				let f = {
 					f_args = args;
-					f_type = Some (make_type name t.hlmt_ret);
+					f_type = Some (make_type t.hlmt_ret);
 					f_expr = (EBlock [],pos)
 				} in
-				FFun (name,None,meta,flags,[],f) :: acc
+				cf.cff_meta <- mk_meta();
+				cf.cff_kind <- FFun ([],f);
+				cf :: acc
 			| MK3Getter ->
 				Hashtbl.add getters (name,stat) m.hlm_type.hlmt_ret;
 				acc
@@ -305,11 +352,18 @@ let build_class com c file =
 			| None, None -> assert false
 			| Some t, None -> true, false, t
 			| None, Some t -> false, true, t
-			| Some t1, Some t2 -> if t1 <> t2 then assert false; true, true, t1
+			| Some t1, Some t2 -> true, true, (if t1 <> t2 then None else t1)
 		) in
 		let flags = [APublic] in
 		let flags = if stat then AStatic :: flags else flags in
-		FProp (name,None,[],flags,(if get then "default" else "never"),(if set then "default" else "never"),make_type name t)
+		{
+			cff_name = name;
+			cff_pos = pos;
+			cff_doc = None;
+			cff_access = flags;
+			cff_meta = [];
+			cff_kind = if get && set then FVar (Some (make_type t), None) else FProp ((if get then "default" else "never"),(if set then "default" else "never"),make_type t);
+		}
 	in
 	let fields = Hashtbl.fold (fun (name,stat) t acc ->
 		make_get_set name stat (Some t) (try Some (Hashtbl.find setters (name,stat)) with Not_found -> None) :: acc
@@ -320,13 +374,46 @@ let build_class com c file =
 		else
 			make_get_set name stat None (Some t) :: acc
 	) setters fields in
+	try
+		(*
+			If the class only contains static String constants, make it an enum
+		*)
+		let real_type = ref "" in
+		let rec loop = function
+			| [] -> []
+			| f :: l ->
+				match f.cff_kind with
+				| FVar (Some (CTPath { tpackage = []; tname = ("String" | "Int" | "UInt") as tname }),None) when List.mem AStatic f.cff_access ->
+					if !real_type = "" then real_type := tname else if !real_type <> tname then raise Exit;
+					(f.cff_name,None,[],[],pos) :: loop l
+				| FFun (_,{ f_args = [] }) when f.cff_name = "new" -> loop l
+				| _ -> raise Exit
+		in
+		(match path.tpackage, path.tname with
+		| ["flash";"net"], "URLRequestMethod"
+		| ["flash";"filters"], "BitmapFilterQuality"
+		| ["flash";"display"], ("BitmapDataChannel" | "GraphicsPathCommand")  -> raise Exit
+		| _ -> ());
+		List.iter (function HExtends _ | HImplements _ -> raise Exit | _ -> ()) flags;
+		let constr = loop fields in
+		if constr = [] then raise Exit;
+		let enum_data = {
+			d_name = path.tname;
+			d_doc = None;
+			d_params = [];
+			d_meta = [(":fakeEnum",[EConst (Type !real_type),pos],pos)];
+			d_flags = [EExtern];
+			d_data = constr;
+		} in
+		(path.tpackage, [(EEnum enum_data,pos)])
+	with Exit ->
 	let class_data = {
 		d_name = path.tname;
 		d_doc = None;
 		d_params = [];
-		d_meta = [];
+		d_meta = if c.hlc_final && List.exists (fun f -> f.cff_name <> "new" && not (List.mem AStatic f.cff_access)) fields then [":final",[],pos] else [];
 		d_flags = flags;
-		d_data = List.map (fun f -> f, pos) fields;
+		d_data = fields;
 	} in
 	(path.tpackage, [(EClass class_data,pos)])
 
@@ -343,7 +430,9 @@ let extract_data swf =
 				match f.hlf_kind with
 				| HFClass c ->
 					let path = make_tpath f.hlf_name in
-					Hashtbl.add h (path.tpackage,path.tname) c
+					(match path with
+					| { tpackage = []; tname = "Float" | "Bool" | "MethodClosure" | "Int" | "UInt" | "Dynamic" } -> ()
+					| _ -> Hashtbl.add h (path.tpackage,path.tname) c)
 				| _ -> ()
 			in
 			List.iter (fun t ->
@@ -374,7 +463,7 @@ let remove_debug_infos as3 =
 		c.hlc_static_fields <- Array.map loop_field c.hlc_static_fields;
 		c
 	and loop_static s =
-		{ 
+		{
 			hls_method = loop_method s.hls_method;
 			hls_fields = Array.map loop_field s.hls_fields;
 		}
@@ -400,8 +489,8 @@ let remove_debug_infos as3 =
 		Array.iteri (fun pos op ->
 			match op with
 			| HDebugReg _ | HDebugLine _ | HDebugFile _ | HBreakPointLine _ | HTimestamp -> ()
-			| _ -> 
-				let p delta = 
+			| _ ->
+				let p delta =
 					positions.(pos + delta) - DynArray.length code
 				in
 				let op = (match op with
@@ -423,7 +512,7 @@ let remove_debug_infos as3 =
 			}
 		) f.hlf_trys;
 		f
-	in	
+	in
 	As3hlparse.flatten (List.map loop_static hl)
 
 let parse_swf com file =
@@ -439,7 +528,7 @@ let parse_swf com file =
 			IO.close_in ch;
 			List.iter (fun t ->
 				match t.tdata with
-				| TActionScript3 (id,as3) when not com.debug && not !Common.display ->					
+				| TActionScript3 (id,as3) when not com.debug && not com.display ->
 					t.tdata <- TActionScript3 (id,remove_debug_infos as3)
 				| _ -> ()
 			) tags;
@@ -455,10 +544,20 @@ let tag ?(ext=false) d = {
 	tdata = d;
 }
 
+let swf_ver = function
+	| 6. -> 6
+	| 7. -> 7
+	| 8. -> 8
+	| 9. -> 9
+	| 10. | 10.1 -> 10
+	| 10.2 -> 11
+	| 11. -> 12
+	| _ -> assert false
+
 let convert_header com (w,h,fps,bg) =
 	if max w h >= 1639 then failwith "-swf-header : size too large";
 	{
-		h_version = com.flash_version;
+		h_version = swf_ver com.flash_version;
 		h_size = {
 			rect_nbits = if (max w h) >= 820 then 16 else 15;
 			left = 0;
@@ -646,24 +745,30 @@ let remove_classes toremove lib hcl =
 		match List.filter (fun c -> Hashtbl.mem hcl c) (!toremove) with
 		| [] -> lib
 		| classes ->
-			let rec loop t =
-				match t.tdata with
-				| TActionScript3 (h,data) ->
-					let data = As3hlparse.parse data in
-					let rec loop f =
-						match f.hlf_kind with
-						| HFClass _ -> 
-							let path = make_tpath f.hlf_name in							
-							not (List.mem (path.tpackage,path.tname) classes)
-						| _ -> true
-					in
-					let data = List.map (fun s -> { s with hls_fields = Array.of_list (List.filter loop (Array.to_list s.hls_fields)) }) data in
-					let data = List.filter (fun s -> Array.length s.hls_fields > 0) data in
-					{ t with tdata = TActionScript3 (h,As3hlparse.flatten data) }
-				| _ -> t
+			let rec tags = function
+				| [] -> []
+				| t :: l ->
+					match t.tdata with
+					| TActionScript3 (h,data) ->
+						let data = As3hlparse.parse data in
+						let rec loop f =
+							match f.hlf_kind with
+							| HFClass _ ->
+								let path = make_tpath f.hlf_name in
+								not (List.mem (path.tpackage,path.tname) classes)
+							| _ -> true
+						in
+						let data = List.map (fun s -> { s with hls_fields = Array.of_list (List.filter loop (Array.to_list s.hls_fields)) }) data in
+						let data = List.filter (fun s -> Array.length s.hls_fields > 0) data in
+						(if data = [] then
+							tags l
+						else
+							{ t with tdata = TActionScript3 (h,As3hlparse.flatten data) } :: tags l)
+					| _ ->
+						t :: tags l
 			in
 			toremove := List.filter (fun p -> not (List.mem p classes)) !toremove;
-			fst lib, List.map loop (snd lib)
+			fst lib, tags (snd lib)
 
 let build_swf8 com codeclip exports =
 	let code, clips = Genswf8.generate com in
@@ -694,8 +799,9 @@ let build_swf8 com codeclip exports =
 	) in
 	clips @ code
 
-let build_swf9 com swc =
-	let code = Genswf9.generate com in
+let build_swf9 com file swc =
+	let boot_name = if swc <> None || Common.defined com "haxe-boot" then "haxe" else "boot_" ^ (String.sub (Digest.to_hex (Digest.string file)) 0 4) in
+	let code = Genswf9.generate com boot_name in
 	let code = (match swc with
 	| Some cat ->
 		cat := build_swc_catalog com (List.map (fun (t,_,_) -> t) code);
@@ -719,12 +825,12 @@ let build_swf9 com swc =
 		) code in
 		[tag (TActionScript3 (None,As3hlparse.flatten inits))]
 	) in
-	let clips = [tag (TF9Classes [{ f9_cid = None; f9_classname = "flash.Boot" }])] in
+	let clips = [tag (TF9Classes [{ f9_cid = None; f9_classname = boot_name }])] in
 	code @ clips
 
 let merge com file priority (h1,tags1) (h2,tags2) =
   (* prioritize header+bgcolor for first swf *)
-	let header = if priority then { h2 with h_version = max h2.h_version com.flash_version } else h1 in
+	let header = if priority then { h2 with h_version = max h2.h_version (swf_ver com.flash_version) } else h1 in
 	let tags1 = if priority then List.filter (function { tdata = TSetBgColor _ } -> false | _ -> true) tags1 else tags1 in
   (* remove unused tags *)
 	let use_stage = priority && Common.defined com "flash_use_stage" in
@@ -742,15 +848,19 @@ let merge com file priority (h1,tags1) (h2,tags2) =
 		| TActionScript3 (Some (_,"org/papervision3d/render/QuadrantRenderEngine"),_) when not as3_native -> false
 		| TFilesAttributes _ | TEnableDebugger2 _ | TScenes _ -> false
 		| TSetBgColor _ -> priority
-		| TExport el when !nframe = 0 && com.flash_version >= 9 ->
+		| TExport el when !nframe = 0 && com.flash_version >= 9. ->
 			let el = List.filter (fun e ->
-				let path = (match List.rev (ExtString.String.nsplit e.exp_name ".") with [] -> assert false | name :: l -> List.rev l, name) in
-				List.exists (fun t -> t_path t = path) com.types
+				let path = parse_path e.exp_name in
+				let b = List.exists (fun t -> t_path t = path) com.types in
+				if not b && fst path = [] then List.iter (fun t ->
+					if snd (t_path t) = snd path then error ("Linkage name '" ^ snd path ^ "' in '" ^ file ^  "' should be '" ^ s_type_path (t_path t) ^"'") (t_pos t);
+				) com.types;
+				b
 			) el in
 			classes := !classes @ List.map (fun e -> { f9_cid = Some e.exp_id; f9_classname = e.exp_name }) el;
 			false
 		| TF9Classes el when !nframe = 0 ->
-			if com.flash_version < 9 then failwith "You can't use AS3 SWF with Flash8 target";
+			if com.flash_version < 9. then failwith "You can't use AS3 SWF with Flash8 target";
 			classes := !classes @ List.filter (fun e -> e.f9_cid <> None) el;
 			false
 		| _ -> true
@@ -802,7 +912,7 @@ let merge com file priority (h1,tags1) (h2,tags2) =
 
 let generate com swf_header =
 	let t = Common.timer "generate swf" in
-	let isf9 = com.flash_version >= 9 in
+	let isf9 = com.flash_version >= 9. in
 	let swc = if Common.defined com "swc" then Some (ref "") else None in
 	if swc <> None && not isf9 then failwith "SWC support is only available for Flash9+";
 	let file , codeclip = (try let f , c = ExtString.String.split com.file "@" in f, Some c with _ -> com.file , None) in
@@ -830,18 +940,18 @@ let generate com swf_header =
 								else
 									error ("Class already exists in '" ^ file ^ "', use @:bind to redefine it") (t_pos t)
 							| _ ->
-								error ("Invalid redefinition of class defined in '" ^ file ^ "'") (t_pos t)						
+								error ("Invalid redefinition of class defined in '" ^ file ^ "'") (t_pos t)
 					) com.types;
 				) el
 			| _ -> ()
 		) tags;
 	) com.swf_libs;
   (* build haxe swf *)
-	let tags = if isf9 then build_swf9 com swc else build_swf8 com codeclip exports in
+	let tags = if isf9 then build_swf9 com file swc else build_swf8 com codeclip exports in
 	let header, bg = (match swf_header with None -> default_header com | Some h -> convert_header com h) in
 	let bg = tag (TSetBgColor { cr = bg lsr 16; cg = (bg lsr 8) land 0xFF; cb = bg land 0xFF }) in
 	let debug = (if isf9 && Common.defined com "fdb" then [tag (TEnableDebugger2 (0,""))] else []) in
-	let fattr = (if com.flash_version < 8 then [] else
+	let fattr = (if com.flash_version < 8. then [] else
 		[tag (TFilesAttributes {
 			fa_network = Common.defined com "network-sandbox";
 			fa_as3 = isf9;

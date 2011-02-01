@@ -140,12 +140,17 @@ class Lambda {
 	}
 
 	/**
-		Count the number of elements in an [Iterable]
+		Count the number of elements in an [Iterable] having [pred] returning true.
 	**/
-	public static function count<A>( it : Iterable<A> ) {
+	public static function count<A>( it : Iterable<A>, ?pred : A -> Bool ) {
 		var n = 0;
-		for( _ in it )
-			++n;
+		if( pred == null )
+			for( _ in it )
+				n++;
+		else
+			for( x in it )
+				if( pred(x) )
+					n++;
 		return n;
 	}
 
@@ -154,6 +159,32 @@ class Lambda {
 	**/
 	public static function empty( it : Iterable<Dynamic> ) : Bool {
 		return !it.iterator().hasNext();
+	}
+
+	/**
+		Returns the index of the item in the given Iterable, depending on the order of the Iterator.
+		Returns -1 if the item was not found.
+	**/
+	public static function indexOf<T>( it : Iterable<T>, v : T ) : Int {
+		var i = 0;
+		for( v2 in it ) {
+			if( v == v2 )
+				return i;
+			i++;
+		}
+		return -1;
+	}
+
+	/**
+		Returns a list containing all items of 'a' followed by all items of 'b'
+	**/
+	public static function concat<T>( a : Iterable<T>, b : Iterable<T> ) : List<T> {
+		var l = new List();
+		for( x in a )
+			l.add(x);
+		for( x in b )
+			l.add(x);
+		return l;
 	}
 
 }

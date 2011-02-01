@@ -398,7 +398,7 @@ let rec tag_data_length = function
 		As3parse.int_length (List.length sl) + sum (fun(n,s) -> As3parse.int_length n + string_length s) sl +
 		As3parse.int_length (List.length fl) + sum (fun(n,s) -> As3parse.int_length n + string_length s) fl
 	| TBinaryData (_,data) ->
-		2 + String.length data
+		2 + 4 + String.length data
 	| TFontName c ->
 		cid_data_length c
 	| TBitsJPEG4 b ->
@@ -1969,6 +1969,7 @@ let rec write_tag_data ch = function
 		) sl;
 	| TBinaryData (id,data) ->
 		write_ui16 ch id;
+		write_i32 ch 0;
 		nwrite ch data
 	| TFontName c ->
 		write_cid_data ch c

@@ -1,6 +1,6 @@
 package flash.display;
 
-extern enum BlendMode {
+@:fakeEnum(String) extern enum BlendMode {
 	ADD;
 	ALPHA;
 	DARKEN;
@@ -14,8 +14,6 @@ extern enum BlendMode {
 	NORMAL;
 	OVERLAY;
 	SCREEN;
-	SUBTRACT;
-	#if flash10
 	SHADER;
-	#end
+	SUBTRACT;
 }
