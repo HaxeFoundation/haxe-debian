@@ -1,3 +1,9 @@
+haxe (1:2.7+20110131-2) unstable; urgency=low
+
+  * Updated man page and bash comletion to include new macro options.
+
+ -- Jens Peter Secher <jps@debian.org>  Sun, 06 Feb 2011 22:27:47 +0100
+
 haxe (1:2.7+20110131-1) experimental; urgency=low
 
   * New upstream version.

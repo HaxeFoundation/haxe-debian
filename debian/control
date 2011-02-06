@@ -4,7 +4,6 @@ Priority: optional
 Maintainer: Jens Peter Secher <jps@debian.org>
 Standards-Version: 3.9.1
 Build-Depends: debhelper (>= 7), ocaml, ocaml-best-compilers | ocaml-native-compilers, ocaml-findlib, libxml-light-ocaml-dev, camlp4 (>= 3.11), zlib1g-dev, neko (>= 1.8.1~)
-Build-Conflicts: haxe
 Vcs-Hg: http://hg.debian.org/hg/collab-maint/haxe
 Homepage: http://haxe.org
 

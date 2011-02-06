@@ -1,4 +1,4 @@
-.TH HAXE 1 "Feb 01, 2010" ""
+.TH HAXE 1 "Feb 06, 2011" ""
 .SH NAME
 haxe \- compile haXe programs to SWF, Neko, JavaScript, PHP, or C++.
 .SH SYNOPSIS
@@ -20,9 +20,6 @@ Compile code to JavaScript file.
 .TP
 .BI "\-swf " file
 Compile code to Flash SWF file.
-.TP
-.BI "\-swf9 " file
-Compile code to Flash9 SWF file.
 .TP
 .BI "\-as3 " directory
 Generate AS3 code into target directory.
@@ -64,13 +61,10 @@ Define SWF header (width:height:fps:color).
 Add the SWF library to the compiled SWF.
 .TP
 .BI "\-x " file
-Shortcut for compiling and executing a neko file.
+Shorthand for compiling and executing a neko file.
 .TP
 .BI "\-resource " file[@name]
 Add a named resource file.
-.TP
-.BI "\-exclude " filename
-Do not generate code for classes listed in this file.
 .TP
 .B "\-prompt"
 Prompt on error.
@@ -114,11 +108,23 @@ Disable code optimizations.
 .BI "\-\-php-front " file
 Select the name for the php front file.
 .TP
+.BI "\-\-php-lib " file
+select the name for the php lib folder.
+.TP
 .BI "\-\-js\-namespace " namespace
 Create a namespace where root types are defined.
 .TP
 .BI "\-\-remap " package:target
 Remap a package to another one.
+.TP
+.B "\-\-interp"
+Interpret the program using internal macro system.
+.TP
+.B "\-\-macro"
+Call the given macro before typing anything else.
+.TP
+.B "\-\-dead-code-elimination"
+Remove unused methods.
 .TP
 .B "\-help"
 Display this list of options.

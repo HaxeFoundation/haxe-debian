@@ -22,12 +22,13 @@ _haxe()
     cur=${COMP_WORDS[COMP_CWORD]}
     prev=${COMP_WORDS[COMP_CWORD-1]}
     ## All available options to haxe.
-    options='-cp -js -as3 -swf -swf9 -as3 -neko -php -cpp -xml -main -lib \
+    options='-cp -js -as3 -swf -as3 -neko -php -cpp -xml -main -lib \
              -D -v -debug -swf-version -swf-header -swf-lib -x -resource
-             -exclude -prompt -cmd --flash-strict --no-traces \
+             -prompt -cmd --flash-strict --no-traces \
              --flash-use-stage --neko-source --gen-hx-classes --next \
              --display --no-output --times --no-inline --no-opt \
-             --php-front --remap -help --help'
+             --php-front --php-lib --js-namespace --remap 
+             --interp --macro --dead-code-elimination -help --help'
     case $prev in
 	-cp|-as3)
             COMPREPLY=( $( compgen -o dirnames -- ${cur} ) )
@@ -35,7 +36,7 @@ _haxe()
 	-js)
             COMPREPLY=( $( compgen -o filenames -G "${cur}*.js" ) )
             ;;
-	-swf|-swf9)
+	-swf)
             COMPREPLY=( $( compgen -o filenames -G "${cur}*.swf" ) )
             ;;
 	-swf-lib|-resource)
@@ -47,17 +48,20 @@ _haxe()
 	-php|--php-front)
             COMPREPLY=( $( compgen -o filenames -G "${cur}*.php" ) )
             ;;
+	--php-lib)
+            COMPREPLY=( $( compgen -o filenames -- ${cur} ) )
+            ;;
 	-cpp)
-            COMPREPLY=( $( compgen -o filenames -G "${cur}*.cpp" ) )
+            COMPREPLY=( $( compgen -o filenames -G "${cur}*" ) )
             ;;
 	-xml)
             COMPREPLY=( $( compgen -o filenames -G "${cur}*.xml" ) )
             ;;
-	-exclude|--gen-hx-classes)
+	--gen-hx-classes)
             COMPREPLY=( $( compgen -o filenames -G "${cur}*.hx" ) )
             ;;
         -swf-version)
-	    local swf_versions='6 7 8 9 10'
+	    local swf_versions='6 7 8 9 10 10.1 10.2'
 	    COMPREPLY=( $( compgen -W "${swf_versions}" -- ${cur} ) )
 	    ;;
         -swf-header)
@@ -68,6 +72,7 @@ _haxe()
             ## files, alternatively just Xxx.hx.
             ;;
         -lib)
+            ## Complete on installed haxelibs.
             if haxelib list 2>&1 > /dev/null; then
                 local libraries=`haxelib list | sed 's/:.*//g'`
                 COMPREPLY=( $( compgen -W "${libraries}" -- ${cur} ) )
