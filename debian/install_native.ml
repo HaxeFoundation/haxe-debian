@@ -42,19 +42,6 @@ let obj_ext = match os_type with "Win32" -> ".obj" | _ -> ".o"
 let exe_ext = match os_type with "Win32" | "Cygwin" -> ".exe" | _ -> ""
 let ocamloptflags = match os_type with "Unix" -> "-cclib -fno-stack-protector " | _ -> ""
 
-let zlib_path = match os_type with
-	| "Win32" -> "../ocaml/extc/zlib/"
-	| _ -> "./"
-
-let zlib = match os_type with
-	| "Win32" -> zlib_path ^ "zlib.lib"
-	| _ ->
-		try
-			List.find Sys.file_exists ["/usr/lib/libz.dylib";"/usr/lib64/libz.so.1";"/usr/lib/libz.so.1";"/lib/libz.so.1";"/usr/lib/libz.so.4.1"]
-		with
-			Not_found ->
-				failwith "LibZ was not found on your system, please install it or modify the search directories in the install script"
-
 let msg m =
 	prerr_endline m;
 	flush stdout
@@ -82,9 +69,9 @@ let compile_libs() =
 	(* EXTC *)
 	Sys.chdir "ocaml/extc";
 	let c_opts = (if Sys.ocaml_version < "3.08" then " -ccopt -Dcaml_copy_string=copy_string " else " ") in
-	command ("ocamlfind ocamlc" ^ c_opts ^ " -I .. -I ../" ^ zlib_path ^ " extc_stubs.c");
+	command ("ocamlfind ocamlc" ^ c_opts ^ " -I .. -I ../ extc_stubs.c");
 
-	let options = "-cclib ../ocaml/extc/extc_stubs" ^ obj_ext ^ " -cclib " ^ zlib ^ " extc.ml" in
+	let options = "-cclib ../ocaml/extc/extc_stubs" ^ obj_ext ^ " -cclib -lz extc.ml" in
 	if bytecode then command ("ocamlfind ocamlc -a -I .. -o extc.cma " ^ options);
 	if native then command ("ocamlfind ocamlopt -a -I .. -o extc.cmxa " ^ options);
 	Sys.chdir "../..";
