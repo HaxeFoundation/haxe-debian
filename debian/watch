@@ -1,0 +1,3 @@
+version=3
+opts=dversionmangle=s/\+\d*//,uversionmangle=s/\.0(\d)/\.$1/ \
+http://haxe.org/file/haxe-([\d\.]*)-linux.tar.gz
