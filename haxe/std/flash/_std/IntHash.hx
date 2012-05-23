@@ -25,43 +25,40 @@
 
 @:core_api class IntHash<T> {
 
-	private var h : Dynamic;
+	private var h : flash.utils.Dictionary;
 
 	public function new() : Void {
-		h = untyped __new__(_global["Object"]);
+		h = new flash.utils.Dictionary();
 	}
 
 	public function set( key : Int, value : T ) : Void {
-		h[key] = value;
+		untyped h[key] = value;
 	}
 
 	public function get( key : Int ) : Null<T> {
-		return h[key];
+		return untyped h[key];
 	}
 
 	public function exists( key : Int ) : Bool {
-		return untyped h["hasOwnProperty"](key);
+		return untyped h.hasOwnProperty(key);
 	}
 
 	public function remove( key : Int ) : Bool {
-		if( untyped !h["hasOwnProperty"](key) ) return false;
+		if( untyped !h.hasOwnProperty(key) ) return false;
 		untyped __delete__(h,key);
 		return true;
 	}
 
 	public function keys() : Iterator<Int> {
-		var l : Array<Int> = untyped __keys__(h);
-		for( x in 0...l.length )
-			l[x] = Std.int(l[x]);
-		return l.iterator();
+		return untyped (__keys__(h)).iterator();
 	}
 
 	public function iterator() : Iterator<T> {
 		return untyped {
 			ref : h,
 			it : keys(),
-			hasNext : function() { return this.it[__unprotect__("hasNext")](); },
-			next : function() { var i = this.it[__unprotect__("next")](); return this.ref[i]; }
+			hasNext : function() { return __this__.it.hasNext(); },
+			next : function() { var i = __this__.it.next(); return __this__.ref[i]; }
 		};
 	}
 

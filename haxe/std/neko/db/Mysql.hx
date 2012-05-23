@@ -23,6 +23,7 @@
  * DAMAGE.
  */
 package neko.db;
+#if !spod_macro
 
 import neko.db.Connection;
 
@@ -229,3 +230,5 @@ class Mysql {
 	}
 
 }
+
+#end

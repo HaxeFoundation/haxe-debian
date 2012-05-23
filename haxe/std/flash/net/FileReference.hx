@@ -1,27 +1,18 @@
 package flash.net;
 
-#if !flash8
-"This class is only accesible in Flash8"
-#end
-
-extern class FileReference {
-
-	var creator : String;
-	var creationDate : Date;
-	var modificationDate : Date;
-	var size : Float;
-	var type : String;
-	var name : String;
-	var postData : String;
-
+extern class FileReference extends flash.events.EventDispatcher {
+	var creationDate(default,null) : Date;
+	var creator(default,null) : String;
+	@:require(flash10) var data(default,null) : flash.utils.ByteArray;
+	var modificationDate(default,null) : Date;
+	var name(default,null) : String;
+	var size(default,null) : Float;
+	var type(default,null) : String;
 	function new() : Void;
-
-	function browse( ?typeList : Array<Dynamic> ) : Bool;
-	function upload( url : String ) : Bool;
-	function download( url : String, ?defaultName : String ) : Bool;
+	function browse(?typeFilter : Array<FileFilter>) : Bool;
 	function cancel() : Void;
-
-	function addListener( listener : Dynamic ) : Void;
-	function removeListener( listener : Dynamic ) : Bool;
-
+	function download(request : URLRequest, ?defaultFileName : String) : Void;
+	@:require(flash10) function load() : Void;
+	@:require(flash10) function save(data : Dynamic, ?defaultFileName : String) : Void;
+	function upload(request : URLRequest, ?uploadDataFieldName : String, testUpload : Bool = false) : Void;
 }

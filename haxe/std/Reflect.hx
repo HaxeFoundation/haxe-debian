@@ -43,7 +43,18 @@ extern class Reflect {
 	/**
 		Set an object field value.
 	**/
-	public inline static function setField( o : Dynamic, field : String, value : Dynamic ) : Void;
+	public static function setField( o : Dynamic, field : String, value : Dynamic ) : Void;
+
+	/**
+		Similar to field but also supports property (might be slower).
+	**/
+	public static function getProperty( o : Dynamic, field : String ) : Dynamic;
+
+	/**
+		Similar to setField but also supports property (might be slower).
+	**/
+	public static function setProperty( o : Dynamic, field : String, value : Dynamic ) : Void;
+
 
 	/**
 		Call a method with the given object and arguments.
@@ -67,7 +78,6 @@ extern class Reflect {
 
 	/**
 		Compare two methods closures. Returns true if it's the same method of the same instance.
-		Does not work on Neko platform.
 	**/
 	public static function compareMethods( f1 : Dynamic, f2 : Dynamic ) : Bool;
 

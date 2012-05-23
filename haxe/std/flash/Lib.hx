@@ -26,50 +26,55 @@ package flash;
 
 class Lib {
 
-	public static var _global : Dynamic;
-	public static var _root : MovieClip;
-	public static var current : MovieClip;
-	static var onerror : String -> Array<String> -> Void;
-
-	public static function trace( str : String ) {
-		untyped __trace__(str);
-	}
-
-	public static function eval( str : String ) : Dynamic {
-		return untyped __eval__(str);
-	}
-
-	public static function getURL( url : String, ?target : String ) {
-		untyped __geturl__(url,if( target == null ) "_self" else target);
-	}
-
-	public static function fscommand( cmd : String, ?param : Dynamic ) {
-		untyped __geturl__("FSCommand:"+cmd,if( param == null ) "" else param);
-	}
-
-	public static function print( cmd : String, ?kind : String ) {
-		kind = if (kind == "bframe" || kind == "bmax") "print:#"+kind else "print:";
-		untyped __geturl__(kind,cmd);
-	}
+	public static var current : flash.display.MovieClip;
 
 	public inline static function getTimer() : Int {
-		return untyped __gettimer__();
+		return untyped __global__["flash.utils.getTimer"]();
 	}
 
-	public static function getVersion() : String {
-		return untyped _root["$version"];
+	public static function eval( path : String ) : Dynamic {
+		var p = path.split(".");
+		var fields = new Array();
+		var o : Dynamic = null;
+		while( p.length > 0 ) {
+			try {
+				o = untyped __global__["flash.utils.getDefinitionByName"](p.join("."));
+			} catch( e : Dynamic ) {
+				fields.unshift(p.pop());
+			}
+			if( o != null )
+				break;
+		}
+		for( f in fields ) {
+			if( o == null ) return null;
+			o = untyped o[f];
+		}
+		return o;
 	}
 
-	public static function registerClass( name : String, cl : {} ) {
-		untyped _global["Object"]["registerClass"](name,cl);
+	public static function getURL( url : flash.net.URLRequest, ?target : String ) {
+		var f = untyped __global__["flash.net.navigateToURL"];
+		if( target == null )
+			f(url);
+		else
+			(cast f)(url,target);
 	}
 
-	public static function keys( v : Dynamic ) : Array<String> {
-		return untyped __keys__(v);
+	public static function fscommand( cmd : String, ?param : String ) {
+		untyped __global__["flash.system.fscommand"](cmd,if( param == null ) "" else param);
 	}
 
-	public static function setErrorHandler(f) {
-		onerror = f;
+	public static function trace( arg : Dynamic ) {
+		untyped __global__["trace"](arg);
+	}
+
+	public static function attach( name : String ) : flash.display.MovieClip {
+		var cl = untyped __as__(__global__["flash.utils.getDefinitionByName"](name),Class);
+		return untyped __new__(cl);
+	}
+
+	public inline static function as<T>( v : Dynamic, c : Class<T> ) : Null<T> {
+		return untyped __as__(v,c);
 	}
 
 }

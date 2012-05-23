@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, The haXe Project Contributors
+ * Copyright (c) 2005-2008, The haXe Project Contributors
  * All rights reserved.
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,255 +24,226 @@
  */
 package flash;
 
-class Boot {
-
-	private static var def_color = 0;
-	private static var exception = null;
-
-	private static function __string_rec(o : Dynamic,s : String) {
-		untyped {
-			if( s.length >= 20 )
-				return "<...>"; // too much deep recursion
-			var t = __typeof__(o);
-			if( t == "movieclip" )
-				t = "object";
-			else if( t == "function" && (o.__name__ != null || o.__ename__ != null) )
-				t = "object";
-			switch( t ) {
-			case "object":
-				if( __instanceof__(o,Array) ) {
-					if( o.__enum__ != null ) {
-						if( o["length"] == 2 )
-							return o[0];
-						var str = o[0]+"(";
-						s += "    ";
-						for( i in 2...o["length"] ) {
-							if( i != 2 )
-								str += "," + __string_rec(o[i],s);
-							else
-								str += __string_rec(o[i],s);
-						}
-						return str + ")";
-					}
-					var l = o["length"];
-					var i;
-					var str = "[";
-					s += "    ";
-					for( i in 0...l )
-						str += (if (i > 0) "," else "")+__string_rec(o[i],s);
-					str += "]";
-					return str;
-				}
-				var s2 = o["toString"]();
-				if( (__typeof__(s2) == "string" || __instanceof__(s2,String)) && s2 != "[object Object]" && s2 != "[type Function]" )
-					return s2;
-				var k;
-				var str = "{\n";
-				if( typeof(o) == "movieclip" )
-					str = "MC("+o._name+") "+str;
-				s += "    ";
-				var keys : Array<String> = __keys__(o);
-				for( k in keys.iterator() ) {
-					if( k == "prototype" || k == "__class__" || k == "__super__" || k == "__interfaces__" )
-						continue;
-					if( str.length != 2 )
-						str += ",\n";
-					str += s + k + " : "+__string_rec(o[k],s);
-				}
-				s = s.substring(4);
-				if( str.length != 2 )
-					str += "\n";
-				str += s + "}";
-				return str;
-			case "function":
-				return "<function>";
-			case "string":
-				return o;
-			default:
-				return String(o);
-			}
-		}
+#if !as3
+private class RealBoot extends Boot, implements Dynamic {
+	#if swc
+	public function new() {
+		super();
 	}
-
-	private static function __closure(f,o) {
-		untyped {
-			var m = o[f];
-			if( m == null )
-				return null;
-			var f2 = function() {
-				var me = __arguments__["callee"];
-				return me["f"]["apply"](me["o"],__arguments__);
-			};
-			f2["f"] = m;
-			f2["o"] = o;
-			return f2;
-		}
+	public static function init(mc) {
+		flash.Lib.current = mc;
+		new RealBoot().init();
 	}
-
-	#if flash6
-	private static function __interfLoop(cc : Dynamic,cl : Dynamic) {
-		if( cc == null )
-			return false;
-		var intf : Array<Dynamic> = cc.__interfaces__;
-		for( i in 0...intf.length ) {
-			var i = intf[i];
-			if( i == cl || __interfLoop(i,cl) )
-				return true;
-		}
-		return __interfLoop(cc.__super__,cl);
+	#else
+	function new() {
+		super();
+		if( flash.Lib.current == null ) flash.Lib.current = this;
+		start();
 	}
 	#end
+}
+#end
 
-	private static function __instanceof(o : Dynamic,cl) {
-		untyped {
-			if( !cl )
-				return false;
-			if( __instanceof__(o,cl) ) {
-				if( cl == Array )
-					return ( o[__unprotect__("__enum__")] == null );
-				return true;
+class Boot extends flash.display.MovieClip {
+
+	static var tf : flash.text.TextField;
+	static var lines : Array<String>;
+	static var lastError : flash.errors.Error;
+
+	public static var skip_constructor = false;
+
+	function start() {
+		#if mt mt.flash.Init.check(); #end
+		#if dontWaitStage
+			init();
+		#else
+			var c = flash.Lib.current;
+			try {
+				untyped if( c == this && c.stage != null && c.stage.align == "" )
+					c.stage.align = "TOP_LEFT";
+			} catch( e : Dynamic ) {
+				// security error when loading from different domain
 			}
-			#if flash6
-			if( __interfLoop(o[__unprotect__("__class__")],cl) )
-				return true;
-			#end
-			switch( cast cl ) {
-			case Int:
-				return __typeof__(o) == "number" && __physeq__(Math.ceil(o),o%2147483648.0) && !(__physeq__(o,true) || __physeq__(o,false));
-			case Float:
-				return __typeof__(o) == "number";
-			case Bool:
-				return __physeq__(o,true) || __physeq__(o,false);
-			case String:
-				return __typeof__(o) == "string";
-			case Dynamic:
-				return true;
-			default:
-				return o[__unprotect__("__enum__")] == cl ||
-					(cl == Class && o[__unprotect__("__name__")] != null) ||
-					(cl == Enum && o[__unprotect__("__ename__")] != null);
-			}
-		}
+			if( c.stage == null )
+				c.addEventListener(flash.events.Event.ADDED_TO_STAGE, doInitDelay);
+			else if( c.stage.stageWidth == 0 )
+				untyped __global__["flash.utils.setTimeout"](start,1);
+			else
+				init();
+		#end
 	}
 
-	private static function getTrace() : flash.TextField untyped {
-		var root = flash.Lib.current;
-		var tf : flash.TextField = root.__trace_txt;
+	function doInitDelay(_) {
+		flash.Lib.current.removeEventListener(flash.events.Event.ADDED_TO_STAGE, doInitDelay);
+		start();
+	}
+
+	#if (swc && swf_protected) public #end function init() {
+		throw "assert";
+	}
+
+	public static function enum_to_string( e : { tag : String, params : Array<Dynamic> } ) {
+		if( e.params == null )
+			return e.tag;
+		var pstr = [];
+		for( p in e.params )
+			pstr.push(__string_rec(p,""));
+		return e.tag+"("+pstr.join(",")+")";
+	}
+
+	public static function __instanceof( v : Dynamic, t : Dynamic ) {
+		try {
+			if( t == Dynamic )
+				return true;
+			return untyped __is__(v,t);
+		} catch( e : Dynamic ) {
+		}
+		return false;
+	}
+
+	public static function __clear_trace() {
+		if( tf == null )
+			return;
+		tf.parent.removeChild(tf);
+		tf = null;
+		lines = null;
+	}
+
+	public static function __set_trace_color(rgb) {
+		var tf = getTrace();
+		tf.textColor = rgb;
+		tf.filters = [];
+	}
+
+	public static function getTrace() {
+		var mc = flash.Lib.current;
 		if( tf == null ) {
-			var w = Stage.width, h = Stage.height;
-			if( w == 0 ) w = 800;
-			if( h == 0 ) h = 600;
-			root.createTextField("__trace_txt",1048500,0,0,w,h+30);
-			tf = root.__trace_txt;
+			tf = new flash.text.TextField();
+			#if flash10_2
+			var color = 0xFFFFFF, glow = 0;
+			if( mc.stage != null ) {
+				glow = mc.stage.color;
+				color = 0xFFFFFF - glow;
+			}
+			tf.textColor = color;
+			tf.filters = [new flash.filters.GlowFilter(glow, 1, 2, 2, 20)];
+			#end
 			var format = tf.getTextFormat();
 			format.font = "_sans";
-			tf.setNewTextFormat(format);
+			tf.defaultTextFormat = format;
 			tf.selectable = false;
-			tf.textColor = def_color;
-			root.__trace_lines = new Array<String>();
+			tf.width = if( mc.stage == null ) 800 else mc.stage.stageWidth;
+			tf.autoSize = flash.text.TextFieldAutoSize.LEFT;
+			tf.mouseEnabled = false;
 		}
+		if( mc.stage == null )
+			mc.addChild(tf);
+		else
+			mc.stage.addChild(tf); // on top
 		return tf;
 	}
 
-	private static function __set_trace_color( rgb : Int ) {
-		getTrace().textColor = rgb;
-		def_color = rgb;
-	}
-
-	private static function __trace(v,inf : haxe.PosInfos) {
-		untyped {
-			var root = flash.Lib.current;
-			var tf = getTrace();
-			var s = inf.fileName+(if( inf.lineNumber == null ) "" else ":"+inf.lineNumber)+": "+__string_rec(v,"");
-			var lines : Array<String> = root.__trace_lines["concat"](s.split("\n"));
+	public static function __trace( v : Dynamic, pos : haxe.PosInfos ) {
+		var tf = getTrace();
+		var pstr = if( pos == null ) "(null)" else pos.fileName+":"+pos.lineNumber;
+		if( lines == null ) lines = [];
+		lines = lines.concat((pstr +": "+__string_rec(v,"")).split("\n"));
+		tf.text = lines.join("\n");
+		var stage = flash.Lib.current.stage;
+		if( stage == null )
+			return;
+		while( lines.length > 1 && tf.height > stage.stageHeight ) {
+			lines.shift();
 			tf.text = lines.join("\n");
-			while( lines.length > 1 && tf.textHeight > Stage.height ) {
-				lines.shift();
-				tf.text = lines.join("\n");
+		}
+	}
+
+	public static function __string_rec( v : Dynamic, str : String ) {
+		var cname = untyped __global__["flash.utils.getQualifiedClassName"](v);
+		switch( cname ) {
+		case "Object":
+			var k : Array<String> = untyped __keys__(v);
+			var s = "{";
+			var first = true;
+			for( i in 0...k.length ) {
+				var key = k[i];
+				if( key == "toString" )
+					try return v.toString() catch( e : Dynamic ) {}
+				if( first )
+					first = false;
+				else
+					s += ",";
+				s += " "+key+" : "+__string_rec(v[untyped key],str);
 			}
-			root.__trace_lines = lines;
-		}
-	}
-
-	static function __exc(v) {
-		var s = "";
-		#if debug
-		var a : Array<String> = untyped __eval__("$s");
-		for( i in 0...a.length-1 )
-			s += "\nCalled from "+a[i];
-		var old = a.slice(0,a.length-1);
-		a.splice(0,a.length);
-		#end
-		if( untyped Lib.onerror != null )
-			untyped Lib.onerror(__string_rec(v,""),#if debug old #else [] #end);
-		else
-			__trace(__string_rec(v,"")+s,cast { fileName : "(uncaught exception)" });
-	}
-
-	private static function __clear_trace() {
-		untyped {
-			var root = flash.Lib.current;
-			root.__trace_txt["removeTextField"]();
-			root.__trace_lines = null;
-		}
-	}
-
-	private static function __init(current : Dynamic) untyped {
-		// only if not set yet
-		var g : Dynamic = _global;
-		if( !g.haxeInitDone ) {
-			g.haxeInitDone = true;
-			Array.prototype["copy"] = Array.prototype["slice"];
-			Array.prototype["insert"] = function(i,x) {
-				this["splice"](i,0,x);
-			};
-			Array.prototype["remove"] = function(obj) {
-				var i = 0;
-				var l = this["length"];
-				while( i < l ) {
-					if( this[i] == obj ) {
-						this["splice"](i,1);
-						return true;
-					}
-					i++;
-				}
-				return false;
+			if( !first )
+				s += " ";
+			s += "}";
+			return s;
+		case "Array":
+			if( v == Array )
+				return "#Array";
+			var s = "[";
+			var i;
+			var first = true;
+			var a : Array<Dynamic> = v;
+			for( i in 0...a.length ) {
+				if( first )
+					first = false;
+				else
+					s += ",";
+				s += __string_rec(a[i],str);
 			}
-			Array.prototype["iterator"] = function() {
-				return {
-					cur : 0,
-					arr : this,
-					hasNext : function() {
-						return this.cur < this.arr["length"];
-					},
-					next : function() {
-						return this.arr[this.cur++];
-					}
-				}
-			};
-			_global["ASSetPropFlags"](Array.prototype,null,7);
-			var cca = String.prototype["charCodeAt"];
-			String.prototype["cca"] = cca;
-			String.prototype["charCodeAt"] = function(i) {
-				var x = this["cca"](i);
-				if( x <= 0 ) // fast NaN
-					return null;
-				return x;
-			};
-			// create flash package (in for FP7 mark support)
-			if( _global["flash"] == null )
-				_global["flash"] = {};
+			return s+"]";
+		default:
+			switch( untyped __typeof__(v) ) {
+			case "function": return "<function>";
+			}
 		}
-		// set the Lib variables
-		current.flash.Lib._global = _global;
-		current.flash.Lib._root = _root;
-		current.flash.Lib.current = current;
-		// prevent closure creation by setting untyped
-		current[__unprotect__("@instanceof")] = flash.Boot[__unprotect__("__instanceof")];
-		current[__unprotect__("@closure")] = flash.Boot[__unprotect__("__closure")];
-		// fix firefox default alignement
-		if( _global["Stage"]["align"] == "" )
-			_global["Stage"]["align"] = "LT";
+		return new String(v);
+	}
+
+	static function __unprotect__( s : String ) {
+		return s;
+	}
+
+
+	static function __init__() untyped {
+		var aproto = Array.prototype;
+		aproto.copy = function() {
+			return __this__.slice();
+		};
+		aproto.insert = function(i,x) {
+			__this__.splice(i,0,x);
+		};
+		aproto.remove = function(obj) {
+			var idx = __this__.indexOf(obj);
+			if( idx == -1 ) return false;
+			__this__.splice(idx,1);
+			return true;
+		}
+		aproto.iterator = function() {
+			var cur = 0;
+			var arr : Array<Dynamic> = __this__;
+			return {
+				hasNext : function() {
+					return cur < arr.length;
+				},
+				next : function() {
+					return arr[cur++];
+				}
+			}
+		};
+		aproto.setPropertyIsEnumerable("copy", false);
+		aproto.setPropertyIsEnumerable("insert", false);
+		aproto.setPropertyIsEnumerable("remove", false);
+		aproto.setPropertyIsEnumerable("iterator", false);
+		String.prototype.charCodeAt = function(i) : Null<Int> {
+			var s : String = __this__;
+			var x : Float = s.cca(i);
+			if( __global__["isNaN"](x) )
+				return null;
+			return Std.int(x);
+		};
 	}
 
 }

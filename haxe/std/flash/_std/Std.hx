@@ -22,6 +22,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  * DAMAGE.
  */
+import flash.Boot;
 
 @:core_api class Std {
 
@@ -33,46 +34,27 @@
 		return untyped flash.Boot.__string_rec(s,"");
 	}
 
-	public static function int( x : Float ) : Int {
-		if( x < 0 ) return Math.ceil(x);
-		return Math.floor(x);
+	public inline static function int( x : Float ) : Int {
+		return untyped __int__(x);
 	}
 
 	public static function parseInt( x : String ) : Null<Int> untyped {
-		var v = _global["parseInt"](x, 10);
-		if( _global["isNaN"](v) ) {
-			if( x.charCodeAt(1) == 'x'.code ) {
-				v = _global["parseInt"](x);
-				if( !_global["isNaN"](v) ) return v; // fast isNaN
-			}
+		var v = __global__["parseInt"](x);
+		if( __global__["isNaN"](v) )
 			return null;
-		}
 		return v;
 	}
 
 	public static function parseFloat( x : String ) : Float {
-		return untyped _global["parseFloat"](x);
+		return untyped __global__["parseFloat"](x);
 	}
 
 	public static function random( x : Int ) : Int {
-		return untyped __random__(x);
+		return untyped Math.floor(Math.random()*x);
 	}
 
-	static function __init__() : Void untyped {
-		var g : Dynamic = _global;
-		g["Int"] = { __name__ : ["Int"] };
-		g["Bool"] = { __ename__ : ["Bool"] };
-		g.Dynamic = { __name__ : [__unprotect__("Dynamic")] };
-		g.Class = { __name__ : [__unprotect__("Class")] };
-		g.Enum = {};
-		g.Void = { __ename__ : [__unprotect__("Void")] };
-		g["Float"] = _global["Number"];
-		g["Float"][__unprotect__("__name__")] = ["Float"];
-		Array.prototype[__unprotect__("__class__")] = Array;
-		Array[__unprotect__("__name__")] = ["Array"];
-		String.prototype[__unprotect__("__class__")] = String;
-		String[__unprotect__("__name__")] = ["String"];
-		g["ASSetPropFlags"](Array.prototype,null,7);
+	@:macro public static function format( fmt : haxe.macro.Expr.ExprOf<String> ) : haxe.macro.Expr.ExprOf<String> {
+		return haxe.macro.Format.format(fmt);
 	}
 
 }

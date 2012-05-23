@@ -25,15 +25,10 @@
 package haxe;
 
 class Timer {
-	#if (neko || php)
+	#if (neko || php || cpp)
 	#else
 
 	private var id : Null<Int>;
-
-	#if js
-	private static var arr = new Array<Timer>();
-	private var timerId : Int;
-	#end
 
 	public function new( time_ms : Int ){
 		#if flash9
@@ -43,9 +38,8 @@ class Timer {
 			var me = this;
 			id = untyped _global["setInterval"](function() { me.run(); },time_ms);
 		#elseif js
-			id = arr.length;
-			arr[id] = this;
-			timerId = untyped window.setInterval("haxe.Timer.arr["+id+"].run();",time_ms);
+			var me = this;
+			id = untyped window.setInterval(function() me.run(),time_ms);
 		#end
 	}
 
@@ -57,15 +51,7 @@ class Timer {
 		#elseif flash
 			untyped _global["clearInterval"](id);
 		#elseif js
-			untyped window.clearInterval(timerId);
-			arr[id] = null;
-			if( id > 100 && id == arr.length - 1 ) {
-				// compact array
-				var p = id - 1;
-				while( p >= 0 && arr[p] == null )
-					p--;
-				arr = arr.slice(0,p+1);
-			}
+			untyped window.clearInterval(id);
 		#end
 		id = null;
 	}
@@ -83,7 +69,7 @@ class Timer {
 	}
 
 	#end
-	
+
 	public static function measure<T>( f : Void -> T, ?pos : PosInfos ) : T {
 		var t0 = stamp();
 		var r = f();
@@ -97,14 +83,12 @@ class Timer {
 	public static function stamp() : Float {
 		#if flash
 			return flash.Lib.getTimer() / 1000;
-		#elseif neko
-			return neko.Sys.time();
-		#elseif php
-			return php.Sys.time();
+		#elseif (neko || php)
+			return Sys.time();
 		#elseif js
 			return Date.now().getTime() / 1000;
 		#elseif cpp
-			return untyped __time_stamp();
+			return untyped __global__.__time_stamp();
 		#else
 			return 0;
 		#end

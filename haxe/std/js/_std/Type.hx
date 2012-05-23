@@ -45,7 +45,7 @@ enum ValueType {
 		return o.__class__;
 	}
 
-	public static function getEnum( o : Dynamic ) : Enum<Dynamic> untyped {
+	public static function getEnum( o : EnumValue ) : Enum<Dynamic> untyped {
 		if( o == null )
 			return null;
 		return o.__enum__;
@@ -67,19 +67,7 @@ enum ValueType {
 	}
 
 	public static function resolveClass( name : String ) : Class<Dynamic> untyped {
-		var cl : Class<Dynamic>;
-		try {
-			#if js_namespace
-			if (name.indexOf('.') < 0)
-				cl = eval(js.Boot.__ns + '.' + name);
-			else
-				cl = eval(name);
-			#else
-			cl = eval(name);
-			#end
-		} catch( e : Dynamic ) {
-			cl = null;
-		}
+		var cl : Class<Dynamic> = $hxClasses[name];
 		// ensure that this is a class
 		if( cl == null || cl.__name__ == null )
 			return null;
@@ -87,19 +75,7 @@ enum ValueType {
 	}
 
 	public static function resolveEnum( name : String ) : Enum<Dynamic> untyped {
-		var e : Dynamic;
-		try {
-			#if js_namespace
-			if (name.indexOf('.') < 0)
-				e = eval(js.Boot.__ns + '.' + name);
-			else
-				e = eval(name);
-			#else
-			e = eval(name);
-			#end
-		} catch( err : Dynamic ) {
-			e = null;
-		}
+		var e : Dynamic = $hxClasses[name];
 		// ensure that this is an enum
 		if( e == null || e.__ename__ == null )
 			return null;
@@ -107,15 +83,34 @@ enum ValueType {
 	}
 
 	public static function createInstance<T>( cl : Class<T>, args : Array<Dynamic> ) : T untyped {
-		if( args.length <= 3 )
+		switch( args.length ) {
+		case 0:
+			return __new__(cl);
+		case 1:
+			return __new__(cl,args[0]);
+		case 2:
+			return __new__(cl,args[0],args[1]);
+		case 3:
 			return __new__(cl,args[0],args[1],args[2]);
-		if( args.length > 8 )
+		case 4:
+			return __new__(cl,args[0],args[1],args[2],args[3]);
+		case 5:
+			return __new__(cl,args[0],args[1],args[2],args[3],args[4]);
+		case 6:
+			return __new__(cl,args[0],args[1],args[2],args[3],args[4],args[5]);
+		case 7:
+			return __new__(cl,args[0],args[1],args[2],args[3],args[4],args[5],args[6]);
+		case 8:
+			return __new__(cl,args[0],args[1],args[2],args[3],args[4],args[5],args[6],args[7]);
+		default:
 			throw "Too many arguments";
-		return __new__(cl,args[0],args[1],args[2],args[3],args[4],args[5],args[6],args[7]);
+		}
+		return null;
 	}
 
 	public static function createEmptyInstance<T>( cl : Class<T> ) : T untyped {
-		return __new__(cl,__js__("$_"));
+		__js__("function empty() {}; empty.prototype = cl.prototype");
+		return __js__("new empty()");
 	}
 
 	public static function createEnum<T>( e : Enum<T>, constr : String, ?params : Array<Dynamic> ) : T {
@@ -131,28 +126,32 @@ enum ValueType {
 	}
 
 	public static function createEnumIndex<T>( e : Enum<T>, index : Int, ?params : Array<Dynamic> ) : T {
-		var c = Type.getEnumConstructs(e)[index];
+		var c : String = (untyped e.__constructs__)[index];
 		if( c == null ) throw index+" is not a valid enum constructor index";
 		return createEnum(e,c,params);
 	}
 
 	public static function getInstanceFields( c : Class<Dynamic> ) : Array<String> {
-		var a = Reflect.fields(untyped c.prototype);
+		var a = [];
+		untyped __js__("for(var i in c.prototype) a.push(i)");
 		a.remove("__class__");
+		a.remove("__properties__");
 		return a;
 	}
 
 	public static function getClassFields( c : Class<Dynamic> ) : Array<String> {
 		var a = Reflect.fields(c);
-		a.remove(__unprotect__("__name__"));
-		a.remove(__unprotect__("__interfaces__"));
-		a.remove(__unprotect__("__super__"));
+		a.remove("__name__");
+		a.remove("__interfaces__");
+		a.remove("__properties__");
+		a.remove("__super__");
 		a.remove("prototype");
 		return a;
 	}
 
-	public static function getEnumConstructs( e : Enum<Dynamic> ) : Array<String> untyped {
-		return untyped e.__constructs__;
+	public static function getEnumConstructs( e : Enum<Dynamic> ) : Array<String> {
+		var a : Array<String> = untyped e.__constructs__;
+		return a.copy();
 	}
 
 	public static function typeof( v : Dynamic ) : ValueType untyped {
@@ -203,16 +202,27 @@ enum ValueType {
 		return true;
 	}
 
-	public inline static function enumConstructor( e : Dynamic ) : String {
-		return e[0];
+	public inline static function enumConstructor( e : EnumValue ) : String {
+		return untyped e[0];
 	}
 
-	public inline static function enumParameters( e : Dynamic ) : Array<Dynamic> {
-		return e.slice(2);
+	public inline static function enumParameters( e : EnumValue ) : Array<Dynamic> {
+		return untyped e.slice(2);
 	}
 
-	public inline static function enumIndex( e : Dynamic ) : Int {
-		return e[1];
+	public inline static function enumIndex( e : EnumValue ) : Int {
+		return untyped e[1];
+	}
+
+	public static function allEnums<T>( e : Enum<T> ) : Array<T> {
+		var all = [];
+		var cst : Array<String> = untyped e.__constructs__;
+		for( c in cst ) {
+			var v = Reflect.field(e,c);
+			if( !Reflect.isFunction(v) )
+				all.push(v);
+		}
+		return all;
 	}
 
 }

@@ -114,7 +114,7 @@ class HtmlPrinter {
 	}
 
 	function fmtpath(path : String) {
-		if( path.substr(0,7) == "flash9." )
+		if( path.substr(0,7) == "flash8." )
 			return "flash."+path.substr(7);
 		var pack = path.split(".");
 		if( pack.length > 1 && pack[pack.length-2].charAt(0) == "_" ) {
@@ -424,8 +424,11 @@ class HtmlPrinter {
 		print(makePathUrl(path,"type"));
 		if( params != null && !params.isEmpty() ) {
 			print("&lt;");
-			for( t in params )
+			var first = true;
+			for( t in params ) {
+				if( first ) first = false else print(", ");
 				processType(t);
+			}
 			print("&gt;");
 		}
 	}

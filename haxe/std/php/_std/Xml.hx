@@ -51,7 +51,7 @@ enum XmlType {
 	private static var build : Xml;
 	private static function __start_element_handler(parser : Dynamic, name : String, attribs : ArrayAccess<String>) : Void {
 		var node = createElement(name);
-		untyped __php__("while(list($k, $v) = each($attribs)) $node->set($k, $v)");
+		untyped __php__("foreach($attribs as $k => $v) $node->set($k, $v)");
 		build.addChild(node);
 		build = node;
 	}
@@ -60,14 +60,36 @@ enum XmlType {
 		build = build.getParent();
 	}
 
+	private static function __decodeattr(value : String) : String
+	{
+		return untyped __call__("str_replace", "'", '&apos;', __call__("htmlspecialchars", value, __php__('ENT_COMPAT'), 'UTF-8'));
+	}
+	
+	private static function __decodeent(value : String) : String
+	{
+		return untyped __call__("str_replace", "'", '&apos;', __call__("htmlentities", value, __php__('ENT_COMPAT'), 'UTF-8'));
+	}
+	
 	private static function __character_data_handler(parser : Dynamic, data : String) : Void {
-		if((untyped __call__("strlen", data) == 1 && __call__("htmlentities", data) != data) || untyped __call__("htmlentities", data) == data) {
-			build.addChild(createPCData(untyped __call__("htmlentities", data)));
-		} else
+		var d = __decodeent(data);
+		if ((untyped __call__("strlen", data) == 1 && d != data) || d == data) {
+			var last = build._children[build._children.length - 1];
+			if (null != last && last.nodeType == Xml.PCData)
+			{
+				last.nodeValue += d;
+			} else
+				build.addChild(createPCData(d));
+		} else {
 			build.addChild(createCData(data));
+		}
 	}
 
 	private static function __default_handler(parser : Dynamic, data : String) : Void {
+		//On some PHP setups (seems to happen when libexpat is used) we may get called for such "entities" although character_data will correctly be called afterward.
+		if(data == "<![CDATA[")
+			return;
+		if(data == "]]>")
+			return;
 		if ("<!--" == data.substr(0, 4))
 			build.addChild(createComment(data.substr(4, data.length-7)));
 		else
@@ -111,7 +133,7 @@ enum XmlType {
 		return build;
 	}
 
-	private function new() : Void;
+	private function new() : Void {}
 
 	public static function createElement( name : String ) : Xml {
 		var r = new Xml();
@@ -198,10 +220,11 @@ enum XmlType {
 		return _attributes.get( att );
 	}
 
+	// TODO: check correct transform function
 	public function set( att : String, value : String ) : Void {
 		if( nodeType != Xml.Element )
 			throw "bad nodeType";
-		_attributes.set( att, untyped __call__("htmlspecialchars", value, __php__('ENT_COMPAT'), 'UTF-8'));
+		_attributes.set( att, __decodeattr(value) );
 	}
 
 	public function remove( att : String ) : Void{

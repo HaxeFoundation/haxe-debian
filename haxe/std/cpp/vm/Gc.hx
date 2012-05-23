@@ -17,4 +17,34 @@ class Gc
       return untyped __global__.__hxcpp_gc_trace(sought,printInstances);
    }
 
+   // Can't add these until the next hxcpp release....
+   @:functionCode("\n#ifdef HXCPP_GC_FUNCTIONS_1\n")
+   @:functionTailCode('\n#else\n#error "Please upgrade your version of HXCPP"\n#endif\n')
+   static public function versionCheck() { return true; }
+
+
+   static public function doNotKill(inObject:Dynamic) : Void
+   {
+      untyped __global__.__hxcpp_gc_do_not_kill(inObject);
+   }
+
+   static public function getNextZombie() : Dynamic
+   {
+      return untyped __global__.__hxcpp_get_next_zombie();
+   }
+
+   static public function safePoint() : Void
+   {
+      untyped __global__.__hxcpp_gc_safe_point();
+   }
+
+   static public function enterGCFreeZone() : Void
+   {
+      untyped __global__.__hxcpp_enter_gc_free_zone();
+   }
+
+   static public function exitGCFreeZone() : Void
+   {
+      untyped __global__.__hxcpp_exit_gc_free_zone();
+   }
 }

@@ -117,7 +117,7 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 		}
 		haxe.Log.trace(msg,pos);
 		reportCount++;
-		if( reportCount == 10 ) {
+		if( reportCount == 20 ) {
 			trace("Too many errors");
 			report = function(msg,?pos) {};
 		}
@@ -144,7 +144,7 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 	}
 
 	static function resetTimer() {
-		#if (neko || php)
+		#if (neko || php || cpp)
 		#else
 		if( timer != null ) timer.stop();
 		timer = new haxe.Timer(10000);
@@ -154,7 +154,11 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 
 	static function onError( e : Dynamic, msg : String, context : String ) {
 		var msg = "???";
-		var stack = haxe.Stack.toString(haxe.Stack.exceptionStack());
+		var stack :String = #if js
+			e.stack;
+		#else
+			haxe.Stack.toString(haxe.Stack.exceptionStack());
+		#end
 		try msg = Std.string(e) catch( e : Dynamic ) {};
 		reportCount = 0;
 		report("ABORTED : "+msg+" in "+context);
@@ -186,6 +190,7 @@ class Test #if swf_mark implements mt.Protect #end #if as3 implements haxe.Publi
 			new TestReflect(),
 			new TestBytes(),
 			new TestInt32(),
+			new TestInt64(),
 			new TestIO(),
 			new TestLocals(),
 			new TestSerialize(),

@@ -31,17 +31,26 @@
 	}
 
 	public static function field( o : Dynamic, field : String ) : Dynamic untyped {
-		return (o==null) ? null : o.__Field(field);
+		return (o==null) ? null : o.__Field(field,false);
 	}
 
 	public inline static function setField( o : Dynamic, field : String, value : Dynamic ) : Void untyped {
 		if (o!=null)
-			o.__SetField(field,value);
+			o.__SetField(field,value,false);
+	}
+
+	public static inline function getProperty( o : Dynamic, field : String ) : Dynamic {
+		return (o==null) ? null : o.__Field(field,true);
+	}
+
+	public static inline function setProperty( o : Dynamic, field : String, value : Dynamic ) : Void {
+		if (o!=null)
+			o.__SetField(field,value,true);
 	}
 
 	public static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic untyped {
 			if (func!=null && func.__GetType()==__global__.vtString)
-				func = o.__Field(func);
+				func = o.__Field(func,true);
 			untyped func.__SetThis(o);
          return untyped func.__Run(args);
 	}
@@ -78,14 +87,14 @@
 
 	public static function deleteField( o : Dynamic, f : String ) : Bool untyped {
 		if (o==null) return false;
-		return __hxcpp_anon_remove(o,f);
+		return untyped __global__.__hxcpp_anon_remove(o,f);
 	}
 
 	public static function copy<T>( o : T ) : T {
 		if (o==null) return null;
 		if(untyped o.__GetType()==__global__.vtString ) return o;
 		if(untyped o.__GetType()==__global__.vtArray )
-			return untyped o.__Field("copy")();
+			return untyped o.__Field("copy",true)();
 		var o2 : Dynamic = {};
 		for( f in Reflect.fields(o) )
 			Reflect.setField(o2,f,Reflect.field(o,f));

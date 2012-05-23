@@ -57,12 +57,42 @@ class Lib {
 
 	public static function hashOfAssociativeArray<T>(arr : NativeArray) : Hash<T> {
 		var h = new Hash<T>();
-		untyped __php__("reset($arr); while(list($k, $v) = each($arr)) $h->set($k, $v)");
+		untyped h.h = arr;
 		return h;
 	}
-	
+
 	public static function associativeArrayOfHash(hash : Hash<Dynamic>) : NativeArray {
 		return untyped hash.h;
+	}
+
+	public static function objectOfAssociativeArray(arr : NativeArray) : Dynamic {
+		untyped __php__("foreach($arr as $key => $value){
+			if(is_array($value)) $arr[$key] = php_Lib::objectOfAssociativeArray($value);
+		}");
+		return untyped __call__("_hx_anonymous", arr);
+	}
+
+	public static function associativeArrayOfObject(ob : Dynamic) : NativeArray {
+		return untyped __php__("(array) $ob");
+	}
+	
+	/**
+	 * See the documentation for the equivalent PHP function for details on usage: 
+	 * http://php.net/manual/en/function.mail.php
+	 * @param	to
+	 * @param	subject
+	 * @param	message
+	 * @param	?additionalHeaders
+	 * @param	?additionalParameters
+	 */
+	public static function mail(to : String, subject : String, message : String, ?additionalHeaders : String, ?additionalParameters : String) : Bool
+	{
+		if(null != additionalParameters)
+			return untyped __call__("mail", to, subject, message, additionalHeaders, additionalParameters);
+		else if(null != additionalHeaders)
+			return untyped __call__("mail", to, subject, message, additionalHeaders);
+		else
+			return untyped __call__("mail", to, subject, message);
 	}
 
 	/**
@@ -97,17 +127,18 @@ class Lib {
 		}
 		return o;
 	}
-	
+
 	/**
 	*  Loads types defined in the specified directory.
  	*/
  	public static function loadLib(pathToLib : String) : Void
  	{
+		var prefix = untyped __prefix__();
 		untyped __php__("$_hx_types_array = array();
  		$_hx_cache_content = '';
  		//Calling this function will put all types present in the specified types in the $_hx_types_array
- 		_hx_build_paths($pathToLib, $_hx_types_array, array());
- 
+ 		_hx_build_paths($pathToLib, $_hx_types_array, array(), $prefix);
+
  		for($i=0;$i<count($_hx_types_array);$i++) {
  			//For every type that has been found, create its description
  			$t = null;

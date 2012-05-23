@@ -40,17 +40,24 @@
 	public static function parseInt( x : String ) : Null<Int> {
 		untyped if (!__call__("is_numeric", x)) {
 			var matches = null;
-			__call__('preg_match', '/\\d+/', x, matches);
+			__call__('preg_match', '/^-?\\d+/', x, matches);
 			return __call__("count", matches) == 0 ? null : __call__('intval', matches[0]);
 		} else
 			return x.substr(0, 2).toLowerCase() == "0x" ? __php__("(int) hexdec(substr($x, 2))") : __php__("intval($x)");
 	}
 
+	static var NAN : Float = untyped __call__("acos", 1.01);
 	public static function parseFloat( x : String ) : Float {
-		return untyped __php__("is_numeric($x) ? floatval($x) : acos(1.01)");
+		var v : Float = untyped __call__("floatval", x),
+			s = "" + v;
+		return x.substr(0, s.length) == s ? v : NAN;
 	}
 
 	public static function random( x : Int ) : Int {
-		return untyped __call__("rand", 0, x-1);
+		return untyped __call__("mt_rand", 0, x-1);
+	}
+
+	@:macro public static function format( fmt : haxe.macro.Expr.ExprOf<String> ) : haxe.macro.Expr.ExprOf<String> {
+		return haxe.macro.Context.format(fmt);
 	}
 }

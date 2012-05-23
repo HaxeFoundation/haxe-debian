@@ -1,27 +1,20 @@
 package flash.geom;
 
-#if !flash8
-"This class is only accesible in Flash8"
-#end
-
-extern class Point<T> {
-
-	var x : T;
-	var y : T;
-	var length : Float;
-
-	function new( x : T, y : T ) : Void;
-
-	function normalize( length : T ) : Void;
-	function add( p : Point<T> ) : Point<T>;
-	function subtract( p : Point<T> ) : Point<T>;
-	function equals( p : Point<T> ) : Bool;
-	function offset( dx : T, dy : T ) : Void;
-	function clone() : Point<T>;
+extern class Point {
+	var length(default,null) : Float;
+	var x : Float;
+	var y : Float;
+	function new(x : Float = 0, y : Float = 0) : Void;
+	function add(v : Point) : Point;
+	function clone() : Point;
+	@:require(flash11) function copyFrom(sourcePoint : Point) : Void;
+	function equals(toCompare : Point) : Bool;
+	function normalize(thickness : Float) : Void;
+	function offset(dx : Float, dy : Float) : Void;
+	@:require(flash11) function setTo(xa : Float, ya : Float) : Void;
+	function subtract(v : Point) : Point;
 	function toString() : String;
-
-	static function distance<T>( p1 : Point<T>, p2 : Point<T> ) : T;
-	static function interpolate<T>( p1 : Point<T>, p2 : Point<T>, f : T ) : Point<T>;
-	static function polar<T>( dist : T, angle : T ) : Point<T>;
-
+	static function distance(pt1 : Point, pt2 : Point) : Float;
+	static function interpolate(pt1 : Point, pt2 : Point, f : Float) : Point;
+	static function polar(len : Float, angle : Float) : Point;
 }

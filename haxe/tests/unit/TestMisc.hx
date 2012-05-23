@@ -20,24 +20,25 @@ class MyDynamicClass {
 		return v + x + y;
 	}
 
-#if php
 	static var Z = 10;
 
 	public dynamic static function staticDynamic(x,y) {
 		return Z + x + y;
 	}
-#else
-	static var V = 10;
 
-	public dynamic static function staticDynamic(x,y) {
-		return V + x + y;
-	}
-#end
 }
 
 class MyDynamicSubClass extends MyDynamicClass {
 
 	override function add(x,y) {
+		return (v + x + y) * 2;
+	}
+
+}
+
+class MyDynamicSubClass2 extends MyDynamicClass {
+
+	override dynamic function add(x,y) {
 		return (v + x + y) * 2;
 	}
 
@@ -122,6 +123,13 @@ class TestMisc extends Test {
 		eq( callback(inst.add,1)(2), 206 );
 		eq( add(1,2), 206 );
 
+		// check overriden dynamic method
+		var inst = new MyDynamicSubClass2(100);
+		var add = inst.add;
+		eq( inst.add(1,2), 206 );
+		eq( callback(inst.add,1)(2), 206 );
+		eq( add(1,2), 206 );
+		
 		// check redefined dynamic method
 		inst.add = function(x,y) return inst.get() * 2 + x + y;
 		var add = inst.add;
@@ -299,4 +307,75 @@ class TestMisc extends Test {
 		eq( e.get(), 7 );
 	}
 
+	function testStringBuf() {
+		var b = new StringBuf();
+		b.add( -45);
+		b.add(1.456);
+		b.add(null);
+		b.add(true);
+		b.add(false);
+		b.add("Hello!");
+		b.addSub("Bla", 1, 2);
+		b.addChar("R".code);
+		eq(b.toString(), "-451.456nulltruefalseHello!laR");
+	}
+	
+	function testToString():Void
+	{
+		var x = { toString : function() return "foo" };
+		eq( Std.string(x), "foo" );
+	}
+	
+	#if !macro
+	function testFormat()
+	{
+		var x = 5;
+		var y = 6;
+		eq(Std.format("$x${x+y}"), "511");
+	}
+	#end
+	
+	function testJSon() {
+		var str = haxe.Json.stringify( { x : -4500, y : 1.456, a : ["hello", "wor'\"\n\t\rd"] } );
+		str = str.substr(1, str.length - 2); // remove {}
+		var parts = str.split(",");
+		t( parts.remove('"x":-4500') );
+		t( parts.remove('"y":1.456') );
+		t( parts.remove('"a":["hello"') );
+		t( parts.remove('"wor\'\\"\\n\\t\\rd"]') );
+		eq( parts.join("#"), "" );
+		
+		// no support for regexps
+		#if flash8
+		return;
+		#end
+		
+		function id(v:Dynamic,?pos:haxe.PosInfos) eq(haxe.Json.parse(haxe.Json.stringify(v)),v);
+		function deepId(v:Dynamic) {
+			var str = haxe.Json.stringify(v);
+			eq(haxe.Json.stringify(haxe.Json.parse(str)), str);
+		}
+		
+		id(true);
+		id(false);
+		id(null);
+		id(0);
+		id(145);
+		id( -145 );
+		id(0.15461);
+		id( -485.15461);
+		id( 1e10 );
+		id( -1e-10 );
+		id( "" );
+		id( "hello" );
+		id( "he\n\r\t\\\\llo");
+
+		deepId( {field: 4} );
+		deepId( {test: {nested: null}} );
+		deepId( {array: [1,2,3,"str"]} );
+		
+		eq( haxe.Json.parse('"\\u00E9"'), "é" );
+		
+	}
+	
 }

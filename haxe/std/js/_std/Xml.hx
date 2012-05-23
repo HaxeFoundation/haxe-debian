@@ -36,10 +36,10 @@ enum XmlType {
 	public static var Prolog(default,null) : XmlType;
 	public static var Document(default,null) : XmlType;
 
-	static var enode = ~/^<([a-zA-Z0-9:_-]+)/;
+	static var enode = ~/^<([a-zA-Z0-9:._-]+)/;
 	static var ecdata = ~/^<!\[CDATA\[/i;
 	static var edoctype = ~/^<!DOCTYPE /i;
-	static var eend = ~/^<\/([a-zA-Z0-9:_-]+)>/;
+	static var eend = ~/^<\/([a-zA-Z0-9:._-]+)>/;
 	static var epcdata = ~/^[^<]+/;
 	static var ecomment = ~/^<!--/;
 	static var eprolog = ~/^<\?[^\?]+\?>/;
@@ -279,10 +279,10 @@ enum XmlType {
 			cur: 0,
 			x: this._children,
 			hasNext : function(){
-				return this.cur < this.x.length;
+				return __this__.cur < __this__.x.length;
 			},
 			next : function(){
-				return this.x[this.cur++];
+				return __this__.x[__this__.cur++];
 			}
 		}
 	}
@@ -293,24 +293,24 @@ enum XmlType {
 			cur: 0,
 			x: this._children,
 			hasNext : function() {
-				var k = this.cur;
-				var l = this.x.length;
+				var k = __this__.cur;
+				var l = __this__.x.length;
 				while( k < l ) {
-					if( this.x[k].nodeType == Xml.Element )
+					if( __this__.x[k].nodeType == Xml.Element )
 						break;
 					k += 1;
 				}
-				this.cur = k;
+				__this__.cur = k;
 				return k < l;
 			},
 			next : function() {
-				var k = this.cur;
-				var l = this.x.length;
+				var k = __this__.cur;
+				var l = __this__.x.length;
 				while( k < l ) {
-					var n = this.x[k];
+					var n = __this__.x[k];
 					k += 1;
 					if( n.nodeType == Xml.Element ) {
-						this.cur = k;
+						__this__.cur = k;
 						return n;
 					}
 				}
@@ -325,25 +325,25 @@ enum XmlType {
 			cur: 0,
 			x: this._children,
 			hasNext : function() {
-				var k = this.cur;
-				var l = this.x.length;
+				var k = __this__.cur;
+				var l = __this__.x.length;
 				while( k < l ) {
-					var n = this.x[k];
+					var n = __this__.x[k];
 					if( n.nodeType == Xml.Element && n._nodeName == name )
 						break;
 					k++;
 				}
-				this.cur = k;
+				__this__.cur = k;
 				return k < l;
 			},
 			next : function() {
-				var k = this.cur;
-				var l = this.x.length;
+				var k = __this__.cur;
+				var l = __this__.x.length;
 				while( k < l ) {
-					var n = this.x[k];
+					var n = __this__.x[k];
 					k++;
 					if( n.nodeType == Xml.Element && n._nodeName == name ) {
-						this.cur = k;
+						__this__.cur = k;
 						return n;
 					}
 				}

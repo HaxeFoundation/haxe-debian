@@ -1,12 +1,8 @@
 package flash.filters;
 
-extern class BlurFilter extends BitmapFilter {
-
-	var quality : Float;
+@:final extern class BlurFilter extends BitmapFilter {
 	var blurX : Float;
 	var blurY : Float;
-
-	function new( ?blurX : Float, ?blurY : Float, ?quality : Float ) : Void;
-	function clone() : BlurFilter;
-
+	var quality : Int;
+	function new(blurX : Float = 4, blurY : Float = 4, quality : Int = 1) : Void;
 }

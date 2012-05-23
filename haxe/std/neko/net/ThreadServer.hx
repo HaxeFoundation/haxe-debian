@@ -28,12 +28,12 @@ private typedef ThreadInfos = {
 	var id : Int;
 	var t : neko.vm.Thread;
 	var p : neko.net.Poll;
-	var socks : Array<neko.net.Socket>;
+	var socks : Array<sys.net.Socket>;
 }
 
 private typedef ClientInfos<Client> = {
 	var client : Client;
-	var sock : neko.net.Socket;
+	var sock : sys.net.Socket;
 	var thread : ThreadInfos;
 	var buf : haxe.io.Bytes;
 	var bufpos : Int;
@@ -42,7 +42,7 @@ private typedef ClientInfos<Client> = {
 class ThreadServer<Client,Message> {
 
 	var threads : Array<ThreadInfos>;
-	var sock : neko.net.Socket;
+	var sock : sys.net.Socket;
 	var worker : neko.vm.Thread;
 	var timer : neko.vm.Thread;
 	public var listen : Int;
@@ -57,11 +57,11 @@ class ThreadServer<Client,Message> {
 
 	public function new() {
 		threads = new Array();
-		nthreads = if( neko.Sys.systemName() == "Windows" ) 150 else 10;
+		nthreads = if( Sys.systemName() == "Windows" ) 150 else 10;
 		messageHeaderSize = 1;
 		listen = 10;
 		connectLag = 0.5;
-		errorOutput = neko.io.File.stderr();
+		errorOutput = Sys.stderr();
 		initialBufferSize = (1 << 10);
 		maxBufferSize = (1 << 16);
 		maxSockPerThread = 64;
@@ -122,7 +122,7 @@ class ThreadServer<Client,Message> {
 				}
 			}
 		while( true ) {
-			var m : { s : neko.net.Socket, cnx : Bool } = neko.vm.Thread.readMessage(t.socks.length == 0);
+			var m : { s : sys.net.Socket, cnx : Bool } = neko.vm.Thread.readMessage(t.socks.length == 0);
 			if( m == null )
 				break;
 			if( m.cnx )
@@ -167,16 +167,29 @@ class ThreadServer<Client,Message> {
 			work(callback(onError,e,stack));
 	}
 
-	function addClient( sock : neko.net.Socket ) {
-		var infos : ClientInfos<Client> = {
-			thread : threads[Std.random(nthreads)],
-			client : clientConnected(sock),
-			sock : sock,
-			buf : haxe.io.Bytes.alloc(initialBufferSize),
-			bufpos : 0,
-		};
-		sock.custom = infos;
-		infos.thread.t.sendMessage({ s : sock, cnx : true });
+	function addClient( sock : sys.net.Socket ) {
+		var start = Std.random(nthreads);
+		for( i in 0...nthreads ) {
+			var t = threads[(start + i)%nthreads];
+			if( t.socks.length < maxSockPerThread ) {
+				var infos : ClientInfos<Client> = {
+					thread : t,
+					client : clientConnected(sock),
+					sock : sock,
+					buf : haxe.io.Bytes.alloc(initialBufferSize),
+					bufpos : 0,
+				};
+				sock.custom = infos;
+				infos.thread.t.sendMessage({ s : sock, cnx : true });
+				return;
+			}
+		}
+		refuseClient(sock);
+	}
+
+	function refuseClient( sock : sys.net.Socket) {
+		// we have reached maximum number of active clients
+		sock.close();
 	}
 
 	function runTimer() {
@@ -202,14 +215,14 @@ class ThreadServer<Client,Message> {
 		}
 	}
 
-	public function addSocket( s : neko.net.Socket ) {
+	public function addSocket( s : sys.net.Socket ) {
 		s.setBlocking(false);
 		work(callback(addClient,s));
 	}
 
 	public function run( host, port ) {
-		sock = new neko.net.Socket();
-		sock.bind(new neko.net.Host(host),port);
+		sock = new sys.net.Socket();
+		sock.bind(new sys.net.Host(host),port);
 		sock.listen(listen);
 		init();
 		while( true ) {
@@ -221,7 +234,7 @@ class ThreadServer<Client,Message> {
 		}
 	}
 
-	public function sendData( s : neko.net.Socket, data : String ) {
+	public function sendData( s : sys.net.Socket, data : String ) {
 		try {
 			s.write(data);
 		} catch( e : Dynamic ) {
@@ -229,7 +242,7 @@ class ThreadServer<Client,Message> {
 		}
 	}
 
-	public function stopClient( s : neko.net.Socket ) {
+	public function stopClient( s : sys.net.Socket ) {
 		var infos : ClientInfos<Client> = s.custom;
 		try s.shutdown(true,true) catch( e : Dynamic ) { };
 		infos.thread.t.sendMessage({ s : s, cnx : false });
@@ -243,7 +256,7 @@ class ThreadServer<Client,Message> {
 		errorOutput.flush();
 	}
 
-	public dynamic function clientConnected( s : neko.net.Socket ) : Client {
+	public dynamic function clientConnected( s : sys.net.Socket ) : Client {
 		return null;
 	}
 

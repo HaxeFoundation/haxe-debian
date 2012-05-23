@@ -28,11 +28,7 @@
 	private var h : Dynamic;
 
 	public function new() : Void {
-		h = untyped __js__("{}");
-		untyped if( h.__proto__ != null ) {
-			h.__proto__ = null;
-			__js__("delete")(h.__proto__);
-		};
+		h = {};
 	}
 
 	public function set( key : Int, value : T ) : Void {
@@ -44,21 +40,23 @@
 	}
 
 	public function exists( key : Int ) : Bool {
-		return untyped h[key] != null;
+		return untyped h.hasOwnProperty(key);
 	}
 
 	public function remove( key : Int ) : Bool {
-		if( untyped h[key] == null ) return false;
+		if( untyped !h.hasOwnProperty(key) ) return false;
 		untyped  __js__("delete")(h[key]);
 		return true;
 	}
 
 	public function keys() : Iterator<Int> {
-		var a = new Array();
-		untyped __js__("
-			for( x in this.h )
-				a.push(x);
-		");
+		var a = [];
+		untyped {
+			__js__("for( var key in this.h ) {");
+				if( h.hasOwnProperty(key) )
+					a.push(key|0);
+			__js__("}");
+		}
 		return a.iterator();
 	}
 
@@ -66,8 +64,8 @@
 		return untyped {
 			ref : h,
 			it : keys(),
-			hasNext : function() { return this.it.hasNext(); },
-			next : function() { var i = this.it.next(); return this.ref[i]; }
+			hasNext : function() { return __this__.it.hasNext(); },
+			next : function() { var i = __this__.it.next(); return __this__.ref[i]; }
 		};
 	}
 

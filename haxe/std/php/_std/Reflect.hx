@@ -37,6 +37,24 @@
 		untyped __setfield__(o, field, value);
 	}
 
+	public static function getProperty( o : Dynamic, field : String ) : Dynamic {
+		if (null == o) return null;
+		var cls : String = Std.is(o, Class) ? untyped __php__("$o->__tname__") : untyped __call__("get_class", o);
+		if (untyped __php__("$cls::$__properties__ && isset($cls::$__properties__['get_'.$field]) && ($field = $cls::$__properties__['get_'.$field])"))
+			return untyped __php__("$o->$field()");
+		else
+			return untyped __php__("$o->$field");
+	}
+
+	public static function setProperty( o : Dynamic, field : String, value : Dynamic ) : Void untyped {
+		if (null == o) return null;
+		var cls : String = Std.is(o, Class) ? untyped __php__("$o->__tname__") : untyped __call__("get_class", o);
+		if (untyped __php__("$cls::$__properties__ && isset($cls::$__properties__['set_'.$field]) && ($field = $cls::$__properties__['set_'.$field])"))
+			return untyped __php__("$o->$field($value)");
+		else
+			return untyped __php__("$o->$field = $value");
+	}
+
 	public static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic untyped {
 		if (__call__("is_string", o) && !__call__("is_array", func)) {
 			return __call__("call_user_func_array", field(o, func), __field__(args, "»a"));
@@ -74,18 +92,17 @@
 			return false;
 		if(untyped __call__("is_object", v))
 			return untyped __php__("$v instanceof _hx_anonymous") || Type.getClass(v) != null;
-		if(untyped __php__("is_string($v) && !_hx_is_lambda($v)")) return true;
-		return false;
+		return untyped __php__("is_string($v) && !_hx_is_lambda($v)");
 	}
 
 	public static function deleteField( o : Dynamic, f : String ) : Bool {
 		if(!hasField(o,f)) return false;
-		untyped __php__("if(isset($o->»dynamics[$f])) unset($o->»dynamics[$f]); else unset($o->$f)");
+		untyped __php__("if(isset($o->»dynamics[$f])) unset($o->»dynamics[$f]); else if($o instanceof _hx_anonymous) unset($o->$f); else $o->$f = null");
 		return true;
 	}
 
 	public static function copy<T>( o : T ) : T {
-		if(untyped __call__("is_string", o)) return o;
+		if (untyped __call__("is_string", o)) return o;
 		var o2 : Dynamic = {};
 		for( f in Reflect.fields(o) )
 			Reflect.setField(o2,f,Reflect.field(o,f));

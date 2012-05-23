@@ -37,12 +37,12 @@ class Boot {
 			msg += __string_rec(v,"");
 			fl.trace(msg);
 			#else
-			msg += __unhtml(__string_rec(v,""))+"<br/>";
+			msg += __string_rec(v,"");
 			var d = document.getElementById("haxe:trace");
-			if( d == null )
-				alert("No haxe:trace element defined\n"+msg);
-			else
-				d.innerHTML += msg;
+			if( d != null )
+				d.innerHTML += __unhtml(msg)+"<br/>";
+			else if( __js__("typeof")(console) != "undefined" && console.log != null )
+				console.log(msg);
 			#end
 		}
 	}
@@ -56,18 +56,6 @@ class Boot {
 			if( d != null )
 				d.innerHTML = "";
 			#end
-		}
-	}
-
-	private static function __closure(o,f) {
-		untyped {
-			var m = o[f];
-			if( m == null )
-				return null;
-			var f = function() { return m.apply(o,arguments); };
-			f.scope = o;
-			f.method = m;
-			return f;
 		}
 	}
 
@@ -124,7 +112,7 @@ class Boot {
 				__js__("for( var k in o ) { ");
 					if( hasp && !o.hasOwnProperty(k) )
 						__js__("continue");
-					if( k == "prototype" || k == "__class__" || k == "__super__" || k == "__interfaces__" )
+					if( k == "prototype" || k == "__class__" || k == "__super__" || k == "__interfaces__" || k == "__properties__" )
 						__js__("continue");
 					if( str.length != 2 )
 						str += ", \n";
@@ -195,27 +183,21 @@ class Boot {
 		untyped {
 			Lib.isIE = (__js__("typeof document!='undefined'") && document.all != null && __js__("typeof window!='undefined'") && window.opera == null );
 			Lib.isOpera = (__js__("typeof window!='undefined'") && window.opera != null );
-#if js_namespace
-			__js__("eval(js.Boot.__ns).Array = Array");
-			__js__("eval(js.Boot.__ns).String = String");
-			__js__("eval(js.Boot.__ns).Math = Math");
-			__js__("eval(js.Boot.__ns).Date = Date");
-#end
 			Array.prototype.copy = Array.prototype.slice;
 			Array.prototype.insert = function(i,x) {
-				this.splice(i,0,x);
+				__this__.splice(i,0,x);
 			};
 			Array.prototype.remove = if( Array.prototype.indexOf ) function(obj) {
-				var idx = this.indexOf(obj);
+				var idx = __this__.indexOf(obj);
 				if( idx == -1 ) return false;
-				this.splice(idx,1);
+				__this__.splice(idx,1);
 				return true;
 			} else function(obj) {
 				var i = 0;
-				var l = this.length;
+				var l = __this__.length;
 				while( i < l ) {
-					if( this[i] == obj ) {
-						this.splice(i,1);
+					if( __this__[i] == obj ) {
+						__this__.splice(i,1);
 						return true;
 					}
 					i++;
@@ -225,36 +207,43 @@ class Boot {
 			Array.prototype.iterator = function() {
 				return {
 					cur : 0,
-					arr : this,
+					arr : __this__,
 					hasNext : function() {
-						return this.cur < this.arr.length;
+						return __this__.cur < __this__.arr.length;
 					},
 					next : function() {
-						return this.arr[this.cur++];
+						return __this__.arr[__this__.cur++];
 					}
 				}
 			};
 			if( String.prototype.cca == null )
 				String.prototype.cca = String.prototype.charCodeAt;
 			String.prototype.charCodeAt = function(i) {
-				var x = this.cca(i);
+				var x = __this__.cca(i);
 				if( x != x ) // fast isNaN
-					return null;
+					return __js__('undefined'); // isNaN will still return true
 				return x;
 			};
 			var oldsub = String.prototype.substr;
 			String.prototype.substr = function(pos,len){
 				if( pos != null && pos != 0 && len != null && len < 0 ) return "";
-				if( len == null ) len = this.length;
+				if( len == null ) len = __this__.length;
 				if( pos < 0 ){
-					pos = this.length + pos;
+					pos = __this__.length + pos;
 					if( pos < 0 ) pos = 0;
 				}else if( len < 0 ){
-					len = this.length + len - pos;
+					len = __this__.length + len - pos;
 				}
-				return oldsub.apply(this,[pos,len]);
+				return oldsub.apply(__this__,[pos,len]);
 			};
-			__js__("$closure = js.Boot.__closure");
+			Function.prototype["$bind"] = function(o){
+				var f = function(){
+					return f.method.apply(f.scope, untyped __js__("arguments"));
+				}
+				f.scope = o;
+				f.method = __this__;
+				return f;
+			}
 		}
 	}
 

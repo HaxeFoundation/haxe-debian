@@ -1,12 +1,8 @@
 package flash.text;
 
-#if !flash8
-"This class is only accesible in Flash8"
-#end
-
 extern class TextRenderer {
-
-	static var maxLevel : Float;
-	static function setAdvancedAntialiasingTable( fontName : String, fontStyle: String, colorType : String, advancedAntialiasingTable : Array<Dynamic> ) : Void;
-
+	static var antiAliasType : AntiAliasType;
+	static var displayMode : TextDisplayMode;
+	static var maxLevel : Int;
+	static function setAdvancedAntiAliasingTable(fontName : String, fontStyle : FontStyle, colorType : TextColorType, advancedAntiAliasingTable : Array<Dynamic>) : Void;
 }

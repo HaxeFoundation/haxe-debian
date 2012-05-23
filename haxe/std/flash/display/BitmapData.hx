@@ -1,50 +1,42 @@
 package flash.display;
 
-#if !flash8
-"This class is only accesible in Flash8"
-#end
-
-import flash.geom.Rectangle;
-import flash.geom.Point;
-
-extern class BitmapData {
-
-	static function loadBitmap( id : String ) : BitmapData;
-
-	var width : Int;
-	var height : Int;
-	var rectangle : Rectangle<Int>;
-	var transparent : Bool;
-
-	function new( width : Int, height : Int, ?transparent : Bool, ?fillcolor : Int ) : Void;
-
-	function getPixel( x : Int, y : Int ) : Int;
-	function setPixel( x : Int, y : Int, color : Int ) : Void;
-	function getPixel32( x : Int, y : Int ) : Int;
-	function setPixel32( x : Int, y : Int, color : Int ) : Void;
-
-	function fillRect( r : Rectangle<Int>, color : Int ) : Void;
-	function copyPixels( src : BitmapData, srcRect : Rectangle<Int>, dst : Point<Int>, ?alpha : BitmapData, ?alphaPos : Point<Int>, ?mergeAlpha : Bool ) : Void;
-	function applyFilter( source : BitmapData, sourceRect : Rectangle<Int>, dest : Point<Int>, filter : flash.filters.BitmapFilter ) : Int;
-	function scroll( dx : Int, dy : Int ) : Void;
-	function threshold( src : BitmapData , srcRect : Rectangle<Int>, dstPoint : Point<Int>, op : String, threshold : Int, ?color : Int, ?mask : Int, ?copy : Bool ) : Int;
-	function draw( source : Dynamic, ?matrix : flash.geom.Matrix, ?colortrans : flash.geom.ColorTransform, ?blendMode : Dynamic, ?clipRect : Rectangle<Int>, ?smooth : Bool) : Void;
-	function pixelDissolve( src : BitmapData, srcRect : Rectangle<Int>, dst : Point<Int>, ?seed : Int, ?npixels : Int, ?fillColor : Int ) : Int;
-	function floodFill( x : Int, y : Int, color : Int ) : Void;
-	function getColorBoundsRect( mask : Int, color : Int, ?fillColor : Bool ) : Rectangle<Int>;
-	function perlinNoise( x : Int, y : Int, num : Int, seed : Int, stitch : Bool, noise : Bool, ?channels : Int, ?gray : Bool, ?offsets : Array<Point<Float>> ) : Void;
-	function colorTransform( r : Rectangle<Int>, trans : flash.geom.ColorTransform ) : Void;
-	function hitTest( firstPoint : Point<Int>, firstAlpha : Int, object : Dynamic, ?secondPoint : Point<Int>, ?secondAlpha : Int ) : Bool;
-	function paletteMap( source : BitmapData, srcRect : Rectangle<Int>, dst : Point<Int>, ?reds : Array<Dynamic>, ?greens : Array<Dynamic>, ?blues : Array<Dynamic>, ?alphas : Array<Dynamic> ) : Void;
-	function merge( src : BitmapData, srcRect : Rectangle<Int>, dst : Point<Int>, redMult : Int, greenMult : Int, blueMult : Int, alphaMult : Int ) : Void;
-	function noise( seed : Int, ?low : Int, ?high : Int, ?channels : Int, ?gray : Bool ) : Void;
-	function copyChannel( source : BitmapData, sourceRect : Rectangle<Int>, dest : Point<Int>, sourceChannel : Int, destChannel : Int ) : Void;
+extern class BitmapData implements IBitmapDrawable {
+	var height(default,null) : Int;
+	var rect(default,null) : flash.geom.Rectangle;
+	var transparent(default,null) : Bool;
+	var width(default,null) : Int;
+	function new(width : Int, height : Int, transparent : Bool = true, fillColor : UInt = 0xFFFFFFFF) : Void;
+	function applyFilter(sourceBitmapData : BitmapData, sourceRect : flash.geom.Rectangle, destPoint : flash.geom.Point, filter : flash.filters.BitmapFilter) : Void;
 	function clone() : BitmapData;
+	function colorTransform(rect : flash.geom.Rectangle, colorTransform : flash.geom.ColorTransform) : Void;
+	function compare(otherBitmapData : BitmapData) : Dynamic;
+	function copyChannel(sourceBitmapData : BitmapData, sourceRect : flash.geom.Rectangle, destPoint : flash.geom.Point, sourceChannel : UInt, destChannel : UInt) : Void;
+	function copyPixels(sourceBitmapData : BitmapData, sourceRect : flash.geom.Rectangle, destPoint : flash.geom.Point, ?alphaBitmapData : BitmapData, ?alphaPoint : flash.geom.Point, mergeAlpha : Bool = false) : Void;
 	function dispose() : Void;
-	function generateFilterRect(sourceRect : Rectangle<Int>, filter : flash.filters.BitmapFilter ) : Rectangle<Int>;
-
-	/** FP9 only **/
-	function compare( b : BitmapData ) : BitmapData; // WTF ?
-
+	function draw(source : IBitmapDrawable, ?matrix : flash.geom.Matrix, ?colorTransform : flash.geom.ColorTransform, ?blendMode : BlendMode, ?clipRect : flash.geom.Rectangle, smoothing : Bool = false) : Void;
+	@:require(flash11_3) function drawWithQuality(source : IBitmapDrawable, ?matrix : flash.geom.Matrix, ?colorTransform : flash.geom.ColorTransform, ?blendMode : BlendMode, ?clipRect : flash.geom.Rectangle, smoothing : Bool = false, ?quality : StageQuality) : Void;
+	@:require(flash11_3) function encode(rect : flash.geom.Rectangle, compressor : Dynamic, ?byteArray : flash.utils.ByteArray) : flash.utils.ByteArray;
+	function fillRect(rect : flash.geom.Rectangle, color : UInt) : Void;
+	function floodFill(x : Int, y : Int, color : UInt) : Void;
+	function generateFilterRect(sourceRect : flash.geom.Rectangle, filter : flash.filters.BitmapFilter) : flash.geom.Rectangle;
+	function getColorBoundsRect(mask : UInt, color : UInt, findColor : Bool = true) : flash.geom.Rectangle;
+	function getPixel(x : Int, y : Int) : UInt;
+	function getPixel32(x : Int, y : Int) : UInt;
+	function getPixels(rect : flash.geom.Rectangle) : flash.utils.ByteArray;
+	@:require(flash10) function getVector(rect : flash.geom.Rectangle) : flash.Vector<UInt>;
+	@:require(flash10) function histogram(?hRect : flash.geom.Rectangle) : flash.Vector<flash.Vector<Float>>;
+	function hitTest(firstPoint : flash.geom.Point, firstAlphaThreshold : UInt, secondObject : Dynamic, ?secondBitmapDataPoint : flash.geom.Point, secondAlphaThreshold : UInt = 1) : Bool;
+	function lock() : Void;
+	function merge(sourceBitmapData : BitmapData, sourceRect : flash.geom.Rectangle, destPoint : flash.geom.Point, redMultiplier : UInt, greenMultiplier : UInt, blueMultiplier : UInt, alphaMultiplier : UInt) : Void;
+	function noise(randomSeed : Int, low : UInt = 0, high : UInt = 255, channelOptions : UInt = 7, grayScale : Bool = false) : Void;
+	function paletteMap(sourceBitmapData : BitmapData, sourceRect : flash.geom.Rectangle, destPoint : flash.geom.Point, ?redArray : Array<Int>, ?greenArray : Array<Int>, ?blueArray : Array<Int>, ?alphaArray : Array<Int>) : Void;
+	function perlinNoise(baseX : Float, baseY : Float, numOctaves : UInt, randomSeed : Int, stitch : Bool, fractalNoise : Bool, channelOptions : UInt = 7, grayScale : Bool = false, ?offsets : Array<flash.geom.Point>) : Void;
+	function pixelDissolve(sourceBitmapData : BitmapData, sourceRect : flash.geom.Rectangle, destPoint : flash.geom.Point, randomSeed : Int = 0, numPixels : Int = 0, fillColor : UInt = 0) : Int;
+	function scroll(x : Int, y : Int) : Void;
+	function setPixel(x : Int, y : Int, color : UInt) : Void;
+	function setPixel32(x : Int, y : Int, color : UInt) : Void;
+	function setPixels(rect : flash.geom.Rectangle, inputByteArray : flash.utils.ByteArray) : Void;
+	@:require(flash10) function setVector(rect : flash.geom.Rectangle, inputVector : flash.Vector<UInt>) : Void;
+	function threshold(sourceBitmapData : BitmapData, sourceRect : flash.geom.Rectangle, destPoint : flash.geom.Point, operation : String, threshold : UInt, color : UInt = 0, mask : UInt = 0xFFFFFFFF, copySource : Bool = false) : UInt;
+	function unlock(?changeRect : flash.geom.Rectangle) : Void;
 }
-

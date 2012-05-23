@@ -107,6 +107,7 @@ class TestBasetypes extends Test {
 		eq( Std.parseInt("a10"), null );
 		eq( Std.parseInt(null), null );
 		eq( Std.parseInt("0xFF"), 255 );
+		eq( Std.parseInt("0x123"), 291 );
 		unspec(function() Std.parseInt("0xFG"));
 
 		eq( Std.parseFloat("0"), 0. );
@@ -138,5 +139,72 @@ class TestBasetypes extends Test {
 		
 		t( StringTools.isEOF(StringTools.fastCodeAt("", 0)) );
 	}
+	
+	function testHash() {
+		var h = new Hash<Null<Int>>();
+		h.set("x", -1);
+		h.set("abcd", 8546);
+		eq( h.get("x"), -1);
+		eq( h.get("abcd"), 8546 );
+		eq( h.get("e"), null );
 
+		var k = Lambda.array(h);
+		k.sort(Reflect.compare);
+		eq( k.join("#"), "-1#8546" );
+		
+		var k = Lambda.array( { iterator : h.keys } );
+		k.sort(Reflect.compare);
+		eq( k.join("#"), "abcd#x" );
+		
+		t( h.exists("x") );
+		t( h.exists("abcd") );
+		f( h.exists("e") );
+		h.remove("abcd");
+		t( h.exists("x") );
+		f( h.exists("abcd") );
+		f( h.exists("e") );
+		eq( h.get("abcd"), null);
+		
+		h.set("x", null);
+		t( h.exists("x") );
+		t( h.remove("x") );
+		f( h.remove("x") );
+	}
+
+	function testIntHash() {
+		var h = new IntHash<Null<Int>>();
+		h.set(0, -1);
+		h.set(-4815, 8546);
+		eq( h.get(0), -1);
+		eq( h.get(-4815), 8546 );
+		eq( h.get(456), null );
+
+		var k = Lambda.array(h);
+		k.sort(Reflect.compare);
+		eq( k.join("#"), "-1#8546" );
+		
+		var k = Lambda.array( { iterator : h.keys } );
+		k.sort(Reflect.compare);
+		eq( k.join("#"), "-4815#0" );
+		
+		t( h.exists(0) );
+		t( h.exists(-4815) );
+		f( h.exists(456) );
+		h.remove(-4815);
+		t( h.exists(0) );
+		f( h.exists(-4815) );
+		f( h.exists(456) );
+		eq( h.get( -4815), null);
+		
+		h.set(65, null);
+		t( h.exists(65) );
+		t( h.remove(65) );
+		f( h.remove(65) );
+		
+		var h = new IntHash();
+		h.set(1, ['a', 'b']);
+		t( h.exists(1) );
+		t( h.remove(1) );
+		f( h.remove(1) );
+	}
 }

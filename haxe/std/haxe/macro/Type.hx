@@ -30,13 +30,14 @@ typedef Ref<T> = {
 }
 
 enum Type {
-	TMono;
+	TMono( t : Ref<Null<Type>> );
 	TEnum( t : Ref<EnumType>, params : Array<Type> );
 	TInst( t : Ref<ClassType>, params : Array<Type> );
 	TType( t : Ref<DefType>, params : Array<Type> );
 	TFun( args : Array<{ name : String, opt : Bool, t : Type }>, ret : Type );
 	TAnonymous( a : Ref<AnonType> );
 	TDynamic( t : Null<Type> );
+	TLazy( f : Void -> Type );
 }
 
 typedef AnonType = {
@@ -47,11 +48,13 @@ typedef AnonType = {
 typedef BaseType = {
 	var pack : Array<String>;
 	var name : String;
+	var module : String;
 	var pos : Expr.Position;
 	var isPrivate : Bool;
 	var isExtern : Bool;
 	var params : Array<{ name : String, t : Type }>;
-	var meta : Metadata;
+	var meta : MetaAccess;
+	var doc : Null<String>;
 	function exclude() : Void;
 }
 
@@ -60,13 +63,25 @@ typedef ClassField = {
 	var type : Type;
 	var isPublic : Bool;
 	var params : Array<{ name : String, t : Type }>;
-	var meta : Metadata;
+	var meta : MetaAccess;
 	var kind : FieldKind;
-	var expr : Null<TypedExpr>;
+	function expr() : Null<TypedExpr>;
+	var pos : Expr.Position;
+	var doc : Null<String>;
+}
+
+enum ClassKind {
+	KNormal;
+	KTypeParameter;
+	KExtension(cl:Ref<ClassType>, params:Array<Type>);
+	KExpr(expr:Expr);
+	KGeneric;
+	KGenericInstance(cl:Ref<ClassType>, params:Array<Type>);
+	KMacroType;
 }
 
 typedef ClassType = {> BaseType,
-	//var kind : ClassKind;
+	var kind : ClassKind;
 	var isInterface : Bool;
 	var superClass : Null<{ t : Ref<ClassType>, params : Array<Type> }>;
 	var interfaces : Array<{ t : Ref<ClassType>, params : Array<Type> }>;
@@ -82,12 +97,13 @@ typedef EnumField = {
 	var name : String;
 	var type : Type;
 	var pos : Expr.Position;
-	var meta : Metadata;
+	var meta : MetaAccess;
 	var index : Int;
+	var doc : Null<String>;
 }
 
 typedef EnumType = {> BaseType,
-	var contructs : Hash<EnumField>;
+	var constructs : Hash<EnumField>;
 	var names : Array<String>;
 }
 
@@ -95,10 +111,11 @@ typedef DefType = {> BaseType,
 	var type : Type;
 }
 
-typedef Metadata = {
-	function get() : Array<{ name : String, params : Array<Expr>, pos : Expr.Position }>;
+typedef MetaAccess = {
+	function get() : Expr.Metadata;
 	function add( name : String, params : Array<Expr>, pos : Expr.Position ) : Void;
 	function remove( name : String ) : Void;
+	function has( name : String ) : Bool;
 }
 
 enum FieldKind {

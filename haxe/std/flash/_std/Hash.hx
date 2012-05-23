@@ -25,10 +25,10 @@
 
 @:core_api class Hash<T> {
 
-	private var h : Dynamic;
+	private var h :flash.utils.Dictionary;
 
 	public function new() : Void {
-		h = untyped __new__(_global["Object"]);
+		h = new flash.utils.Dictionary();
 	}
 
 	public function set( key : String, value : T ) : Void {
@@ -40,26 +40,26 @@
 	}
 
 	public function exists( key : String ) : Bool {
-		return untyped h["hasOwnProperty"]("$"+key);
+		return untyped h.hasOwnProperty("$"+key);
 	}
 
 	public function remove( key : String ) : Bool {
 		key = "$"+key;
-		if( untyped !h["hasOwnProperty"](key) ) return false;
+		if( untyped !h.hasOwnProperty(key) ) return false;
 		untyped __delete__(h,key);
 		return true;
 	}
 
 	public function keys() : Iterator<String> {
-		return untyped (__hkeys__(h))["iterator"]();
+		return untyped (__hkeys__(h)).iterator();
 	}
 
 	public function iterator() : Iterator<T> {
 		return untyped {
 			ref : h,
-			it : __keys__(h)["iterator"](),
-			hasNext : function() { return this.it[__unprotect__("hasNext")](); },
-			next : function() { var i = this.it[__unprotect__("next")](); return this.ref[i]; }
+			it : __keys__(h).iterator(),
+			hasNext : function() { return __this__.it.hasNext(); },
+			next : function() { var i : Dynamic = __this__.it.next(); return __this__.ref[i]; }
 		};
 	}
 

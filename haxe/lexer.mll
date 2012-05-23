@@ -75,13 +75,13 @@ let keywords =
 		Switch;Case;Default;Public;Private;Try;Untyped;
 		Catch;New;This;Throw;Extern;Enum;In;Interface;
 		Cast;Override;Dynamic;Typedef;Package;Callback;
-		Inline;Using];
+		Inline;Using;Null;True;False];
 	h
 
 let init file =
 	let f = make_file file in
 	cur := f;
-	Hashtbl.add all_files file f
+	Hashtbl.replace all_files file f
 
 let save() =
 	!cur
@@ -106,9 +106,12 @@ let find_line p f =
 	end;
 	loop 0 f.lrlines
 
-let get_error_line p =
+let find_pos p =
 	let file = (try Hashtbl.find all_files p.pfile with Not_found -> make_file p.pfile) in
-	let l, _ = find_line p.pmin file in
+	find_line p.pmin file
+
+let get_error_line p =
+	let l, _ = find_pos p in
 	l
 
 let get_error_pos printer p =
@@ -136,9 +139,8 @@ let mk lexbuf t =
 	mk_tok t (lexeme_start lexbuf) (lexeme_end lexbuf)
 
 let mk_ident lexbuf =
-	match lexeme lexbuf with
-	| s ->
-		mk lexbuf (try Kwd (Hashtbl.find keywords s) with Not_found -> Const (Ident s))
+	let s = lexeme lexbuf in
+	mk lexbuf (try Kwd (Hashtbl.find keywords s) with Not_found -> Const (Ident s))
 
 let invalid_char lexbuf =
 	error (Invalid_character (lexeme_char lexbuf 0)) (lexeme_start lexbuf)
@@ -251,6 +253,11 @@ and token = parse
 			let v = String.sub v 1 (String.length v - 1) in
 			mk lexbuf (Macro v)
 		}
+	| '$' ['_' 'a'-'z' 'A'-'Z' '0'-'9']* {
+			let v = lexeme lexbuf in
+			let v = String.sub v 1 (String.length v - 1) in
+			mk lexbuf (Dollar v)
+		}
 	| ident { mk_ident lexbuf }
 	| idtype { mk lexbuf (Const (Type (lexeme lexbuf))) }
 	| _ { invalid_char lexbuf }
@@ -288,6 +295,7 @@ and regexp = parse
 	| '\\' 't' { add "\t"; regexp lexbuf }
 	| '\\' ['\\' '$' '.' '*' '+' '^' '|' '{' '}' '[' ']' '(' ')' '?' '-' '0'-'9'] { add (lexeme lexbuf); regexp lexbuf }
 	| '\\' ['w' 'W' 'b' 'B' 's' 'S' 'd' 'D' 'x'] { add (lexeme lexbuf); regexp lexbuf }
+	| '\\' ['u' 'U'] ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] { add (lexeme lexbuf); regexp lexbuf }
 	| '\\' [^ '\\'] { error (Invalid_character (lexeme lexbuf).[1]) (lexeme_end lexbuf - 1) }
 	| '/' { regexp_options lexbuf, lexeme_end lexbuf }
 	| [^ '\\' '/' '\r' '\n']+ { store lexbuf; regexp lexbuf }

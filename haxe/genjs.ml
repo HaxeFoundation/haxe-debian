@@ -16,34 +16,46 @@
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *)
+open Ast
 open Type
 open Common
+
+type pos = Ast.pos
+
+type sourcemap = {
+	sources : (string) DynArray.t;
+	sources_hash : (string, int) Hashtbl.t;
+	mappings : Buffer.t;
+
+	mutable source_last_line : int;
+	mutable source_last_col : int;
+	mutable source_last_file : int;
+	mutable print_comma : bool;
+	mutable output_last_col : int;
+	mutable output_current_col : int;
+}
 
 type ctx = {
 	com : Common.context;
 	buf : Buffer.t;
 	packages : (string list,unit) Hashtbl.t;
-	stack : Codegen.stack_context;
-	namespace : string option;
+	smap : sourcemap;
+	js_modern : bool;
+
 	mutable current : tclass;
 	mutable statics : (tclass * string * texpr) list;
 	mutable inits : texpr list;
 	mutable tabs : string;
-	mutable in_value : bool;
+	mutable in_value : tvar option;
 	mutable in_loop : bool;
 	mutable handle_break : bool;
 	mutable id_counter : int;
-	mutable curmethod : (string * bool);
 	mutable type_accessor : module_type -> string;
 	mutable separator : bool;
+	mutable found_expose : bool;
 }
 
-let s_path ctx = function
-	| ([],p) -> 
-		(match ctx.namespace with
-		| None -> p
-		| Some ns -> ns ^ "." ^ p)
-	| p -> Ast.s_type_path p
+let s_path ctx = Ast.s_type_path
 
 let kwds =
 	let h = Hashtbl.create 0 in
@@ -51,25 +63,159 @@ let kwds =
 		"abstract"; "as"; "boolean"; "break"; "byte"; "case"; "catch"; "char"; "class"; "continue"; "const";
 		"debugger"; "default"; "delete"; "do"; "double"; "else"; "enum"; "export"; "extends"; "false"; "final";
 		"finally"; "float"; "for"; "function"; "goto"; "if"; "implements"; "import"; "in"; "instanceof"; "int";
-        "interface"; "is"; "long"; "namespace"; "native"; "new"; "null"; "package"; "private"; "protected";
+		"interface"; "is"; "long"; "namespace"; "native"; "new"; "null"; "package"; "private"; "protected";
 		"public"; "return"; "short"; "static"; "super"; "switch"; "synchronized"; "this"; "throw"; "throws";
 		"transient"; "true"; "try"; "typeof"; "use"; "var"; "void"; "volatile"; "while"; "with"
 	];
 	h
 
+let valid_js_ident s =
+	try
+		for i = 0 to String.length s - 1 do
+			match String.unsafe_get s i with
+			| 'a'..'z' | 'A'..'Z' | '$' | '_' -> ()
+			| '0'..'9' when i > 0 -> ()
+			| _ -> raise Exit
+		done;
+		true
+	with Exit ->
+		false
+
 let field s = if Hashtbl.mem kwds s then "[\"" ^ s ^ "\"]" else "." ^ s
 let ident s = if Hashtbl.mem kwds s then "$" ^ s else s
-let anon_field s = if Hashtbl.mem kwds s then "'" ^ s ^ "'" else s
+let anon_field s = if Hashtbl.mem kwds s || not (valid_js_ident s) then "'" ^ s ^ "'" else s
 
-let spr ctx s = ctx.separator <- false; Buffer.add_string ctx.buf s
-let print ctx = ctx.separator <- false; Printf.kprintf (fun s -> Buffer.add_string ctx.buf s)
+let handle_newlines ctx str =
+	if ctx.com.debug then
+		let rec loop from =
+			try begin
+				let next = String.index_from str from '\n' + 1 in
+				Buffer.add_char ctx.smap.mappings ';';
+				ctx.smap.output_last_col <- 0;
+				ctx.smap.print_comma <- false;
+				loop next
+			end with Not_found ->
+				ctx.smap.output_current_col <- String.length str - from
+		in
+		loop 0
+	else ()
+
+let spr ctx s =
+	ctx.separator <- false;
+	handle_newlines ctx s;
+	Buffer.add_string ctx.buf s
+
+let print ctx =
+	ctx.separator <- false;
+	Printf.kprintf (fun s -> begin
+		handle_newlines ctx s;
+		Buffer.add_string ctx.buf s
+	end)
 
 let unsupported p = error "This expression cannot be compiled to Javascript" p
 
-let newline ctx =	
+let add_mapping ctx pos =
+	let smap = ctx.smap in
+	let file = try
+		Hashtbl.find smap.sources_hash pos.pfile
+	with Not_found ->
+		let length = DynArray.length smap.sources in
+		Hashtbl.replace smap.sources_hash pos.pfile length;
+		DynArray.add smap.sources pos.pfile;
+		length
+	in
+	let line, col = Lexer.find_pos pos in
+	let line = line - 1 in
+	let col = col - 1 in
+	if smap.source_last_file != file || smap.source_last_line != line || smap.source_last_col != col then begin
+		if smap.print_comma then
+			Buffer.add_char smap.mappings ','
+		else
+			smap.print_comma <- true;
+
+		let base64_vlq number =
+			let encode_digit digit =
+				let chars = [|
+					'A';'B';'C';'D';'E';'F';'G';'H';'I';'J';'K';'L';'M';'N';'O';'P';
+					'Q';'R';'S';'T';'U';'V';'W';'X';'Y';'Z';'a';'b';'c';'d';'e';'f';
+					'g';'h';'i';'j';'k';'l';'m';'n';'o';'p';'q';'r';'s';'t';'u';'v';
+					'w';'x';'y';'z';'0';'1';'2';'3';'4';'5';'6';'7';'8';'9';'+';'/'
+				|] in
+				Array.unsafe_get chars digit
+			in
+			let to_vlq number =
+				if number < 0 then
+					((-number) lsl 1) + 1
+				else
+					number lsl 1
+			in
+			let rec loop vlq =
+				let shift = 5 in
+				let base = 1 lsl shift in
+				let mask = base - 1 in
+				let continuation_bit = base in
+				let digit = vlq land mask in
+				let next = vlq asr shift in
+				Buffer.add_char smap.mappings (encode_digit (
+					if next > 0 then digit lor continuation_bit else digit));
+				if next > 0 then loop next else ()
+			in
+			loop (to_vlq number)
+		in
+
+		base64_vlq (smap.output_current_col - smap.output_last_col);
+		base64_vlq (file - smap.source_last_file);
+		base64_vlq (line - smap.source_last_line);
+		base64_vlq (col - smap.source_last_col);
+
+		smap.source_last_file <- file;
+		smap.source_last_line <- line;
+		smap.source_last_col <- col;
+		smap.output_last_col <- smap.output_current_col
+	end
+
+let basename path =
+	try
+		let idx = String.rindex path '/' in
+		String.sub path (idx + 1) (String.length path - idx - 1)
+	with Not_found -> path
+
+let write_mappings ctx =
+	let basefile = basename ctx.com.file in
+	print ctx "\n//@ sourceMappingURL=%s.map" basefile;
+	let channel = open_out_bin (ctx.com.file ^ ".map") in
+	let sources = DynArray.to_list ctx.smap.sources in
+	let to_url file =
+		ExtString.String.map (fun c -> if c == '\\' then '/' else c) (Common.get_full_path file)
+	in
+	output_string channel "{\n";
+	output_string channel "\"version\":3,\n";
+	output_string channel ("\"file\":\"" ^ basefile ^ "\",\n");
+	output_string channel ("\"sourceRoot\":\"file://\",\n");
+	output_string channel ("\"sources\":[" ^
+		(String.concat "," (List.map (fun s -> "\"" ^ to_url s ^ "\"") sources)) ^
+		"],\n");
+	output_string channel "\"names\":[],\n";
+	output_string channel "\"mappings\":\"";
+	Buffer.output_buffer channel ctx.smap.mappings;
+	output_string channel "\"\n";
+	output_string channel "}";
+	close_out channel
+
+let newline ctx =
 	match Buffer.nth ctx.buf (Buffer.length ctx.buf - 1) with
-	| '}' | '{' | ':' when not ctx.separator -> print ctx "\n%s" ctx.tabs	
+	| '}' | '{' | ':' when not ctx.separator -> print ctx "\n%s" ctx.tabs
 	| _ -> print ctx ";\n%s" ctx.tabs
+
+let newprop ctx =
+	match Buffer.nth ctx.buf (Buffer.length ctx.buf - 1) with
+	| '{' -> print ctx "\n%s" ctx.tabs
+	| _ -> print ctx "\n%s," ctx.tabs
+
+let semicolon ctx =
+	match Buffer.nth ctx.buf (Buffer.length ctx.buf - 1) with
+	| '}' when not ctx.separator -> ()
+	| _ -> spr ctx ";"
 
 let rec concat ctx s f = function
 	| [] -> ()
@@ -80,26 +226,24 @@ let rec concat ctx s f = function
 		concat ctx s f l
 
 let fun_block ctx f p =
-	let e = (match f.tf_expr with { eexpr = TBlock [{ eexpr = TBlock _ } as e] } -> e | e -> e) in
-	let e = List.fold_left (fun e (a,c,t) ->
+	let e = List.fold_left (fun e (a,c) ->
 		match c with
 		| None | Some TNull -> e
-		| Some c -> Codegen.concat (Codegen.set_default ctx.com a c t p) e
-	) e f.tf_args in
-	if ctx.com.debug then
-		Codegen.stack_block ctx.stack ctx.current (fst ctx.curmethod) e
-	else
-		mk_block e
-
-let parent e =
-	match e.eexpr with
-	| TParenthesis _ -> e
-	| _ -> mk (TParenthesis e) e.etype e.epos
+		| Some c -> Codegen.concat (Codegen.set_default ctx.com a c p) e
+	) f.tf_expr f.tf_args in
+	e
 
 let open_block ctx =
 	let oldt = ctx.tabs in
 	ctx.tabs <- "\t" ^ ctx.tabs;
 	(fun() -> ctx.tabs <- oldt)
+
+let rec has_return e =
+	match e.eexpr with
+	| TBlock [] -> false
+	| TBlock el -> has_return (List.hd (List.rev el))
+	| TReturn _ -> true
+	| _ -> false
 
 let rec iter_switch_break in_switch e =
 	match e.eexpr with
@@ -132,7 +276,23 @@ let handle_break ctx e =
 				spr ctx "} catch( e ) { if( e != \"__break__\" ) throw e; }";
 			)
 
-let this ctx = if ctx.in_value then "$this" else "this"
+let handle_expose ctx path meta =
+	let rec loop = function
+		| (":expose", args, pos) :: l ->
+			ctx.found_expose <- true;
+			let exposed_path = (match args with
+				| [EConst (String s), _] -> s
+				| [] -> path
+				| _ -> error "Invalid @:expose parameters" pos
+			) in
+			print ctx "$hxExpose(%s, \"%s\")" path exposed_path;
+			newline ctx
+		| _ :: l -> loop l
+		| [] -> ()
+	in
+	loop meta
+
+let this ctx = match ctx.in_value with None -> "this" | Some _ -> "$this"
 
 let gen_constant ctx p = function
 	| TInt i -> print ctx "%ld" i
@@ -149,7 +309,7 @@ let rec gen_call ctx e el =
 	match e.eexpr , el with
 	| TConst TSuper , params ->
 		(match ctx.current.cl_super with
-		| None -> error "Missing setDebugInfos current class" e.epos
+		| None -> error "Missing api.setCurrentClass" e.epos
 		| Some (c,_) ->
 			print ctx "%s.call(%s" (ctx.type_accessor (TClassDecl c)) (this ctx);
 			List.iter (fun p -> print ctx ","; gen_value ctx p) params;
@@ -157,32 +317,32 @@ let rec gen_call ctx e el =
 		);
 	| TField ({ eexpr = TConst TSuper },name) , params ->
 		(match ctx.current.cl_super with
-		| None -> error "Missing setDebugInfos current class" e.epos
+		| None -> error "Missing api.setCurrentClass" e.epos
 		| Some (c,_) ->
 			print ctx "%s.prototype%s.call(%s" (ctx.type_accessor (TClassDecl c)) (field name) (this ctx);
 			List.iter (fun p -> print ctx ","; gen_value ctx p) params;
 			spr ctx ")";
 		);
-	| TCall (x,_) , el when x.eexpr <> TLocal "__js__" ->
+	| TCall (x,_) , el when (match x.eexpr with TLocal { v_name = "__js__" } -> false | _ -> true) ->
 		spr ctx "(";
 		gen_value ctx e;
 		spr ctx ")";
 		spr ctx "(";
 		concat ctx "," (gen_value ctx) el;
 		spr ctx ")";
-	| TLocal "__new__" , { eexpr = TConst (TString cl) } :: params ->
+	| TLocal { v_name = "__new__" }, { eexpr = TConst (TString cl) } :: params ->
 		print ctx "new %s(" cl;
 		concat ctx "," (gen_value ctx) params;
 		spr ctx ")";
-	| TLocal "__new__" , e :: params ->
+	| TLocal { v_name = "__new__" }, e :: params ->
 		spr ctx "new ";
 		gen_value ctx e;
 		spr ctx "(";
 		concat ctx "," (gen_value ctx) params;
 		spr ctx ")";
-	| TLocal "__js__", [{ eexpr = TConst (TString code) }] ->
+	| TLocal { v_name = "__js__" }, [{ eexpr = TConst (TString code) }] ->
 		spr ctx (String.concat "\n" (ExtString.String.nsplit code "\r\n"))
-	| TLocal "__resources__", [] ->
+	| TLocal { v_name = "__resources__" }, [] ->
 		spr ctx "[";
 		concat ctx "," (fun (name,data) ->
 			spr ctx "{ ";
@@ -202,7 +362,7 @@ let rec gen_call ctx e el =
 and gen_expr ctx e =
 	match e.eexpr with
 	| TConst c -> gen_constant ctx e.epos c
-	| TLocal s -> spr ctx (ident s)
+	| TLocal v -> spr ctx (ident v.v_name)
 	| TEnumField (e,s) ->
 		print ctx "%s%s" (ctx.type_accessor (TEnumDecl e)) (field s)
 	| TArray (e1,e2) ->
@@ -217,12 +377,20 @@ and gen_expr ctx e =
 	| TField (x,s) ->
 		gen_value ctx x;
 		spr ctx (field s)
-	| TClosure (x,s) ->
-		spr ctx "$closure(";
+	| TClosure ({ eexpr = TTypeExpr _ } as x,s) ->
 		gen_value ctx x;
-		spr ctx ",";
-		gen_constant ctx e.epos (TString s);
-		spr ctx ")";
+		spr ctx (field s)
+	| TClosure (x,s) ->
+		(match x.eexpr with
+		| TConst _ | TLocal _ ->  
+			gen_value ctx x; 
+			print ctx ".%s.$bind(" s; 
+			gen_value ctx x; 
+			print ctx ")"
+		| _ -> 
+			print ctx "($_=";
+			gen_value ctx x;
+			print ctx ",$_.%s.$bind($_))" s)
 	| TTypeExpr t ->
 		spr ctx (ctx.type_accessor t)
 	| TParenthesis e ->
@@ -230,7 +398,7 @@ and gen_expr ctx e =
 		gen_value ctx e;
 		spr ctx ")";
 	| TReturn eo ->
-		if ctx.in_value then unsupported e.epos;
+		if ctx.in_value <> None then unsupported e.epos;
 		(match eo with
 		| None ->
 			spr ctx "return"
@@ -243,29 +411,22 @@ and gen_expr ctx e =
 	| TContinue ->
 		if not ctx.in_loop then unsupported e.epos;
 		spr ctx "continue"
-	| TBlock [] ->
-		spr ctx "null"
 	| TBlock el ->
 		print ctx "{";
 		let bend = open_block ctx in
-		List.iter (fun e -> newline ctx; gen_expr ctx e) el;
+		List.iter (gen_block ctx) el;
 		bend();
 		newline ctx;
 		print ctx "}";
 	| TFunction f ->
 		let old = ctx.in_value, ctx.in_loop in
-		let old_meth = ctx.curmethod in
-		ctx.in_value <- false;
+		ctx.in_value <- None;
 		ctx.in_loop <- false;
-		if snd ctx.curmethod then
-			ctx.curmethod <- (fst ctx.curmethod ^ "@" ^ string_of_int (Lexer.get_error_line e.epos), true)
-		else
-			ctx.curmethod <- (fst ctx.curmethod, true);
 		print ctx "function(%s) " (String.concat "," (List.map ident (List.map arg_name f.tf_args)));
 		gen_expr ctx (fun_block ctx f e.epos);
-		ctx.curmethod <- old_meth;
 		ctx.in_value <- fst old;
 		ctx.in_loop <- snd old;
+		ctx.separator <- true
 	| TCall (e,el) ->
 		gen_call ctx e el
 	| TArrayDecl el ->
@@ -279,8 +440,8 @@ and gen_expr ctx e =
 		()
 	| TVars vl ->
 		spr ctx "var ";
-		concat ctx ", " (fun (n,_,e) ->
-			spr ctx (ident n);
+		concat ctx ", " (fun (v,e) ->
+			spr ctx (ident v.v_name);
 			match e with
 			| None -> ()
 			| Some e ->
@@ -293,15 +454,18 @@ and gen_expr ctx e =
 		spr ctx ")"
 	| TIf (cond,e,eelse) ->
 		spr ctx "if";
-		gen_value ctx (parent cond);
+		gen_value ctx cond;
 		spr ctx " ";
 		gen_expr ctx e;
 		(match eelse with
 		| None -> ()
-		| Some e ->
-			newline ctx;
-			spr ctx "else ";
-			gen_expr ctx e);
+		| Some e2 ->
+			(match e.eexpr with
+			| TObjectDecl _ -> ctx.separator <- false
+			| _ -> ());
+			semicolon ctx;
+			spr ctx " else ";
+			gen_expr ctx e2);
 	| TUnop (op,Ast.Prefix,e) ->
 		spr ctx (Ast.s_unop op);
 		gen_value ctx e
@@ -311,7 +475,7 @@ and gen_expr ctx e =
 	| TWhile (cond,e,Ast.NormalWhile) ->
 		let handle_break = handle_break ctx e in
 		spr ctx "while";
-		gen_value ctx (parent cond);
+		gen_value ctx cond;
 		spr ctx " ";
 		gen_expr ctx e;
 		handle_break();
@@ -319,40 +483,52 @@ and gen_expr ctx e =
 		let handle_break = handle_break ctx e in
 		spr ctx "do ";
 		gen_expr ctx e;
+		semicolon ctx;
 		spr ctx " while";
-		gen_value ctx (parent cond);
+		gen_value ctx cond;
 		handle_break();
 	| TObjectDecl fields ->
 		spr ctx "{ ";
 		concat ctx ", " (fun (f,e) -> print ctx "%s : " (anon_field f); gen_value ctx e) fields;
 		spr ctx "}";
 		ctx.separator <- true
-	| TFor (v,_,it,e) ->
+	| TFor (v,it,e) ->
 		let handle_break = handle_break ctx e in
-		let id = ctx.id_counter in
-		ctx.id_counter <- ctx.id_counter + 1;
-		print ctx "{ var $it%d = " id;
-		gen_value ctx it;
+		let it = (match it.eexpr with
+			| TLocal v -> v.v_name
+			| _ ->
+				let id = ctx.id_counter in
+				ctx.id_counter <- ctx.id_counter + 1;
+				let name = "$it" ^ string_of_int id in
+				print ctx "var %s = " name;
+				gen_value ctx it;
+				newline ctx;
+				name
+		) in
+		print ctx "while( %s.hasNext() ) {" it;
+		let bend = open_block ctx in
 		newline ctx;
-		print ctx "while( $it%d.hasNext() ) { var %s = $it%d.next()" id (ident v) id;
+		print ctx "var %s = %s.next()" (ident v.v_name) it;
+		gen_block ctx e;
+		bend();
 		newline ctx;
-		gen_expr ctx e;
-		newline ctx;
-		spr ctx "}}";
+		spr ctx "}";
 		handle_break();
 	| TTry (e,catchs) ->
 		spr ctx "try ";
-		gen_expr ctx (mk_block e);
-		newline ctx;
-		let id = ctx.id_counter in
-		ctx.id_counter <- ctx.id_counter + 1;
-		print ctx "catch( $e%d ) {" id;
+		gen_expr ctx e;
+		let vname = (match catchs with [(v,_)] -> v.v_name | _ ->
+			let id = ctx.id_counter in
+			ctx.id_counter <- ctx.id_counter + 1;
+			"$e" ^ string_of_int id
+		) in
+		print ctx " catch( %s ) {" vname;
 		let bend = open_block ctx in
-		newline ctx;
 		let last = ref false in
-		List.iter (fun (v,t,e) ->
+		let else_block = ref false in
+		List.iter (fun (v,e) ->
 			if !last then () else
-			let t = (match follow t with
+			let t = (match follow v.v_type with
 			| TEnum (e,_) -> Some (TEnumDecl e)
 			| TInst (c,_) -> Some (TClassDecl c)
 			| TFun _
@@ -367,72 +543,91 @@ and gen_expr ctx e =
 			match t with
 			| None ->
 				last := true;
-				spr ctx "{";
-				let bend = open_block ctx in
-				newline ctx;
-				print ctx "var %s = $e%d" v id;
-				newline ctx;
-				gen_expr ctx e;
-				bend();
-				newline ctx;
-				spr ctx "}"
+				if !else_block then print ctx "{";
+				if vname <> v.v_name then begin
+					newline ctx;
+					print ctx "var %s = %s" v.v_name vname;
+				end;
+				gen_block ctx e;
+				if !else_block then begin
+					newline ctx;
+					print ctx "}";
+				end
 			| Some t ->
-				print ctx "if( %s.__instanceof($e%d," (ctx.type_accessor (TClassDecl { null_class with cl_path = ["js"],"Boot" })) id;
+				if not !else_block then newline ctx;
+				print ctx "if( %s.__instanceof(%s," (ctx.type_accessor (TClassDecl { null_class with cl_path = ["js"],"Boot" })) vname;
 				gen_value ctx (mk (TTypeExpr t) (mk_mono()) e.epos);
 				spr ctx ") ) {";
 				let bend = open_block ctx in
-				newline ctx;
-				print ctx "var %s = $e%d" v id;
-				newline ctx;
-				gen_expr ctx e;
+				if vname <> v.v_name then begin
+					newline ctx;
+					print ctx "var %s = %s" v.v_name vname;
+				end;
+				gen_block ctx e;
 				bend();
 				newline ctx;
-				spr ctx "} else "
+				spr ctx "} else ";
+				else_block := true
 		) catchs;
-		if not !last then print ctx "throw($e%d)" id;
+		if not !last then print ctx "throw(%s)" vname;
 		bend();
 		newline ctx;
 		spr ctx "}";
 	| TMatch (e,(estruct,_),cases,def) ->
-		spr ctx "var $e = ";
-		gen_value ctx e;
-		newline ctx;
-		spr ctx "switch( $e[1] ) {";
-		newline ctx;
+		let evar = (if List.for_all (fun (_,pl,_) -> pl = None) cases then begin
+			spr ctx "switch( ";
+			gen_value ctx (if Optimizer.need_parent e then Codegen.mk_parent e else e);
+			spr ctx "[1] ) {";
+			"???"
+		end else begin
+			let v = (match e.eexpr with
+				| TLocal v -> v.v_name
+				| _ ->
+					spr ctx "var $e = ";
+					gen_value ctx e;
+					newline ctx;
+					"$e"
+			) in
+			print ctx "switch( %s[1] ) {" v;
+			v
+		end) in
 		List.iter (fun (cl,params,e) ->
 			List.iter (fun c ->
-				print ctx "case %d:" c;
 				newline ctx;
+				print ctx "case %d:" c;
 			) cl;
+			let bend = open_block ctx in
 			(match params with
-			| None | Some [] -> ()
+			| None -> ()
 			| Some l ->
 				let n = ref 1 in
-				let l = List.fold_left (fun acc (v,_) -> incr n; match v with None -> acc | Some v -> (v,!n) :: acc) [] l in
-				match l with
-				| [] -> ()
-				| l ->
-					spr ctx "var ";
-					concat ctx ", " (fun (v,n) ->
-						print ctx "%s = $e[%d]" v n;
-					) l;
-					newline ctx);
-			gen_expr ctx (mk_block e);
-			print ctx "break";
-			newline ctx
+				let l = List.fold_left (fun acc v -> incr n; match v with None -> acc | Some v -> (v.v_name,!n) :: acc) [] l in
+				newline ctx;
+				spr ctx "var ";
+				concat ctx ", " (fun (v,n) ->
+					print ctx "%s = %s[%d]" (ident v) evar n;
+				) l);
+			gen_block ctx e;
+			if not (has_return e) then begin
+				newline ctx;
+				print ctx "break";
+			end;
+			bend();
 		) cases;
 		(match def with
 		| None -> ()
 		| Some e ->
-			spr ctx "default:";
-			gen_expr ctx (mk_block e);
-			print ctx "break";
 			newline ctx;
+			spr ctx "default:";
+			let bend = open_block ctx in
+			gen_block ctx e;
+			bend();
 		);
+		newline ctx;
 		spr ctx "}"
 	| TSwitch (e,cases,def) ->
 		spr ctx "switch";
-		gen_value ctx (parent e);
+		gen_value ctx e;
 		spr ctx " {";
 		newline ctx;
 		List.iter (fun (el,e2) ->
@@ -445,16 +640,22 @@ and gen_expr ctx e =
 					gen_value ctx e;
 					spr ctx ":"
 			) el;
-			gen_expr ctx (mk_block e2);
-			print ctx "break";
+			let bend = open_block ctx in
+			gen_block ctx e2;
+			if not (has_return e2) then begin
+				newline ctx;
+				print ctx "break";
+			end;
+			bend();
 			newline ctx;
 		) cases;
 		(match def with
 		| None -> ()
 		| Some e ->
 			spr ctx "default:";
-			gen_expr ctx (mk_block e);
-			print ctx "break";
+			let bend = open_block ctx in
+			gen_block ctx e;
+			bend();
 			newline ctx;
 		);
 		spr ctx "}"
@@ -463,36 +664,37 @@ and gen_expr ctx e =
 	| TCast (e1,Some t) ->
 		gen_expr ctx (Codegen.default_cast ctx.com e1 t e.etype e.epos)
 
+and gen_block ctx e =
+	match e.eexpr with
+	| TBlock el -> List.iter (gen_block ctx) el
+	| _ -> newline ctx; gen_expr ctx e
+
 and gen_value ctx e =
+	if ctx.com.debug && e.epos.pmin >= 0 then
+		add_mapping ctx e.epos;
 	let assign e =
 		mk (TBinop (Ast.OpAssign,
-			mk (TLocal "$r") t_dynamic e.epos,
+			mk (TLocal (match ctx.in_value with None -> assert false | Some v -> v)) t_dynamic e.epos,
 			e
 		)) e.etype e.epos
 	in
-	let value block =
+	let value() =
 		let old = ctx.in_value, ctx.in_loop in
-		ctx.in_value <- true;
+		let r = alloc_var "$r" t_dynamic in
+		ctx.in_value <- Some r;
 		ctx.in_loop <- false;
 		spr ctx "(function($this) ";
-		let b = if block then begin
-			spr ctx "{";
-			let b = open_block ctx in
-			newline ctx;
-			spr ctx "var $r";
-			newline ctx;
-			b
-		end else
-			(fun() -> ())
-		in
+		spr ctx "{";
+		let b = open_block ctx in
+		newline ctx;
+		spr ctx "var $r";
+		newline ctx;
 		(fun() ->
-			if block then begin
-				newline ctx;
-				spr ctx "return $r";
-				b();
-				newline ctx;
-				spr ctx "}";
-			end;
+			newline ctx;
+			spr ctx "return $r";
+			b();
+			newline ctx;
+			spr ctx "}";
 			ctx.in_value <- fst old;
 			ctx.in_loop <- snd old;
 			print ctx "(%s))" (this ctx)
@@ -526,13 +728,13 @@ and gen_value ctx e =
 	| TWhile _
 	| TThrow _ ->
 		(* value is discarded anyway *)
-		let v = value true in
+		let v = value() in
 		gen_expr ctx e;
 		v()
 	| TBlock [e] ->
 		gen_value ctx e
 	| TBlock el ->
-		let v = value true in
+		let v = value() in
 		let rec loop = function
 			| [] ->
 				spr ctx "return null";
@@ -560,23 +762,24 @@ and gen_value ctx e =
 		| None -> spr ctx "null"
 		| Some e -> gen_value ctx e);
 	| TSwitch (cond,cases,def) ->
-		let v = value true in
+		let v = value() in
 		gen_expr ctx (mk (TSwitch (cond,
 			List.map (fun (e1,e2) -> (e1,assign e2)) cases,
 			match def with None -> None | Some e -> Some (assign e)
 		)) e.etype e.epos);
 		v()
 	| TMatch (cond,enum,cases,def) ->
-		let v = value true in
+		let v = value() in
 		gen_expr ctx (mk (TMatch (cond,enum,
 			List.map (fun (constr,params,e) -> (constr,params,assign e)) cases,
 			match def with None -> None | Some e -> Some (assign e)
 		)) e.etype e.epos);
 		v()
 	| TTry (b,catchs) ->
-		let v = value true in
-		gen_expr ctx (mk (TTry (assign b,
-			List.map (fun (v,t,e) -> v, t , assign e) catchs
+		let v = value() in
+		let block e = mk (TBlock [e]) e.etype e.epos in
+		gen_expr ctx (mk (TTry (block (assign b),
+			List.map (fun (v,e) -> v, block (assign e)) catchs
 		)) e.etype e.epos);
 		v()
 
@@ -588,18 +791,27 @@ let generate_package_create ctx (p,_) =
 			Hashtbl.add ctx.packages (p :: acc) ();
 			(match acc with
 			| [] ->
-				print ctx "if(typeof %s=='undefined') %s = {}" p p;
-			| _ -> 
+				if ctx.js_modern then
+					print ctx "var %s = {}" p
+				else
+					print ctx "var %s = %s || {}" p p
+			| _ ->
 				let p = String.concat "." (List.rev acc) ^ (field p) in
-		        print ctx "if(!%s) %s = {}" p p);
+				if ctx.js_modern then
+					print ctx "%s = {}" p
+				else
+					print ctx "if(!%s) %s = {}" p p
+			);
 			newline ctx;
 			loop (p :: acc) l
 	in
-	loop [] p
+	match p with
+	| [] -> print ctx "var "
+	| _ -> loop [] p
 
 let check_field_name c f =
 	match f.cf_name with
-	| "prototype" | "__proto__" | "constructor" -> 
+	| "prototype" | "__proto__" | "constructor" ->
 		error ("The field name '" ^ f.cf_name ^ "'  is not allowed in JS") (match f.cf_expr with None -> c.cl_pos | Some e -> e.epos);
 	| _ -> ()
 
@@ -612,81 +824,112 @@ let gen_class_static_field ctx c f =
 	| Some e ->
 		match e.eexpr with
 		| TFunction _ ->
-			ctx.curmethod <- (f.cf_name,false);
+			let path = (s_path ctx c.cl_path) ^ (field f.cf_name) in
 			ctx.id_counter <- 0;
-			print ctx "%s%s = " (s_path ctx c.cl_path) (field f.cf_name);
+			print ctx "%s = " path;
 			gen_value ctx e;
-			newline ctx
+			ctx.separator <- false;
+			newline ctx;
+			handle_expose ctx path f.cf_meta
 		| _ ->
 			ctx.statics <- (c,f.cf_name,e) :: ctx.statics
 
 let gen_class_field ctx c f =
 	check_field_name c f;
-	print ctx "%s.prototype%s = " (s_path ctx c.cl_path) (field f.cf_name);
+	newprop ctx;
+	print ctx "%s: " (anon_field f.cf_name);
 	match f.cf_expr with
 	| None ->
 		print ctx "null";
-		newline ctx
 	| Some e ->
-		ctx.curmethod <- (f.cf_name,false);
 		ctx.id_counter <- 0;
 		gen_value ctx e;
-		newline ctx
-
-let gen_constructor ctx e =
-	match e.eexpr with
-	| TFunction f  ->
-		let args  = List.map arg_name f.tf_args in
-		let a, args = (match args with [] -> "p" , ["p"] | x :: _ -> x, args) in
-		print ctx "function(%s) { if( %s === $_ ) return; " (String.concat "," (List.map ident args)) a;
-		gen_expr ctx (fun_block ctx f e.epos);
-		print ctx "}";
-	| _ -> assert false
+		ctx.separator <- false
 
 let generate_class ctx c =
 	ctx.current <- c;
-	ctx.curmethod <- ("new",true);
 	ctx.id_counter <- 0;
+	(match c.cl_path with
+	| [],"Function" -> error "This class redefine a native one" c.cl_pos
+	| _ -> ());
 	let p = s_path ctx c.cl_path in
 	generate_package_create ctx c.cl_path;
-	print ctx "%s = " p;
+	if ctx.js_modern then
+		print ctx "%s = " p
+	else
+		print ctx "%s = $hxClasses[\"%s\"] = " p p;
 	(match c.cl_constructor with
-	| Some { cf_expr = Some e } -> gen_constructor ctx e
+	| Some { cf_expr = Some e } -> gen_expr ctx e
 	| _ -> print ctx "function() { }");
 	newline ctx;
+	if ctx.js_modern then begin
+		print ctx "$hxClasses[\"%s\"] = %s" p p;
+		newline ctx;
+	end;
+	handle_expose ctx p c.cl_meta;
 	print ctx "%s.__name__ = [%s]" p (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" (Ast.s_escape s)) (fst c.cl_path @ [snd c.cl_path])));
 	newline ctx;
+	(match c.cl_implements with
+	| [] -> ()
+	| l ->
+		print ctx "%s.__interfaces__ = [%s]" p (String.concat "," (List.map (fun (i,_) -> s_path ctx i.cl_path) l));
+		newline ctx;
+	);
+
+	let gen_props props = 
+		String.concat "," (List.map (fun (p,v) -> p ^":\""^v^"\"") props)
+	in
+
+	(match Codegen.get_properties c.cl_ordered_statics with
+	| [] -> ()
+	| props ->
+		print ctx "%s.__properties__ = {%s}" p (gen_props props);
+		newline ctx);
+
+	List.iter (gen_class_static_field ctx c) c.cl_ordered_statics;
+
 	(match c.cl_super with
-	| None -> ()
+	| None -> print ctx "%s.prototype = {" p;
 	| Some (csup,_) ->
 		let psup = s_path ctx csup.cl_path in
 		print ctx "%s.__super__ = %s" p psup;
 		newline ctx;
-		print ctx "for(var k in %s.prototype ) %s.prototype[k] = %s.prototype[k]" psup p psup;
-		newline ctx;
+		print ctx "%s.prototype = $extend(%s.prototype,{" p psup;
 	);
-	List.iter (gen_class_static_field ctx c) c.cl_ordered_statics;
+
+	let bend = open_block ctx in
 	List.iter (fun f -> match f.cf_kind with Var { v_read = AccResolve } -> () | _ -> gen_class_field ctx c f) c.cl_ordered_fields;
-	print ctx "%s.prototype.__class__ = %s" p p;
-	newline ctx;
-	match c.cl_implements with
-	| [] -> ()
-	| l ->
-		print ctx "%s.__interfaces__ = [%s]" p (String.concat "," (List.map (fun (i,_) -> s_path ctx i.cl_path) l));
-		newline ctx
+	newprop ctx;
+	print ctx "__class__: %s" p;
+
+	let props = Codegen.get_properties c.cl_ordered_fields in
+	(match c.cl_super with
+	| _ when props = [] -> ()
+	| Some (csup,_) when Codegen.has_properties csup ->
+		newprop ctx;
+		let psup = s_path ctx csup.cl_path in
+		print ctx "__properties__: $extend(%s.prototype.__properties__,{%s})" psup (gen_props props)
+	| _ ->
+		newprop ctx;
+		print ctx "__properties__: {%s}" (gen_props props));
+	
+	bend();
+	print ctx "\n}";
+	(match c.cl_super with None -> () | _ -> print ctx ")");
+	newline ctx
 
 let generate_enum ctx e =
 	let p = s_path ctx e.e_path in
 	generate_package_create ctx e.e_path;
 	let ename = List.map (fun s -> Printf.sprintf "\"%s\"" (Ast.s_escape s)) (fst e.e_path @ [snd e.e_path]) in
-	print ctx "%s = { __ename__ : [%s], __constructs__ : [%s] }" p (String.concat "," ename) (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" s) e.e_names));
+	print ctx "%s = $hxClasses[\"%s\"] = { __ename__ : [%s], __constructs__ : [%s] }" p p (String.concat "," ename) (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" s) e.e_names));
 	newline ctx;
 	List.iter (fun n ->
 		let f = PMap.find n e.e_constrs in
 		print ctx "%s%s = " p (field f.ef_name);
 		(match f.ef_type with
 		| TFun (args,_) ->
-			let sargs = String.concat "," (List.map arg_name args) in
+			let sargs = String.concat "," (List.map (fun (n,_,_) -> n) args) in
 			print ctx "function(%s) { var $x = [\"%s\",%d,%s]; $x.__enum__ = %s; $x.toString = $estr; return $x; }" sargs f.ef_name f.ef_index sargs p;
 		| _ ->
 			print ctx "[\"%s\",%d]" f.ef_name f.ef_index;
@@ -720,38 +963,47 @@ let generate_type ctx = function
 	| TEnumDecl e -> generate_enum ctx e
 	| TTypeDecl _ -> ()
 
+let set_current_class ctx c =
+	ctx.current <- c
+
 let alloc_ctx com =
 	let ctx = {
 		com = com;
-		stack = Codegen.stack_init com false;
 		buf = Buffer.create 16000;
 		packages = Hashtbl.create 0;
-		namespace = com.js_namespace;
+		smap = {
+			source_last_line = 0;
+			source_last_col = 0;
+			source_last_file = 0;
+			print_comma = false;
+			output_last_col = 0;
+			output_current_col = 0;
+			sources = DynArray.create();
+			sources_hash = Hashtbl.create 0;
+			mappings = Buffer.create 16;
+		};
+		js_modern = Common.defined com "js_modern";
 		statics = [];
 		inits = [];
 		current = null_class;
 		tabs = "";
-		in_value = false;
+		in_value = None;
 		in_loop = false;
 		handle_break = false;
 		id_counter = 0;
-		curmethod = ("",false);
 		type_accessor = (fun _ -> assert false);
 		separator = false;
+		found_expose = false;
 	} in
 	ctx.type_accessor <- (fun t -> s_path ctx (t_path t));
 	ctx
 
-let gen_single_expr ctx e constr =
-	if constr then gen_constructor ctx e else gen_value ctx e;
+let gen_single_expr ctx e expr =
+	if expr then gen_expr ctx e else gen_value ctx e;
 	let str = Buffer.contents ctx.buf in
 	Buffer.reset ctx.buf;
 	ctx.id_counter <- 0;
 	str
-
-let set_debug_infos ctx c m s =
-	ctx.current <- c;
-	ctx.curmethod <- (m,s)
 
 let generate com =
 	let t = Common.timer "generate js" in
@@ -759,29 +1011,26 @@ let generate com =
 	| Some g -> g()
 	| None ->
 	let ctx = alloc_ctx com in
-	print ctx "$estr = function() { return js.Boot.__string_rec(this,''); }";
-	newline ctx;
-	(match ctx.namespace with
-		| None -> ()
-		| Some ns -> 
-			print ctx "if(typeof %s=='undefined') %s = {}" ns ns;
-			newline ctx);
-	List.iter (generate_type ctx) com.types;
-	print ctx "$_ = {}";
-	newline ctx;
-	print ctx "js.Boot.__res = {}";
-	newline ctx;
-	(match ctx.namespace with
-		| None -> ()
-		| Some ns -> 
-			print ctx "js.Boot.__ns = '%s'" ns;
-			newline ctx);
-	if com.debug then begin
-		print ctx "%s = []" ctx.stack.Codegen.stack_var;
-		newline ctx;
-		print ctx "%s = []" ctx.stack.Codegen.stack_exc_var;
+	if ctx.js_modern then begin
+		(* Additional ES5 strict mode keywords. *)
+		List.iter (fun s -> Hashtbl.replace kwds s ()) [ "arguments"; "eval" ];
+
+		(* Wrap output in a closure. *)
+		print ctx "(function () { \"use strict\"";
 		newline ctx;
 	end;
+
+	let hxClasses = if ctx.js_modern then "{}" else "$hxClasses || {}" in
+	print ctx "var $_, $hxClasses = %s, $estr = function() { return js.Boot.__string_rec(this,''); }
+function $extend(from, fields) {
+	function inherit() {}; inherit.prototype = from; var proto = new inherit();
+	for (var name in fields) proto[name] = fields[name];
+	return proto;
+}" hxClasses;
+	newline ctx;
+	List.iter (generate_type ctx) com.types;
+	print ctx "js.Boot.__res = {}";
+	newline ctx;
 	print ctx "js.Boot.__init()";
 	newline ctx;
 	List.iter (fun e ->
@@ -792,6 +1041,25 @@ let generate com =
 	(match com.main with
 	| None -> ()
 	| Some e -> gen_expr ctx e);
+	if ctx.found_expose then begin
+		newline ctx;
+		print ctx
+"function $hxExpose(src, path) {
+	var o = window;
+	var parts = path.split(\".\");
+	for(var ii = 0; ii < parts.length-1; ++ii) {
+		var p = parts[ii];
+		if(typeof o[p] == \"undefined\") o[p] = {};
+		o = o[p];
+	}
+	o[parts[parts.length-1]] = src;
+}";
+	end;
+	if ctx.js_modern then begin
+		newline ctx;
+		print ctx "})()";
+	end;
+	if com.debug then write_mappings ctx;
 	let ch = open_out_bin com.file in
 	output_string ch (Buffer.contents ctx.buf);
 	close_out ch);

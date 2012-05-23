@@ -1,23 +1,16 @@
 package flash.geom;
 
-#if !flash8
-"This class is only accesible in Flash8"
-#end
-
 extern class ColorTransform {
-
-	var rgb : Float;
-	var blueOffset : Float;
-	var greenOffset : Float;
-	var redOffset : Float;
+	var alphaMultiplier : Float;
 	var alphaOffset : Float;
 	var blueMultiplier : Float;
+	var blueOffset : Float;
+	var color : UInt;
 	var greenMultiplier : Float;
+	var greenOffset : Float;
 	var redMultiplier : Float;
-	var alphaMultiplier : Float;
-
-	function new( ?rm : Float, ?gm : Float, ?bm : Float, ?am : Float, ?ro : Float, ?go : Float, ?bo : Float, ?ao : Float ) : Void;
+	var redOffset : Float;
+	function new(redMultiplier : Float = 1, greenMultiplier : Float = 1, blueMultiplier : Float = 1, alphaMultiplier : Float = 1, redOffset : Float = 0, greenOffset : Float = 0, blueOffset : Float = 0, alphaOffset : Float = 0) : Void;
+	function concat(second : ColorTransform) : Void;
 	function toString() : String;
-	function concat( c : ColorTransform ) : Void;
-
 }
