@@ -1,3 +1,9 @@
+haxe (1:2.9+20120414-1) UNRELEASED; urgency=low
+
+  * New upstream release.
+
+ -- Gabriele Giacone <1o5g4r8o@gmail.com>  Wed, 23 May 2012 01:13:55 +0200
+
 haxe (1:2.7+20110131-3) unstable; urgency=low
 
   * Fix linking so that it works with multiarch-enabled zlib by simply
