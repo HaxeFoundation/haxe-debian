@@ -48,9 +48,11 @@ build-stamp:
 	$(CURDIR)/bin/haxe $(CURDIR)/haxe/std/tools/haxelib/haxelib.hxml
 	touch $@
 
-binary-indep: build-stamp
+check: build-stamp
+	[ "$(shell $(CURDIR)/bin/haxe -x Fib -cp debian)" = "Fib.hx:5: 89" ] \
+		&& echo Test passed || echo Test failed
 
-binary-arch: build-stamp
+binary-arch: check
 	dh_testdir
 	dh_testroot
 	echo $(OCAMLDEPS) >> $(CURDIR)/debian/haxe.substvars
@@ -71,6 +73,8 @@ binary-arch: build-stamp
 	dh_md5sums
 	dh_builddeb
 
+binary-indep: build-stamp
+
 binary: binary-indep binary-arch
 
 clean:
@@ -89,4 +93,4 @@ clean:
 	rm -f $(CURDIR)/haxelib
 	dh_clean
 
-.PHONY: binary binary-indep binary-arch build clean
+.PHONY: binary binary-indep binary-arch build check clean

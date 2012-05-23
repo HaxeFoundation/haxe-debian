@@ -1,3 +1,12 @@
+haxe (1:2.7+20110131-3) unstable; urgency=low
+
+  * Fix linking so that it works with multiarch-enabled zlib by simply
+    passing -lz to the ocaml compiler, thanks to Steve Langasek.
+    (Closes: #622853)
+  * Include a small test case to sanity-check the build.
+
+ -- Jens Peter Secher <jps@debian.org>  Sat, 16 Apr 2011 15:01:20 +0200
+
 haxe (1:2.7+20110131-2) unstable; urgency=low
 
   * Updated man page and bash comletion to include new macro options.
