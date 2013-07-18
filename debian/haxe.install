@@ -1,4 +1,3 @@
-haxe/std/* usr/share/haxe/std
-haxedoc usr/bin
-haxelib usr/bin
-bin/haxe usr/bin
+haxe usr/bin
+std/* usr/share/haxe/std
+debian/haxe-mode.el usr/share/emaces/site-lisp/haxe-mode

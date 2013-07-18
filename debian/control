@@ -1,15 +1,14 @@
 Source: haxe
 Section: devel
 Priority: optional
-Maintainer: Jens Peter Secher <jps@debian.org>
-Standards-Version: 3.9.1
-Build-Depends: debhelper (>= 7), ocaml, ocaml-best-compilers | ocaml-native-compilers, ocaml-findlib, libxml-light-ocaml-dev, camlp4 (>= 3.11), zlib1g-dev, neko (>= 1.8.1~)
-Vcs-Hg: http://hg.debian.org/hg/collab-maint/haxe
+Maintainer: Debian QA Group <packages@qa.debian.org>
+Standards-Version: 3.9.4
+Build-Depends: debhelper (>= 9), ocaml, ocaml-best-compilers | ocaml-native-compilers, ocaml-findlib, libxml-light-ocaml-dev, camlp4 (>= 3.11), zlib1g-dev, neko (>= 1.8.1~)
+Vcs-Hg: http://anonscm.debian.org/hg/collab-maint/haxe
 Homepage: http://haxe.org
 
 Package: haxe
 Architecture: any
-Section: devel
 Depends: neko (>= 1.8.1), ${shlibs:Depends}, ${misc:Depends}, ${ocaml:Depends}
 Description: Web-oriented universal programming language
  Programming language similar to JavaScript, but with full-featured

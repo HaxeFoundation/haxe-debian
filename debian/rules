@@ -1,96 +1,25 @@
 #!/usr/bin/make -f
 # debian/rules for haXe.
 
-package := $(firstword $(shell dh_listpackages))
+%:
+	dh $@
 
-# Do we have a native ocaml compiler?  If not, use bytecode.
-ifeq ($(shell test -x /usr/bin/ocamlopt -o -x /usr/bin/ocamlopt.opt && echo true),true)
-  OCAMLTYPE = install_native.ml
-  OCAMLSTRIP =
-  OCAMLDEPS = ocaml:Depends=
-else
-  OCAMLTYPE = install_bytecode.ml
-  OCAMLSTRIP = -Xhaxe
-  OCAMLDEPS = ocaml:Depends=ocaml-base-nox-$(shell ocamlfind ocamlc -version)
-endif
+override_dh_auto_configure:
 
-# The upstream CVS repository.
-motiontwin := :pserver:anonymous@cvs.motion-twin.com:/cvsroot
-cvs := cvs -z3 -d $(motiontwin)
+override_dh_auto_install:
 
-# The Debian version must be of the format <epoch>:<main>.<minor>+<YYYYMMDD>
-version := $(shell dpkg-parsechangelog | grep ^Version | cut -d' ' -f2 | cut -d':' -f2 | cut -d'-' -f1)
-year := $(shell echo $(version) | cut -d'+' -f2 | cut -c'1-4')
-month := $(shell echo $(version) | cut -d'+' -f2 | cut -c'5-6')
-day := $(shell echo $(version) | cut -d'+' -f2 | cut -c'7-8')
-date := $(year)-$(month)-$(day)
-repackdir := $(package)-$(version)
-
-# Repackage the source.
-get-orig-source:
-	echo "*** Please hit enter on login (empty password) ***"
-	$(cvs) login
-	$(cvs) export -N -d $(repackdir) -D $(date) ocaml/swflib
-	$(cvs) export -N -d $(repackdir) -D $(date) ocaml/extc
-	$(cvs) export -N -d $(repackdir) -D $(date) ocaml/extlib-dev
-	$(cvs) export -N -d $(repackdir) -D $(date) neko/libs/include/ocaml
-	svn export -r {$(date)} http://haxe.googlecode.com/svn/trunk $(repackdir)/haxe
-	find $(repackdir) -name .cvsignore -o -name '*.vcproj' \
-		-o -name '*.sln' -o -name '*.bat' -o -name '*.win' | xargs rm -rf
-	tar cfz $(package)_$(version).orig.tar.gz $(repackdir)
-	rm -rf $(repackdir)
-
-build: build-stamp
-build-stamp: 
-	dh_testdir
-	ocaml debian/$(OCAMLTYPE)
-	$(CURDIR)/bin/haxe $(CURDIR)/haxe/std/tools/haxedoc/haxedoc.hxml
-	$(CURDIR)/bin/haxe $(CURDIR)/haxe/std/tools/haxelib/haxelib.hxml
-	touch $@
-
-check: build-stamp
-	[ "$(shell $(CURDIR)/bin/haxe -x Fib -cp debian)" = "Fib.hx:5: 89" ] \
-		&& echo Test passed || echo Test failed
-
-binary-arch: check
-	dh_testdir
-	dh_testroot
-	echo $(OCAMLDEPS) >> $(CURDIR)/debian/haxe.substvars
-	dh_installdocs
-	dh_install debian/haxe-mode.el usr/share/emacs/site-lisp/haxe-mode
-	dh_installemacsen
-	dh_install
+override_dh_install:
 	mkdir -p $(CURDIR)/debian/haxe/etc/bash_completion.d
-	cp $(CURDIR)/debian/bash_completion $(CURDIR)/debian/haxe/etc/bash_completion.d/haxe
-	dh_installman debian/haxe.1 debian/haxelib.1 debian/haxedoc.1
-	dh_installchangelogs haxe/doc/CHANGES.txt
-	dh_strip -Xhaxedoc -Xhaxelib $(OCAMLSTRIP)
-	dh_compress
-	dh_fixperms
-	dh_installdeb
-	dh_shlibdeps
-	dh_gencontrol
-	dh_md5sums
-	dh_builddeb
+	cp debian/bash_completion $(CURDIR)/debian/haxe/etc/bash_completion.d/haxe
+	mkdir -p $(CURDIR)/debian/haxe/usr/bin
+	mkdir -p $(CURDIR)/debian/haxe/usr/lib
+	chmod 666 $(CURDIR)/debian/haxe/usr/lib
+	cp std/tools/haxelib/haxelib.sh $(CURDIR)/debian/haxe/usr/bin/haxelib
+	cp std/tools/haxedoc/haxedoc.sh $(CURDIR)/debian/haxe/usr/bin/haxedoc
+	dh_install
+	rm -f $(CURDIR)/debian/haxe/usr/share/haxe/std/tools/haxelib/haxelib.sh
+	rm -f $(CURDIR)/debian/haxe/usr/share/haxe/std/tools/haxedoc/haxedoc.sh
 
-binary-indep: build-stamp
-
-binary: binary-indep binary-arch
-
-clean:
-	dh_testdir
-	dh_testroot
-	-rm -f *-stamp
-	-rm -rf $(CURDIR)/bin
-	-rm -f $(CURDIR)/haxe/lexer.ml
-	-rm -f $(CURDIR)/ocaml/xml-light/xml_parser.ml
-	-rm -f $(CURDIR)/ocaml/xml-light/xml_parser.mli
-	-rm -f $(CURDIR)/ocaml/xml-light/xml_lexer.ml
-	find $(CURDIR) -name '*.o' -o -name '*.cmi' -o -name '*.cmx' -o -name '*.cmo' \
-		-o -name '*.cma' -o -name '*.a' -o -name '*.cmxa' -o -name '*.n' \
-		| xargs rm -rf
-	rm -f $(CURDIR)/haxedoc
-	rm -f $(CURDIR)/haxelib
+override_dh_clean:
+	find $(CURDIR) -name '*.cmx' |xargs rm -f
 	dh_clean
-
-.PHONY: binary binary-indep binary-arch build check clean

@@ -1,0 +1,61 @@
+Description: Update other paths specific to Debian installations.
+Author: Barry deFreese <bdefreese@debian.org>
+Index: haxe-3.0~svn6707/genneko.ml
+===================================================================
+--- haxe-3.0~svn6707.orig/genneko.ml	2013-07-18 22:46:11.496575286 -0400
++++ haxe-3.0~svn6707/genneko.ml	2013-07-18 22:46:11.492575266 -0400
+@@ -710,7 +710,7 @@
+ 			var @b = if( @s == "Windows" )
+ 				@env("HAXEPATH") + "\\lib\\"
+ 				else try $loader.loadprim("std@file_contents",1)(@env("HOME")+"/.haxelib") + "/"
+-				catch e if( @s == "Linux" ) "/usr/lib/haxe/lib/" else "/usr/local/lib/haxe/lib/";
++				catch e if( @s == "Linux" ) "/usr/share/haxe/std/" else "/usr/local/lib/haxe/lib/";
+ 			if( $loader.loadprim("std@sys_is64",0)() ) @s = @s + 64;
+ 			@s = @s + "/"
+ 		*)
+@@ -732,7 +732,7 @@
+ 						op "+" (call p (loadp "file_contents" 1) [op "+" (call p (ident p "@env") [str p "HOME"]) (str p "./haxelib")]) (str p "/"),
+ 						"e",
+ 						(EIf (op "==" es (str p "Linux"),
+-							str p "/usr/lib/haxe/lib/",
++							str p "/usr/share/haxe/lib/",
+ 							Some (str p "/usr/local/lib/haxe/lib/")
+ 						),p)
+ 					),p)
+Index: haxe-3.0~svn6707/std/tools/haxelib/Main.hx
+===================================================================
+--- haxe-3.0~svn6707.orig/std/tools/haxelib/Main.hx	2013-07-18 22:46:11.496575286 -0400
++++ haxe-3.0~svn6707/std/tools/haxelib/Main.hx	2013-07-18 22:46:11.492575266 -0400
+@@ -671,7 +671,7 @@
+ 			File.getContent("/etc/.haxelib")
+ 		catch( e : Dynamic ) {
+ 			if( setup ) {
+-				(win ? haxepath : "/usr/lib/haxe/")+REPNAME;
++				(win ? haxepath : "/usr/share/haxe/")+REPNAME;
+ 			} else if( win ) {
+ 				// Windows have a default directory (no need for setup)
+ 				if( haxepath == null )
+Index: haxe-3.0~svn6707/std/tools/hxinst/Main.hx
+===================================================================
+--- haxe-3.0~svn6707.orig/std/tools/hxinst/Main.hx	2013-07-18 22:46:11.496575286 -0400
++++ haxe-3.0~svn6707/std/tools/hxinst/Main.hx	2013-07-18 22:53:21.462707373 -0400
+@@ -40,7 +40,7 @@
+ 			libDir = "/usr/local/lib";
+ 			binDir = "/usr/local/bin";
+ 		} else {
+-			libDir = "/usr/lib";
++			libDir = "/usr/share";
+ 			binDir = "/usr/bin";
+ 		}
+ 		baseDir = if( SYS == "Windows" ) {
+@@ -166,8 +166,8 @@
+ 	function install() {
+ 		// CLEANUP
+ 		var dirs = [
+-			"/usr/local/lib/neko",
+-			"/usr/local/lib/haxe",
++			"/usr/lib/neko",
++			"/usr/share/haxe",
+ 			"/opt/neko",
+ 			"/opt/haxe",
+ 			"c:/motion-twin",
