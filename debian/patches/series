@@ -1,2 +1,4 @@
 debian-file-locations.diff
 fix_paths.diff
+build_system_byte.diff
+upstream_eval_order.diff
