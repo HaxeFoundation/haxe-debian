@@ -1,8 +1,7 @@
 haxe (1:3.0.0~svn6707+dfsg-1) UNRELEASED; urgency=medium
 
   * Adopt as Debian Flash Team.
-    + Set maintainer to Debian Flash team <pkg-flash-devel@lists.alioth.debian.org>
-    + Add myself to uploaders.
+    + Set maintainer to Debian Flash team, add myself to uploaders.
   * Set Vcs-* fields to updated collab-maint git repo.
   * Replace jquery-latest.min.js and swfobject.js with symlinks to system ones.
     + Remove sourceless files from upstream tarball (Closes: #736596).
