@@ -4,9 +4,9 @@ haxe (1:3.0.0~svn6707+dfsg-1) UNRELEASED; urgency=medium
     + Set maintainer to Debian Flash team <pkg-flash-devel@lists.alioth.debian.org>
     + Add myself to uploaders.
   * Set Vcs-* fields to updated collab-maint git repo.
-  * Replace jquery-latest.min.js with symlink to system one.
-    + Remove sourceless file from upstream tarball (Closes: #736596).
-    + Add libjs-jquery runtime dependency.
+  * Replace jquery-latest.min.js and swfobject.js with symlinks to system ones.
+    + Remove sourceless files from upstream tarball (Closes: #736596).
+    + Add libjs-jquery and libjs-swfobject runtime dependencies.
 
  -- Gabriele Giacone <1o5g4r8o@gmail.com>  Tue, 19 May 2015 17:37:38 +0200
 

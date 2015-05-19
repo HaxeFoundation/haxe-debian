@@ -19,6 +19,7 @@ Homepage: http://haxe.org
 Package: haxe
 Architecture: any
 Depends: libjs-jquery,
+         libjs-swfobject,
          neko (>= 1.8.1),
          ${misc:Depends},
          ${ocaml:Depends},
