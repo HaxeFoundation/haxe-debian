@@ -1,9 +1,0 @@
-# Site
--neko index.n
--main tools.haxelib.Site
-
---next
-# Command
--neko haxelib.n
--main tools.haxelib.Main
--cmd nekotools boot haxelib.n
