@@ -28,7 +28,6 @@ package neko.db;
 	SPOD Object : the persistent object base type. See the tutorial on haXe
 	website to learn how to use SPOD.
 **/
-#if spod_macro #else
 class Object #if spod_rtti implements haxe.rtti.Infos #end {
 
 /*
@@ -76,5 +75,3 @@ class Object #if spod_rtti implements haxe.rtti.Infos #end {
 	}
 
 }
-
-#end

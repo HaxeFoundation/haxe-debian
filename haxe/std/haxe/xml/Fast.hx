@@ -142,16 +142,8 @@ class Fast {
 		if( !it.hasNext() )
 			throw name+" does not have data";
 		var v = it.next();
-		var n = it.next();
-		if( n != null ) {
-			// handle <spaces>CDATA<spaces>
-			if( v.nodeType == Xml.PCData && n.nodeType == Xml.CData && StringTools.trim(v.nodeValue) == "" ) {
-				var n2 = it.next();
-				if( n2 == null || (n2.nodeType == Xml.PCData && StringTools.trim(n2.nodeValue) == "" && it.next() == null) )
-					return n.nodeValue;
-			}
+		if( it.hasNext() )
 			throw name+" does not only have data";
-		}
 		if( v.nodeType != Xml.PCData && v.nodeType != Xml.CData )
 			throw name+" does not have data";
 		return v.nodeValue;

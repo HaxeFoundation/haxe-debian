@@ -1,11 +1,20 @@
 package flash.text;
 
-extern class StyleSheet extends flash.events.EventDispatcher, implements Dynamic {
-	var styleNames(default,null) : Array<Dynamic>;
+extern class StyleSheet
+{
 	function new() : Void;
-	function clear() : Void;
-	function getStyle(styleName : String) : Dynamic;
-	function parseCSS(CSSText : String) : Void;
-	function setStyle(styleName : String, styleObject : Dynamic) : Void;
-	function transform(formatObject : Dynamic) : TextFormat;
+	function getStyle(name:String):Dynamic;
+	function setStyle(name:String,style:Dynamic):Void;
+	function clear():Void;
+	function getStyleNames():Array<Dynamic>;
+	function transform(style:Dynamic):flash.TextFormat;
+	function parseCSS(cssText:String):Bool;
+	function parse(cssText:String):Bool;
+	function load(url:String):Bool;
+	dynamic function onLoad(success:Bool):Void;
+
+	private static function __init__() : Void untyped {
+		flash.text.StyleSheet = _global["TextField"]["StyleSheet"];
+	}
+
 }

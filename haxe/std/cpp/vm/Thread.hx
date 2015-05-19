@@ -26,6 +26,7 @@ package cpp.vm;
 
 typedef ThreadHandle = Dynamic;
 
+#if HXCPP_MULTI_THREADED
 class Thread {
 
 	var handle : ThreadHandle;
@@ -65,9 +66,11 @@ class Thread {
 		return untyped __global__.__hxcpp_thread_read_message(block);
 	}
 
-	function __compare(t) : Int {
-		return handle == t.handle ? 0 : 1;
+	function __compare(t) {
+		return untyped handle == t.handle;
 	}
 
 }
-
+#else
+You_need_to_define_HXCPP_MULTI_THREADED_to_use_the_Thread_class
+#end

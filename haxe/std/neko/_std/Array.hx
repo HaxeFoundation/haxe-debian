@@ -60,11 +60,11 @@
 			a : this,
 			p : 0,
 			hasNext : function() {
-				return __this__.p < __this__.a.length;
+				return this.p < this.a.length;
 			},
 			next : function() {
-				var i = __this__.a.__a[__this__.p];
-				__this__.p += 1;
+				var i = this.a.__a[this.p];
+				this.p += 1;
 				return i;
 			}
 		};
@@ -247,7 +247,7 @@
 		return this.__a[pos];
 	}
 
-	private function __set( pos : Int, v : T ) : T {
+	private function __set( pos : Int, v : T ) : Void {
 		var a = this.__a;
 		if( this.length <= pos ) {
 			var l = pos + 1;
@@ -259,7 +259,6 @@
 			this.length = l;
 		}
 		a[pos] = v;
-		return v;
 	}
 
 	private function __double(l:Int) : Void {
@@ -286,15 +285,5 @@
 		}
 		return a;
 	}
-
-	#if !macro
-	static function __init__() : Void {
-		try {
-			var msort : Dynamic = neko.Lib.load("std","merge_sort",3);
-			untyped Array.prototype.sort = function(cmp) msort(__this__.__a,__this__.length,cmp);
-		} catch( e : Dynamic ) {
-		}
-	}
-	#end
 
 }

@@ -24,11 +24,18 @@
  */
 package haxe;
 
-#if sys
+#if neko
+import neko.net.Host;
+import neko.net.Socket;
+#elseif cpp
+import cpp.net.Host;
+import cpp.net.Socket;
+#elseif php
+import php.net.Host;
+import php.net.Socket;
+#end
 
-import sys.net.Host;
-import sys.net.Socket;
-
+#if (neko || php || cpp)
 private typedef AbstractSocket = {
 	var input(default,null) : haxe.io.Input;
 	var output(default,null) : haxe.io.Output;
@@ -38,27 +45,27 @@ private typedef AbstractSocket = {
 	function close() : Void;
 	function shutdown( read : Bool, write : Bool ) : Void;
 }
-
 #end
 
 class Http {
 
 	public var url : String;
-#if sys
+#if (neko || php || cpp)
 	public var noShutdown : Bool;
 	public var cnxTimeout : Float;
 	public var responseHeaders : Hash<String>;
+	var postData : String;
 	var chunk_size : Null<Int>;
 	var chunk_buf : haxe.io.Bytes;
 	var file : { param : String, filename : String, io : haxe.io.Input, size : Int };
 #elseif js
 	public var async : Bool;
-#end
 	var postData : String;
+#end
 	var headers : Hash<String>;
 	var params : Hash<String>;
 
-	#if sys
+	#if (neko || php || cpp)
 	public static var PROXY : { host : String, port : Int, auth : { user : String, pass : String } } = null;
 	#end
 
@@ -72,7 +79,7 @@ class Http {
 		params = new Hash();
 		#if js
 		async = true;
-		#elseif sys
+		#elseif (neko || php || cpp)
 		cnxTimeout = 10;
 		#end
 		#if php
@@ -88,12 +95,11 @@ class Http {
 		params.set(param,value);
 	}
 
+	#if (neko || js || cpp)
 	public function setPostData( data : String ) {
-		#if (flash && !flash9)
-		throw "Not available";
-		#end
 		postData = data;
 	}
+	#end
 
 	public function request( post : Bool ) : Void {
 		var me = this;
@@ -130,7 +136,7 @@ class Http {
 				uri = "";
 			else
 				uri += "&";
-			uri += StringTools.urlEncode(p)+"="+StringTools.urlEncode(params.get(p));
+			uri += StringTools.urlDecode(p)+"="+StringTools.urlEncode(params.get(p));
 		}
 		try {
 			if( post )
@@ -189,16 +195,12 @@ class Http {
 		var bug = small_url.split("xxx");
 
 		var request = new flash.net.URLRequest( small_url );
-		for( k in headers.keys() )
+		for( k in headers.keys() ){
 			request.requestHeaders.push( new flash.net.URLRequestHeader(k,headers.get(k)) );
-
-		if( postData != null ) {
-			request.data = postData;
-			request.method = "POST";
-		} else {
-			request.data = vars;
-			request.method = if( post ) "POST" else "GET";
 		}
+
+		request.data = vars;
+		request.method = if( post ) "POST" else "GET";
 
 		try {
 			loader.load( request );
@@ -241,7 +243,7 @@ class Http {
 		}
 		if( !r.sendAndLoad(small_url,r,if( param ) { if( post ) "POST" else "GET"; } else null) )
 			onError("Failed to initialize Connection");
-	#elseif sys
+	#elseif (neko || php || cpp)
 		var me = this;
 		var output = new haxe.io.BytesOutput();
 		var old = onError;
@@ -260,37 +262,41 @@ class Http {
 	#end
 	}
 
-#if sys
+#if (neko || php || cpp)
 
 	public function fileTransfert( argname : String, filename : String, file : haxe.io.Input, size : Int ) {
 		this.file = { param : argname, filename : filename, io : file, size : size };
 	}
 
 	public function customRequest( post : Bool, api : haxe.io.Output, ?sock : AbstractSocket, ?method : String  ) {
+		#if php
 		var url_regexp = ~/^(https?:\/\/)?([a-zA-Z\.0-9-]+)(:[0-9]+)?(.*)$/;
+		#else
+		var url_regexp = ~/^(http:\/\/)?([a-zA-Z\.0-9-]+)(:[0-9]+)?(.*)$/;
+		#end
 		if( !url_regexp.match(url) ) {
 			onError("Invalid URL");
 			return;
 		}
+		#if php
 		var secure = (url_regexp.matched(1) == "https://");
-		if( sock == null ) {
-			if( secure ) {
-				#if php
-				sock = new php.net.SslSocket();
-				#elseif hxssl
-				sock = new neko.tls.Socket();
-				#else
-				throw "Https is only supported with -lib hxssl";
-				#end
-			} else
-				sock = new Socket();
-		}
+		#end
+		if ( sock == null )
+			#if php
+			sock = (secure) ? Socket.newSslSocket() : new Socket();
+			#else
+			sock = new Socket();
+			#end
 		var host = url_regexp.matched(2);
 		var portString = url_regexp.matched(3);
 		var request = url_regexp.matched(4);
 		if( request == "" )
 			request = "/";
-		var port = if ( portString == null || portString == "" ) secure ? 443 : 80 else Std.parseInt(portString.substr(1, portString.length - 1));
+		#if php
+		var port = if( portString == null || portString == "" ) ((!secure) ? 80 : 443) else Std.parseInt(portString.substr(1,portString.length-1));
+		#else
+		var port = if ( portString == null || portString == "" ) 80 else Std.parseInt(portString.substr(1, portString.length - 1));
+		#end
 		var data;
 
 		var multipart = (file != null);
@@ -384,11 +390,13 @@ class Http {
 			b.add(headers.get(h));
 			b.add("\r\n");
 		}
-		b.add("\r\n");
 		if( postData != null)
 			b.add(postData);
-		else if( post && uri != null )
-			b.add(uri);
+		else {
+			b.add("\r\n");
+			if( post && uri != null )
+				b.add(uri);
+		}
 		try {
 			if( Http.PROXY != null )
 				sock.connect(new Host(Http.PROXY.host),Http.PROXY.port);

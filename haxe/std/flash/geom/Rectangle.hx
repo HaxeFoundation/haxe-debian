@@ -1,33 +1,45 @@
 package flash.geom;
 
-extern class Rectangle {
-	var bottom : Float;
-	var bottomRight : Point;
-	var height : Float;
-	var left : Float;
-	var right : Float;
-	var size : Point;
-	var top : Float;
-	var topLeft : Point;
-	var width : Float;
-	var x : Float;
-	var y : Float;
-	function new(x : Float = 0, y : Float = 0, width : Float = 0, height : Float = 0) : Void;
-	function clone() : Rectangle;
-	function contains(x : Float, y : Float) : Bool;
-	function containsPoint(point : Point) : Bool;
-	function containsRect(rect : Rectangle) : Bool;
-	@:require(flash11) function copyFrom(sourceRect : Rectangle) : Void;
-	function equals(toCompare : Rectangle) : Bool;
-	function inflate(dx : Float, dy : Float) : Void;
-	function inflatePoint(point : Point) : Void;
-	function intersection(toIntersect : Rectangle) : Rectangle;
-	function intersects(toIntersect : Rectangle) : Bool;
+#if !flash8
+"This class is only accesible in Flash8"
+#end
+
+extern class Rectangle<T> {
+
+	var left : T;
+	var top : T;
+	var right : T;
+	var bottom : T;
+
+	// OR
+	var x : T;
+	var y : T;
+	var width : T;
+	var height : T;
+
+	// OR
+	var size : Point<T>;
+	var bottomRight : Point<T>;
+	var topLeft : Point<T>;
+
+	function new( x : T, y : T, w : T, h : T ) : Void;
+
+	function equals( r : Rectangle<T> ) : Bool;
+	function union( r : Rectangle<T> ) : Rectangle<T>;
+	function intersects( r : Rectangle<T> ) : Bool;
+	function intersection( r : Rectangle<T> ) : Rectangle<T>;
+	function containsRectangle( r : Rectangle<T> ) : Bool;
+	function containsPoint( p : Point<T> ) : Bool;
+	function contains( x : Float, y : Float ) : Bool;
+	function offsetPoint( p : Point<T> ) : Void;
+	function offset( x : T, y : T ) : Void;
+
+	function inflatePoint( p : Point<T> ) : Void;
+	function inflate( x : T, y : T ) : Void;
 	function isEmpty() : Bool;
-	function offset(dx : Float, dy : Float) : Void;
-	function offsetPoint(point : Point) : Void;
 	function setEmpty() : Void;
-	@:require(flash11) function setTo(xa : Float, ya : Float, widtha : Float, heighta : Float) : Void;
+	function clone() : Rectangle<T>;
+
 	function toString() : String;
-	function union(toUnion : Rectangle) : Rectangle;
+
 }

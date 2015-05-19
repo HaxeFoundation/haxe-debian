@@ -46,7 +46,7 @@ enum ValueType {
 		return p.__class__;
 	}
 
-	public static function getEnum( o : EnumValue ) : Enum<Dynamic> untyped {
+	public static function getEnum( o : Dynamic ) : Enum<Dynamic> untyped {
 		if( __dollar__typeof(o) != __dollar__tobject )
 			return null;
 		return o.__enum__;
@@ -122,7 +122,7 @@ enum ValueType {
 	}
 
 	public static function createEnumIndex<T>( e : Enum<T>, index : Int, ?params : Array<Dynamic> ) : T {
-		var c : String = (untyped e.__constructs__)[index];
+		var c = Type.getEnumConstructs(e)[index];
 		if( c == null ) throw index+" is not a valid enum constructor index";
 		return createEnum(e,c,params);
 	}
@@ -140,7 +140,6 @@ enum ValueType {
 		a.remove("__class__");
 		a.remove("__serialize");
 		a.remove("__string");
-		a.remove("__properties__");
 		return a;
 	}
 
@@ -151,18 +150,13 @@ enum ValueType {
 		a.remove("__super__");
 		a.remove("__string");
 		a.remove("__construct__");
-		a.remove("__properties__");
 		a.remove("prototype");
 		a.remove("new");
-		#if macro
-		a.remove("__ct__");
-		#end
 		return a;
 	}
 
-	public static function getEnumConstructs( e : Enum<Dynamic> ) : Array<String> {
-		var a : Array<String> = untyped e.__constructs__;
-		return a.copy();
+	public static function getEnumConstructs( e : Enum<Dynamic> ) : Array<String> untyped {
+		return untyped e.__constructs__;
 	}
 
 	public static function typeof( v : Dynamic ) : ValueType untyped {
@@ -202,27 +196,16 @@ enum ValueType {
 		return true;
 	}
 
-	public static function enumConstructor( e : EnumValue ) : String {
-		return new String(untyped e.tag);
+	public static function enumConstructor( e : Dynamic ) : String {
+		return new String(e.tag);
 	}
 
-	public static function enumParameters( e : EnumValue ) : Array<Dynamic> {
-		return untyped if( e.args == null ) [] else Array.new1(e.args,__dollar__asize(e.args));
+	public static function enumParameters( e : Dynamic ) : Array<Dynamic> {
+		return if( e.args == null ) [] else untyped Array.new1(e.args,__dollar__asize(e.args));
 	}
 
-	public inline static function enumIndex( e : EnumValue ) : Int {
-		return untyped e.index;
-	}
-
-	public static function allEnums<T>( e : Enum<T> ) : Array<T> {
-		var all = [];
-		var cst : Array<String> = untyped e.__constructs__;
-		for( c in cst ) {
-			var v = Reflect.field(e,c);
-			if( !Reflect.isFunction(v) )
-				all.push(v);
-		}
-		return all;
+	public inline static function enumIndex( e : Dynamic ) : Int {
+		return e.index;
 	}
 
 }

@@ -383,13 +383,6 @@ class Serializer {
 		case TFunction:
 			throw "Cannot serialize function";
 		default:
-			#if neko
-			if( untyped (__i32__kind != null && __dollar__iskind(v,__i32__kind)) ) {
-				buf.add("i");
-				buf.add(v);
-				return;
-			}
-			#end
 			throw "Cannot serialize "+Std.string(v);
 		}
 	}

@@ -25,8 +25,13 @@
 
 @:core_api class Reflect {
 
-	public static function hasField( o : Dynamic, field : String ) : Bool {
-		return untyped Object.prototype.hasOwnProperty.call(o, field);
+	public static function hasField( o : Dynamic, field : String ) : Bool untyped {
+		if( o.hasOwnProperty != null )
+			return o.hasOwnProperty(field);
+		var arr = fields(o);
+		for( t in arr.iterator() )
+			if( t == field ) return true;
+		return false;
 	}
 
 	public inline static function field( o : Dynamic, field : String ) : Dynamic untyped {
@@ -42,27 +47,31 @@
 		o[field] = value;
 	}
 
-	public static inline function getProperty( o : Dynamic, field : String ) : Dynamic untyped {
-		var tmp;
-		return if( o == null ) null else if( o.__properties__ && (tmp=o.__properties__["get_"+field]) ) o[tmp]() else o[field];
-	}
-
-	public static inline function setProperty( o : Dynamic, field : String, value : Dynamic ) : Void untyped {
-		var tmp;
-		if( o.__properties__ && (tmp=o.__properties__["set_"+field]) ) o[tmp](value) else o[field] = value;
-	}
-
 	public inline static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic untyped {
 		return func.apply(o,args);
 	}
 
-	public static function fields( o : Dynamic ) : Array<String> {
-		var a = [];
-		if (o != null) untyped {
-			var hasOwnProperty = Object.prototype.hasOwnProperty;
-			__js__("for( var f in o ) {");
-			if( hasOwnProperty.call(o, f) ) a.push(f);
-			__js__("}");
+	public static function fields( o : Dynamic ) : Array<String> untyped {
+		if( o == null ) return new Array();
+		var a = new Array();
+		if( o.hasOwnProperty ) {
+			__js__("
+				for(var i in o)
+					if( o.hasOwnProperty(i) )
+						a.push(i);
+			");
+		} else {
+			var t;
+			try{ t = o.__proto__; } catch( e : Dynamic ) { t = null; }
+			if( t != null )
+				o.__proto__ = null;
+			__js__("
+				for(var i in o)
+					if( i != \"__proto__\" )
+						a.push(i);
+			");
+			if( t != null )
+				o.__proto__ = t;
 		}
 		return a;
 	}
@@ -104,8 +113,10 @@
 	}
 
 	public static function makeVarArgs( f : Array<Dynamic> -> Dynamic ) : Dynamic {
-		return function() {
-			var a = untyped Array.prototype.slice.call(__js__("arguments"));
+		return function() untyped {
+			var a = new Array();
+			for( i in 0...arguments.length )
+				a.push(arguments[i]);
 			return f(a);
 		};
 	}

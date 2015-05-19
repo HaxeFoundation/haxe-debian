@@ -25,10 +25,10 @@ type package_rule =
 
 type platform =
 	| Cross
-	| Flash8
+	| Flash
 	| Js
 	| Neko
-	| Flash
+	| Flash9
 	| Php
 	| Cpp
 
@@ -44,17 +44,9 @@ type basic_types = {
 	mutable tarray : t -> t;
 }
 
-type stats = {
-	s_files_parsed : int ref;
-	s_classes_built : int ref;
-	s_methods_typed : int ref;
-	s_macros_called : int ref;
-}
-
 type context = {
 	(* config *)
 	version : int;
-	args : string list;
 	mutable display : bool;
 	mutable debug : bool;
 	mutable verbose : bool;
@@ -68,11 +60,9 @@ type context = {
 	mutable package_rules : (string,package_rule) PMap.t;
 	mutable error : string -> pos -> unit;
 	mutable warning : string -> pos -> unit;
-	mutable load_extern_type : (path -> pos -> (string * Ast.package) option) list; (* allow finding types which are not in sources *)
+	mutable js_namespace : string option;
+	mutable load_extern_type : (path -> pos -> Ast.package option) list; (* allow finding types which are not in sources *)
 	mutable filters : (unit -> unit) list;
-	mutable defines_signature : string option;
-	mutable print : string -> unit;
-	mutable get_macros : unit -> context option;
 	(* output *)
 	mutable file : string;
 	mutable flash_version : float;
@@ -80,10 +70,8 @@ type context = {
 	mutable main : Type.texpr option;
 	mutable types : Type.module_type list;
 	mutable resources : (string,string) Hashtbl.t;
-	mutable neko_libs : string list;
 	mutable php_front : string option;
 	mutable php_lib : string option;
-	mutable php_prefix : string option;
 	mutable swf_libs : (string * (unit -> Swf.swf) * (unit -> ((string list * string),As3hl.hl_class) Hashtbl.t)) list;
 	mutable js_gen : (unit -> unit) option;
 	(* typing *)
@@ -94,30 +82,20 @@ exception Abort of string * Ast.pos
 
 let display_default = ref false
 
-let stats =
-	{
-		s_files_parsed = ref 0;
-		s_classes_built = ref 0;
-		s_methods_typed = ref 0;
-		s_macros_called = ref 0;
-	}
-
-let create v args =
+let create v =
 	let m = Type.mk_mono() in
 	{
 		version = v;
-		args = args;
 		debug = false;
 		display = !display_default;
 		verbose = false;
 		foptimize = true;
 		dead_code_elimination = false;
 		platform = Cross;
-		print = print_string;
 		std_path = [];
 		class_path = [];
 		main_class = None;
-		defines = PMap.add "true" () (if !display_default then PMap.add "display" () PMap.empty else PMap.empty);
+		defines = PMap.add "true" () PMap.empty;
 		package_rules = PMap.empty;
 		file = "";
 		types = [];
@@ -129,12 +107,9 @@ let create v args =
 		php_front = None;
 		php_lib = None;
 		swf_libs = [];
-		neko_libs = [];
-		php_prefix = None;
+		js_namespace = None;
 		js_gen = None;
 		load_extern_type = [];
-		defines_signature = None;
-		get_macros = (fun() -> None);
 		warning = (fun _ _ -> assert false);
 		error = (fun _ _ -> assert false);
 		basic = {
@@ -145,73 +120,43 @@ let create v args =
 			tnull = (fun _ -> assert false);
 			tstring = m;
 			tarray = (fun _ -> assert false);
-		};
+		};		
 	}
-
-let log com str =
-	if com.verbose then com.print (str ^ "\n")
 
 let clone com =
 	let t = com.basic in
-	{ com with basic = { t with tvoid = t.tvoid }; main_class = None; }
-
-let file_time file =
-	try (Unix.stat file).Unix.st_mtime with _ -> 0.
-
-let get_signature com =
-	match com.defines_signature with
-	| Some s -> s
-	| None ->
-		let str = String.concat "@" (PMap.foldi (fun k _ acc -> 
-			(* don't make much difference between these special compilation flags *)
-			match k with
-			| "display" | "use_rtti_doc" | "macrotimes" -> acc
-			| _ -> k :: acc
-		) com.defines []) in
-		let s = Digest.string str in
-		com.defines_signature <- Some s;
-		s
+	{ com with basic = { t with tvoid = t.tvoid } }
 
 let platforms = [
-	Flash8;
+	Flash;
 	Js;
 	Neko;
-	Flash;
+	Flash9;
 	Php;
 	Cpp
 ]
 
 let platform_name = function
 	| Cross -> "cross"
-	| Flash8 -> "flash8"
+	| Flash -> "flash"
 	| Js -> "js"
 	| Neko -> "neko"
-	| Flash -> "flash"
+	| Flash9 -> "flash9"
 	| Php -> "php"
 	| Cpp -> "cpp"
-
-let flash_versions = List.map (fun v ->
-	let maj = int_of_float v in
-	let min = int_of_float (mod_float (v *. 10.) 10.) in
-	v, string_of_int maj ^ (if min = 0 then "" else "_" ^ string_of_int min)
-) [9.;10.;10.1;10.2;10.3;11.;11.1;11.2;11.3;11.4]
 
 let defined ctx v = PMap.mem v ctx.defines
 
 let define ctx v =
 	ctx.defines <- PMap.add v () ctx.defines;
 	let v = String.concat "_" (ExtString.String.nsplit v "-") in
-	ctx.defines <- PMap.add v () ctx.defines;
-	ctx.defines_signature <- None
+	ctx.defines <- PMap.add v () ctx.defines
 
 let init_platform com pf =
 	com.platform <- pf;
 	let name = platform_name pf in
 	let forbid acc p = if p = name || PMap.mem p acc then acc else PMap.add p Forbidden acc in
 	com.package_rules <- List.fold_left forbid com.package_rules (List.map platform_name platforms);
-	(match pf with
-	| Cpp | Php | Neko -> define com "sys"
-	| _ -> com.package_rules <- PMap.add "sys" Forbidden com.package_rules);
 	define com name
 
 let error msg p = raise (Abort (msg,p))
@@ -233,57 +178,43 @@ let find_file ctx f =
 	in
 	loop ctx.class_path
 
-let get_full_path f = try Extc.get_full_path f with _ -> f
-
-let unique_full_path = if Sys.os_type = "Win32" || Sys.os_type = "Cygwin" then (fun f -> String.lowercase (get_full_path f)) else get_full_path
+let get_full_path = Extc.get_full_path
 
 (* ------------------------- TIMERS ----------------------------- *)
 
 type timer_infos = {
 	name : string;
-	mutable start : float list;
+	mutable start : float;
 	mutable total : float;
 }
 
-let get_time = Extc.time
+let get_time = Unix.gettimeofday
 let htimers = Hashtbl.create 0
 
 let new_timer name =
 	try
 		let t = Hashtbl.find htimers name in
-		t.start <- get_time() :: t.start;
+		t.start <- get_time();
 		t
 	with Not_found ->
-		let t = { name = name; start = [get_time()]; total = 0.; } in
+		let t = { name = name; start = get_time(); total = 0.; } in
 		Hashtbl.add htimers name t;
 		t
 
 let curtime = ref []
 
 let close t =
-	let start = (match t.start with
-		| [] -> assert false
-		| s :: l -> t.start <- l; s
-	) in
-	let now = get_time() in
-	let dt = now -. start in
+	let dt = get_time() -. t.start in
 	t.total <- t.total +. dt;
-	let rec loop() =
-		match !curtime with
-		| [] -> failwith ("Timer " ^ t.name ^ " closed while not active")
-		| tt :: l -> curtime := l; if t != tt then loop()
-	in
-	loop();
-	(* because of rounding errors while adding small times, we need to make sure that we don't have start > now *)
-	List.iter (fun ct -> ct.start <- List.map (fun t -> let s = t +. dt in if s > now then now else s) ct.start) !curtime
+	curtime := List.tl !curtime;
+	List.iter (fun ct -> ct.start <- ct.start +. dt) !curtime
 
 let timer name =
 	let t = new_timer name in
 	curtime := t :: !curtime;
 	(function() -> close t)
 
-let rec close_times() =
+let rec close_time() =
 	match !curtime with
 	| [] -> ()
-	| t :: _ -> close t; close_times()
-
+	| t :: _ -> close t	

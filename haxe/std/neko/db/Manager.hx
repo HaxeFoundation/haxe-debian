@@ -28,8 +28,6 @@ package neko.db;
 
 typedef Manager<T : Object> = mt.db.ShardManager<T>;
 
-#elseif spod_macro
-
 #else
 
 import Reflect;
@@ -93,7 +91,6 @@ class Manager<T : Object> {
 		apriv = if( apriv == null ) new Array() else apriv.copy();
 		apriv.push("local_manager");
 		apriv.push("__class__");
-		apriv.push("__properties__");
 
 		// get the proto fields not marked private (excluding methods)
 		table_fields = new List();
@@ -466,7 +463,7 @@ class Manager<T : Object> {
 		if( manager == null || manager.table_keys == null ) throw ("Invalid manager for relation "+table_name+":"+r.prop);
 		if( manager.table_keys.length != 1 ) throw ("Relation "+r.prop+"("+r.key+") on a multiple key table");
 		Reflect.setField(class_proto.prototype,"get_"+r.prop,function() {
-			var othis = untyped __this__;
+			var othis = untyped this;
 			var f = Reflect.field(othis,hprop);
 			if( f != null )
 				return f;
@@ -481,7 +478,7 @@ class Manager<T : Object> {
 			return f;
 		});
 		Reflect.setField(class_proto.prototype,"set_"+r.prop,function(f) {
-			var othis = untyped __this__;
+			var othis = untyped this;
 			Reflect.setField(othis,hprop,f);
 			Reflect.setField(othis,hkey,Reflect.field(f,manager.table_keys[0]));
 			return f;

@@ -148,7 +148,7 @@ extern class Date
 			}
 		};
 		d.prototype[#if as3 "toStringHX" #else "toString" #end] = function() {
-			var date : Date = __this__;
+			var date : Date = this;
 			var m = date.getMonth() + 1;
 			var d = date.getDate();
 			var h = date.getHours();
@@ -165,8 +165,8 @@ extern class Date
 		#elseif flash
 		d.prototype[__unprotect__("__class__")] = d;
 		d[__unprotect__("__name__")] = ["Date"];
-		#elseif js
-		d.prototype.__class__ = $hxClasses['Date'] = d;
+		#else
+		d.prototype.__class__ = d;
 		d.__name__ = ["Date"];
 		#end
 	}

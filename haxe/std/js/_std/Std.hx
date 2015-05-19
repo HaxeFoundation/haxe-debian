@@ -22,7 +22,6 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  * DAMAGE.
  */
-import js.Boot;
 
 @:core_api class Std {
 
@@ -34,8 +33,9 @@ import js.Boot;
 		return untyped js.Boot.__string_rec(s,"");
 	}
 
-	public static inline function int( x : Float ) : Int {
-		return cast(x) | 0;
+	public static function int( x : Float ) : Int {
+		if( x < 0 ) return Math.ceil(x);
+		return Math.floor(x);
 	}
 
 	public static function parseInt( x : String ) : Null<Int> {
@@ -56,24 +56,19 @@ import js.Boot;
 		return untyped Math.floor(Math.random()*x);
 	}
 
-	@:macro public static function format( fmt : haxe.macro.Expr.ExprOf<String> ) : haxe.macro.Expr.ExprOf<String> {
-		return haxe.macro.Context.format(fmt);
-	}
-
 	static function __init__() : Void untyped {
-		String.prototype.__class__ = $hxClasses["String"] = String;
+		String.prototype.__class__ = String;
 		String.__name__ = ["String"];
-		Array.prototype.__class__ = $hxClasses["Array"] = Array;
+		Array.prototype.__class__ = Array;
 		Array.__name__ = ["Array"];
-		var Int = $hxClasses["Int"] = { __name__ : ["Int"] };
-		var Dynamic = $hxClasses["Dynamic"] = { __name__ : ["Dynamic"] };
-		var Float = $hxClasses["Float"] = __js__("Number");
+		Int = { __name__ : ["Int"] };
+		Dynamic = { __name__ : ["Dynamic"] };
+		Float = __js__("Number");
 		Float.__name__ = ["Float"];
-		var Bool = $hxClasses["Bool"] = __js__("Boolean");
-		Bool.__ename__ = ["Bool"];
-		var Class = $hxClasses["Class"] = { __name__ : ["Class"] };
-		var Enum = {};
-		var Void = $hxClasses["Void"] = { __ename__ : ["Void"] };
+		Bool = { __ename__ : ["Bool"] };
+		Class = { __name__ : ["Class"] };
+		Enum = {};
+		Void = { __ename__ : ["Void"] };
 	}
 
 }

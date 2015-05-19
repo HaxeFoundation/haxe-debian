@@ -92,10 +92,7 @@ class TestSerialize extends Test {
 		eq( c2.ref, c2 );
 
 		// errors
-		#if !cpp
 		exc(function() haxe.Unserializer.run(null));
-		#end
-		
 		exc(function() haxe.Unserializer.run(""));
 
 	}

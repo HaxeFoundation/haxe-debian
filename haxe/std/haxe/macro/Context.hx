@@ -32,7 +32,7 @@ class Context {
 
 #if neko
 	/**
-		Display a compilation error at the given position in code and abort the current macro call
+		Display a compilation error at the given position in code
 	**/
 	public static function error( msg : String, pos : Position ) : Dynamic {
 		return load("error",2)(untyped msg.__s, pos);
@@ -74,21 +74,12 @@ class Context {
 		Returns the current class in which the macro is called
 	**/
 	public static function getLocalClass() : Null<Type.Ref<Type.ClassType>> {
-		var l : Type = load("local_type", 0)();
+		var l : Type = load("curclass", 0)();
 		if( l == null ) return null;
 		return switch( l ) {
 		case TInst(c,_): c;
 		default: null;
 		}
-	}
-
-	/**
-		Returns the current type in/on which the macro is called
-	**/
-	public static function getLocalType() : Null<Type> {
-		var l : Type = load("local_type", 0)();
-		if( l == null ) return null;
-		return l;
 	}
 
 	/**
@@ -113,24 +104,10 @@ class Context {
 	}
 
 	/**
-		Parse a constructed string into the corresponding expression.
+		Parse an expression.
 	**/
 	public static function parse( expr : String, pos : Position ) : Expr {
-		return load("parse", 3)(untyped expr.__s, pos, false);
-	}
-
-	/**
-		Parse a string contained into source code into the corresponding expression. Errors positions are reported within this string
-	**/
-	public static function parseInlineString( expr : String, pos : Position ) : Expr {
-		return load("parse", 3)(untyped expr.__s, pos, true);
-	}
-
-	/**
-		Build an expression corresponding to the given runtime value. Only basic types + enums are supported.
-	**/
-	public static function makeExpr( v : Dynamic, pos : Position ) : Expr {
-		return load("make_expr", 2)(v, pos);
+		return load("parse", 2)(untyped expr.__s, pos);
 	}
 
 	/**
@@ -155,13 +132,6 @@ class Context {
 	}
 
 	/**
-		Follow all typedefs to reach the actual real type
-	**/
-	public static function follow( t : Type, ?once : Bool ) : Type {
-		return load("follow", 2)(t,once);
-	}
-
-	/**
 		Get the informations stored into a given position.
 	**/
 	public static function getPosInfos( p : Position ) : { min : Int, max : Int, file : String } {
@@ -181,44 +151,7 @@ class Context {
 		Add or modify a resource that will be accessible with haxe.Resource api.
 	**/
 	public static function addResource( name : String, data : haxe.io.Bytes ) {
-		load("add_resource",2)(untyped name.__s,data.getData());
-	}
-
-	/**
-		Returns the list of fields for the current type inside the build macro.
-	**/
-	public static function getBuildFields() : Array<Field> {
-		return load("build_fields", 0)();
-	}
-
-	/**
-		Define a new type based on the given definition.
-	**/
-	public static function defineType( t : TypeDefinition ) : Void {
-		load("define_type", 1)(t);
-	}
-
-
-	/**
-		Return the raw expression corresponding to the given typed expression.
-	**/
-	public static function getTypedExpr( t : Type.TypedExpr ) : Expr {
-		return load("get_typed_expr",1)(t);
-	}
-
-	/**
-		Manually add a dependency between a module and a third party file :
-		make sure the module gets recompiled (if it was cached) in case the extern file has been modified as well.
-	**/
-	public static function registerModuleDependency( modulePath : String, externFile : String ) {
-		load("module_dependency", 2)(untyped modulePath.__s,untyped externFile.__s);
-	}
-
-	/**
-		Add a macro call to perform in case the module is reused by the compilation cache.
-	**/
-	public static function registerModuleReuseCall( modulePath : String, macroCall : String ) {
-		load("module_reuse_call", 2)(untyped modulePath.__s,untyped macroCall.__s);
+		return load("add_resource",2)(untyped name.__s,data.getData());
 	}
 
 	static function load( f, nargs ) : Dynamic {

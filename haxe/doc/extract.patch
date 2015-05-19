@@ -1,7 +1,5 @@
 // types patches configuration for playerglobal.swc
 
-flash.display.DisplayObject.filters : Array<flash.filters.BitmapFilter>;
-
 -flash.accessibility.Accessibility.new
 @:require(flash10_1) flash.accessibility.ISearchableText
 @:require(flash10_1) flash.accessibility.ISimpleTextSelection
@@ -18,12 +16,6 @@ flash.display.DisplayObject.filters : Array<flash.filters.BitmapFilter>;
 flash.desktop.Clipboard.formats : Array<ClipboardFormats>;
 flash.desktop.Clipboard.$format : ClipboardFormats;
 flash.desktop.Clipboard.$transferMode : ClipboardTransferMode;
-
-enum flash.desktop.ClipboardFormats;
-enum flash.desktop.ClipboardTransferMode;
-
-enum flash.display.PixelSnapping;
-enum flash.display.BlendMode;
 
 @:require(flash10) flash.desktop.Clipboard
 @:require(flash10) flash.desktop.ClipboardFormats
@@ -69,22 +61,6 @@ flash.display.DisplayObjectContainer.getObjectsUnderPoint : Array<DisplayObject>
 
 @:require(flash10_1) flash.display.Stage.wmodeGPU;
 
-enum flash.display.GradientType;
-enum flash.display.CapsStyle;
-enum flash.display.JointStyle;
-enum flash.display.GraphicsPathWinding;
-enum flash.display.TriangleCulling;
-enum flash.display.InterpolationMethod;
-enum flash.display.LineScaleMode;
-enum flash.display.ShaderParameterType;
-enum flash.display.ShaderPrecision;
-enum flash.display.SpreadMethod;
-enum flash.display.StageAlign;
-enum flash.display.StageDisplayState;
-enum flash.display.StageQuality;
-enum flash.display.StageScaleMode;
--flash.display.SWFVersion.new
-
 flash.display.Graphics.$type : GradientType;
 flash.display.Graphics.$colors : Array<UInt>;
 flash.display.Graphics.$spreadMethod : SpreadMethod;
@@ -123,9 +99,9 @@ flash.display.GraphicsPath.$winding : GraphicsPathWinding;
 flash.display.GraphicsStroke.scaleMode : LineScaleMode;
 flash.display.GraphicsStroke.caps : CapsStyle;
 flash.display.GraphicsStroke.joints : JointStyle;
-flash.display.GraphicsStroke.$scaleMode : LineScaleMode;
-flash.display.GraphicsStroke.$caps : CapsStyle;
-flash.display.GraphicsStroke.$joints : JointStyle;
+flash.display.GraphicsStroke.$_scaleMode : LineScaleMode;
+flash.display.GraphicsStroke.$_caps : CapsStyle;
+flash.display.GraphicsStroke.$_joints : JointStyle;
 
 flash.display.GraphicsTrianglePath.culling : TriangleCulling;
 flash.display.GraphicsTrianglePath.$culling : TriangleCulling;
@@ -133,13 +109,10 @@ flash.display.GraphicsTrianglePath.$culling : TriangleCulling;
 
 @:require(flash10) flash.display.Loader.unloadAndStop
 
-enum flash.display.ActionScriptVersion;
-enum flash.display.ColorCorrection;
-enum flash.display.ColorCorrectionSupport;
-
 -flash.display.LoaderInfo.new
 flash.display.LoaderInfo.parameters : Dynamic<String>;
 flash.display.LoaderInfo.actionScriptVersion : ActionScriptVersion;
+flash.display.LoaderInfo.swfVersion : SWFVersion;
 
 -flash.display.MorphShape.new
 
@@ -200,11 +173,7 @@ flash.display.Stage.displayState : StageDisplayState;
 flash.events.IEventDispatcher.$listener : Dynamic -> Void;
 flash.events.EventDispatcher.$listener : Dynamic -> Void;
 
-enum flash.events.EventPhase;
-enum flash.events.GesturePhase;
-
 flash.events.Event.eventPhase : EventPhase;
-
 flash.events.KeyboardEvent.keyLocation : flash.ui.KeyLocation;
 flash.events.KeyboardEvent.$keyLocationValue : flash.ui.KeyLocation;
 flash.events.KeyboardEvent.$keyLocation : flash.ui.KeyLocation;
@@ -222,9 +191,6 @@ flash.events.KeyboardEvent.$keyLocation : flash.ui.KeyLocation;
 
 -flash.external.ExternalInterface.new
 
-enum flash.filters.BitmapFilterType;
-enum flash.filters.DisplacementMapFilterMode;
-
 flash.filters.BevelFilter.type : BitmapFilterType;
 flash.filters.BevelFilter.$type : BitmapFilterType;
 
@@ -233,8 +199,6 @@ flash.filters.DisplacementMapFilter.$mode : DisplacementMapFilterMode;
 
 flash.filters.GradientGlowFilter.type : BitmapFilterType;
 flash.filters.GradientGlowFilter.$type : BitmapFilterType;
-
-enum flash.geom.Orientation3D;
 
 flash.geom.Matrix3D.$orientationStyle : Orientation3D;
 
@@ -250,8 +214,6 @@ flash.geom.Matrix3D.$orientationStyle : Orientation3D;
 
 @:require(flash10_1) static flash.media.Camera.isSupported;
 @:require(flash10_1) static flash.media.Camera._scanHardware;
-
-enum flash.media.SoundCodec;
 
 flash.media.Microphone.codec : SoundCodec;
 
@@ -280,10 +242,20 @@ flash.net.FileReference.$typeFilter : Array<FileFilter>;
 flash.net.FileReferenceList.fileList : Array<FileReference>;
 flash.net.FileReferenceList.$typeFilter : Array<FileFilter>;
 
+flash.net.NetStreamPlayOptions.transition : NetStreamPlayTransitions;
+
 @:require(flash10_1) flash.net.GroupSpecifier;
 @:require(flash10_1) flash.net.NetGroup;
 @:require(flash10_1) flash.net.NetGroupInfo;
 @:require(flash10_1) flash.net.NetStreamMulticastInfo;
+flash.net.NetGroup.receiveMode : NetGroupReceiveMode;
+flash.net.NetGroup.replicationStrategy : NetGroupReplicationStrategy;
+flash.net.NetGroup.$sendMode : NetGroupSendMode;
+flash.net.NetGroup.sendToAllNeighbors : NetGroupSendResult;
+flash.net.NetGroup.sendToNearest : NetGroupSendResult;
+flash.net.NetGroup.sendToNeighbor : NetGroupSendResult;
+
+flash.net.NetStream.$netStreamAppendBytesAction : NetStreamAppendBytesAction;
 
 @:require(flash10) flash.net.NetConnection.farID;
 @:require(flash10) flash.net.NetConnection.farNonce;
@@ -340,14 +312,11 @@ flash.net.FileReferenceList.$typeFilter : Array<FileFilter>;
 -flash.net.ObjectEncoding.new
 -flash.net.URLRequestMethod.new
 
-enum flash.net.URLLoaderDataFormat;
-
 flash.net.Socket.endian : flash.utils.Endian;
 flash.net.URLLoader.dataFormat : URLLoaderDataFormat;
 flash.net.URLRequest.requestHeaders : Array<URLRequestHeader>;
+flash.net.SharedObject.flush : SharedObjectFlushStatus;
 flash.net.URLStream.endian : flash.utils.Endian;
-
-enum flash.printing.PrintJobOrientation;
 
 flash.printing.PrintJob.orientation : PrintJobOrientation;
 @:require(flash10_1) static flash.printing.PrintJob.isSupported;
@@ -363,9 +332,6 @@ flash.sampler.Sample.stack : Array<StackFrame>;
 -flash.system.Capabilities.new
 -flash.system.IME.new
 -flash.system.FSCommand.new
-
-enum flash.system.IMEConversionMode;
-
 static flash.system.IME.conversionMode : IMEConversionMode
 
 @:require(flash10) flash.system.ApplicationDomain.domainMemory;
@@ -379,8 +345,6 @@ static flash.system.IME.conversionMode : IMEConversionMode
 @:require(flash10_1) static flash.system.Capabilities.supports64BitProcesses;
 @:require(flash10_1) static flash.system.Capabilities.touchscreenType;
 static flash.system.Capabilities.touchscreenType : TouchscreenType;
-
-enum flash.system.TouchscreenType;
 
 
 @:require(flash10_1) static flash.system.IME.isSupported;
@@ -406,24 +370,11 @@ enum flash.system.TouchscreenType;
 @:require(flash10_1) static flash.system.System.disposeXML;
 @:require(flash10_1) static flash.system.System.nativeConstructionOnly;
 
-enum flash.system.SecurityPanel;
-
 -flash.system.Security.new
 flash.system.Security.$panel : SecurityPanel
 -flash.system.SecurityDomain.new
 -flash.system.System.new
 flash.system.SystemUpdater.$typer : SystemAdapterType;
-
-enum flash.text.AntiAliasType;
-enum flash.text.GridFitType;
-enum flash.text.FontStyle;
-enum flash.text.FontType;
-enum flash.text.TextDisplayMode;
-enum flash.text.TextFieldType;
-enum flash.text.TextFieldAutoSize;
-enum flash.text.TextFormatAlign;
-enum flash.text.TextFormatDisplay;
-enum flash.text.TextColorType;
 
 flash.text.Font.fontStyle : FontStyle;
 flash.text.Font.fontType : FontType;
@@ -482,26 +433,6 @@ flash.text.engine.ContentElement.$textRotation : TextRotation;
 flash.text.engine.EastAsianJustifier.justificationStyle : JustificationStyle;
 flash.text.engine.EastAsianJustifier.$justificationStyle : JustificationStyle;
 flash.text.engine.EastAsianJustifier.$lineJustification : LineJustification;
-
-enum flash.text.engine.BreakOpportunity;
-enum flash.text.engine.CFFHinting;
-enum flash.text.engine.DigitCase;
-enum flash.text.engine.DigitWidth;
-enum flash.text.engine.FontLookup;
-enum flash.text.engine.FontPosture;
-enum flash.text.engine.FontWeight;
-enum flash.text.engine.JustificationStyle;
-enum flash.text.engine.Kerning;
-enum flash.text.engine.LigatureLevel;
-enum flash.text.engine.LineJustification;
-enum flash.text.engine.RenderingMode;
-enum flash.text.engine.TabAlignment;
-enum flash.text.engine.TextBaseline;
-enum flash.text.engine.TextLineCreationResult;
-enum flash.text.engine.TextLineValidity;
-enum flash.text.engine.TextRotation;
-enum flash.text.engine.TypographicCase;
-
 
 flash.text.engine.ElementFormat.alignmentBaseline : TextBaseline;
 flash.text.engine.ElementFormat.breakOpportunity : BreakOpportunity;
@@ -562,8 +493,6 @@ flash.text.engine.TextLine.baseline : TextBaseline;
 -flash.ui.Keyboard.new
 -flash.ui.Mouse.new
 
-enum flash.ui.MultitouchInputMode;
-
 -flash.ui.Multitouch.new
 flash.ui.Multitouch.inputMode : MultitouchInputMode;
 
@@ -573,8 +502,9 @@ flash.ui.Multitouch.inputMode : MultitouchInputMode;
 
 @:require(flash10_1) static flash.ui.ContextMenu.isSupported;
 
+
+static flash.ui.Mouse.cursor : MouseCursor;
 @:require(flash10) static flash.ui.Mouse.cursor;
-static flash.ui.Mouse.cursor : Dynamic;
 
 @:require(flash10_1) static flash.ui.Keyboard.A;
 @:require(flash10_1) static flash.ui.Keyboard.B;
@@ -629,9 +559,6 @@ static flash.ui.Mouse.cursor : Dynamic;
 @:require(flash10_1) static flash.ui.Keyboard.SLASH;
 @:require(flash10_1) static flash.ui.Keyboard.hasVirtualKeyboard;
 @:require(flash10_1) static flash.ui.Keyboard.physicalKeyboardType;
-
-enum flash.ui.KeyboardType;
-enum flash.ui.KeyLocation;
 
 static flash.ui.Keyboard.physicalKeyboardType : KeyboardType;
 
@@ -787,11 +714,6 @@ static flash.ui.Multitouch.inputMode : MultitouchInputMode;
 
 @:require(flash10_1) static flash.ui.Mouse.supportsCursor;
 
-enum flash.utils.Endian;
-
-@:native("RegExp") flash.utils.RegExp;
--static flash.utils.RegExp.length;
-
 flash.utils.ObjectInput.endian : Endian;
 flash.utils.ObjectOutput.endian : Endian;
 flash.utils.ByteArray.endian : Endian;
@@ -812,8 +734,6 @@ flash.utils.IDataOutput.endian : Endian;
 -flash.utils.QName.valueOf
 -static flash.utils.QName.length
 
-enum flash.xml.XMLNodeType;
-
 flash.xml.XMLNode.nodeType : XMLNodeType;
 flash.xml.XMLNode.$type : XMLNodeType;
 
@@ -823,8 +743,6 @@ flash.xml.XMLList.namespace : flash.utils.Namespace;
 flash.xml.XMLList.parent : XML;
 flash.xml.XMLTag.type : XMLNodeType;
 
-
-enum flash.system.SystemUpdaterType;
 
 @:require(flash10_1) flash.system.SystemUpdater;
 flash.system.SystemUpdater.$type : SystemUpdaterType;
@@ -839,13 +757,6 @@ flash.system.SystemUpdater.$type : SystemUpdaterType;
 @:require(flash10_1) flash.globalization.StringTools;
 @:require(flash10_1) flash.globalization.NumberFormatter;
 @:require(flash10_1) flash.globalization.NumberParseResult;
-
-enum flash.globalization.CollatorMode;
-enum flash.globalization.DateTimeNameContext;
-enum flash.globalization.DateTimeNameStyle;
-enum flash.globalization.DateTimeStyle;
-enum flash.globalization.LastOperationStatus;
-enum flash.globalization.NationalDigitsType;
 
 flash.globalization.Collator.lastOperationStatus : LastOperationStatus;
 flash.globalization.Collator.$initialMode : CollatorMode;
@@ -866,7 +777,7 @@ flash.globalization.StringTools.lastOperationStatus : LastOperationStatus;
 
 // FP 10.2
 
-@:require(flash10_2) flash.ui.MouseCursorData;
+@:require(flash10_2) flash.display.MouseCursorData;
 @:require(flash10_2) flash.events.StageVideoEvent;
 @:require(flash10_2) flash.events.VideoEvent;
 @:require(flash10_2) flash.media.MicrophoneEnhancedMode;
@@ -916,235 +827,4 @@ flash.globalization.StringTools.lastOperationStatus : LastOperationStatus;
 
 @:require(flash10_2) static flash.ui.Mouse.registerCursor;
 
-enum flash.media.MicrophoneEnhancedMode;
-
 flash.media.MicrophoneEnhancedOptions.mode : MicrophoneEnhancedMode;
-
-enum flash.display.FocusDirection;
-
-
-// FLASH 11 FEATURES
-
--flash.automation.Configuration.new
-
-@:require(flash11) flash.display.DisplayObjectContainer.removeChildren;
-@:require(flash11) flash.display.Graphics.cubicCurveTo;
-@:require(flash11) flash.display.GraphicsPath.cubicCurveTo;
-
-@:require(flash11) flash.display.InteractiveObject.needsSoftKeyboard;
-@:require(flash11) flash.display.InteractiveObject.softKeyboardInputAreaOfInterest;
-@:require(flash11) flash.display.InteractiveObject.requestSoftKeyboard;
-
-@:require(flash11) flash.display.MovieClip.isPlaying;
-
-@:require(flash11) flash.display.Stage.allowsFullScreen;
-@:require(flash11) flash.display.Stage.displayContextInfo;
-@:require(flash11) flash.display.Stage.softKeyboardRect;
-@:require(flash11) flash.display.Stage.stage3Ds;
-@:require(flash11) flash.display.Stage3D;
-
--flash.display.Stage.constructor;
--flash.display.Stage.hasOwnProperty;
--flash.display.Stage.isPrototypeOf;
--flash.display.Stage.propertyIsEnumerable;
--flash.display.Stage.setPropertyIsEnumerable;
--flash.display.Stage.toLocaleString;
--flash.display.Stage.valueOf;
-
-enum flash.display3D.Context3DBlendFactor;
-enum flash.display3D.;
-
-@:require(flash11) static flash.events.Event.CONTEXT3D_CREATE;
-@:require(flash11) static flash.events.Event.TEXT_INTERACTION_MODE_CHANGE;
-
-@:require(flash11) static flash.events.StageVideoEvent.RENDER_STATUS_AVAILABLE;
-@:require(flash11) static flash.events.StageVideoEvent.STAGE_VIDEO_STATE;
-
-@:require(flash11) flash.geom.Matrix3D.copyColumnFrom;
-@:require(flash11) flash.geom.Matrix3D.copyColumnTo;
-@:require(flash11) flash.geom.Matrix3D.copyFrom;
-@:require(flash11) flash.geom.Matrix3D.copyRawDataFrom;
-@:require(flash11) flash.geom.Matrix3D.copyRawDataTo;
-@:require(flash11) flash.geom.Matrix3D.copyRowFrom;
-@:require(flash11) flash.geom.Matrix3D.copyRowTo;
-@:require(flash11) flash.geom.Matrix3D.copyToMatrix3D;
-
-@:require(flash11) flash.geom.Matrix.copyColumnFrom;
-@:require(flash11) flash.geom.Matrix.copyColumnTo;
-@:require(flash11) flash.geom.Matrix.copyFrom;
-@:require(flash11) flash.geom.Matrix.copyRowFrom;
-@:require(flash11) flash.geom.Matrix.copyRowTo;
-@:require(flash11) flash.geom.Matrix.setTo;
-
-@:require(flash11) flash.geom.Point.copyFrom;
-@:require(flash11) flash.geom.Point.setTo;
-
-@:require(flash11) flash.geom.Rectangle.copyFrom;
-@:require(flash11) flash.geom.Rectangle.setTo;
-
-@:require(flash11) flash.geom.Vector3D.copyFrom;
-@:require(flash11) flash.geom.Vector3D.setTo;
-
-
-
-@:require(flash11) flash.media.Sound.loadCompressedDataFromByteArray;
-@:require(flash11) flash.media.Sound.loadPCMFromByteArray;
-
-@:require(flash11) flash.net.Socket.bytesPending;
-
--flash.display3D.Context3DClearMask.new;
-enum flash.display3D.Context3DCompareMode;
-enum flash.display3D.Context3DProgramType;
-enum flash.display3D.Context3DRenderMode;
-enum flash.display3D.Context3DStencilAction;
-enum flash.display3D.Context3DTextureFormat;
-enum flash.display3D.Context3DTriangleFace;
-enum flash.display3D.Context3DVertexBufferFormat;
-
--flash.display.Stage3D.new;
--flash.display3D.Context3D.new;
--flash.display3D.IndexBuffer3D.new;
--flash.display3D.Program3D.new;
--flash.display3D.VertexBuffer3D.new;
--flash.display3D.textures.CubeTexture.new;
--flash.display3D.textures.TextureBase.new;
--flash.display3D.textures.Texture.new;
-
-flash.display3D.Context3D.$sourceFactor : Context3DBlendFactor;
-flash.display3D.Context3D.$destinationFactor : Context3DBlendFactor;
-flash.display3D.Context3D.$format : Context3DTextureFormat;
-flash.display3D.Context3D.$triangleFaceToCull : Context3DTriangleFace;
-flash.display3D.Context3D.$triangleFace : Context3DTriangleFace;
-flash.display3D.Context3D.$passCompareMode : Context3DCompareMode;
-flash.display3D.Context3D.$compareMode : Context3DCompareMode;
-flash.display3D.Context3D.$programType : Context3DProgramType;
-flash.display3D.Context3D.$actionOnBothPass : Context3DStencilAction;
-flash.display3D.Context3D.$actionOnDepthFail : Context3DStencilAction;
-flash.display3D.Context3D.$actionOnDepthPassStencilFail : Context3DStencilAction;
-flash.display3D.Context3D.$setVertexBufferAt__format : Context3DVertexBufferFormat;
-
-@:require(flash11) flash.net.NetStream.useHardwareDecoder;
-@:require(flash11) flash.net.NetStream.videoStreamSettings;
-
-@:require(flash11) flash.net.SecureSocket;
-@:require(flash11) flash.net.NetMonitor;
-
-@:require(flash11) static flash.system.Capabilities.hasMultiChannelAudio;
-
-@:require(flash11) flash.system.LoaderContext.imageDecodingPolicy;
-@:require(flash11) flash.system.LoaderContext.parameters;
-@:require(flash11) flash.system.LoaderContext.requestedContentParent;
-
-enum flash.system.ImageDecodingPolicy;
-
-flash.system.LoaderContext.imageDecodingPolicy : ImageDecodingPolicy;
-
-@:require(flash11) static flash.system.Security.pageDomain;
-
-@:require(flash11) static flash.system.System.processCPUUsage;
-@:require(flash11) static flash.system.System.pauseForGCIfCollectionImminent;
-
-@:require(flash11) static flash.ui.Mouse.supportsNativeCursor;
-@:require(flash11) static flash.ui.Mouse.unregisterCursor;
-
--flash.ui.MouseCursor.new;
-
-@:require(flash11) flash.utils.CompressionAlgorithm;
-enum flash.utils.CompressionAlgorithm;
-
-@:require(flash11) flash.xml.XML.toJSON;
-@:require(flash11) flash.xml.XMLList.toJSON;
-
-flash.utils.ByteArray.$algorithm : CompressionAlgorithm;
-
-@:require(flash11) flash.text.TextField.textInteractionMode;
-
-enum flash.text.TextInteractionMode;
-
-flash.text.TextField.textInteractionMode : TextInteractionMode;
-
-// 11.2
-
-enum flash.display.BitmapCompressColorSpace;
-
-@:require(flash11_2) flash.display.BitmapData.compress;
-@:require(flash11_2) flash.media.Camera.position;
-@:require(flash11_2) flash.media.Camera.copyToByteArray;
-@:require(flash11_2) flash.media.Camera.copyToVector;
-@:require(flash11_2) flash.media.Camera.drawToBitmapData;
-@:require(flash11_2) flash.media.StageVideo.attachCamera;
-@:require(flash11_2) flash.net.NetStream.dispose;
-
-@:require(flash11_2) flash.display.StageWorker;
-@:require(flash11_2) flash.display.Worker;
-@:require(flash11_2) flash.events.GameInputEvent;
-@:require(flash11_2) flash.events.ThrottleEvent;
-
-flash.events.ThrottleEvent.$type : ThrottleType;
-
-enum flash.events.ThrottleType;
-
-@:require(flash11_2) flash.ui.GameInput;
-@:require(flash11_2) flash.ui.GameInputDevice;
--flash.ui.GameInput.new;
-
-@:require(flash11_2) flash.utils.Telemetry;
-
-enum flash.ui.GameInputFinger;
-enum flash.ui.GameInputHand;
-enum flash.ui.GameInputControlType;
-
-flash.ui.GameInputControl.finger : flash.ui.GameInputFinger;
-flash.ui.GameInputControl.hand : flash.ui.GameInputHand;
-flash.ui.GameInputControl.type : flash.ui.GameInputControlType;
-
-
-// 11.2
-
-@:require(flash11_2) flash.display3D.Context3D.setProgramConstantsFromByteArray
-@:require(flash11_2) flash.display.Stage.mouseLock;
-
-@:require(flash11_2) flash.events.MouseEvent.movementX;
-@:require(flash11_2) flash.events.MouseEvent.movementY;
-
-@:require(flash11_2) static flash.events.MouseEvent.CONTEXT_MENU;
-@:require(flash11_2) static flash.events.MouseEvent.MIDDLE_CLICK;
-@:require(flash11_2) static flash.events.MouseEvent.MIDDLE_MOUSE_DOWN;
-@:require(flash11_2) static flash.events.MouseEvent.MIDDLE_MOUSE_UP;
-@:require(flash11_2) static flash.events.MouseEvent.RIGHT_CLICK;
-@:require(flash11_2) static flash.events.MouseEvent.RIGHT_MOUSE_DOWN;
-@:require(flash11_2) static flash.events.MouseEvent.RIGHT_MOUSE_UP;
-
-
-// 11.3
-
-@:require(flash11_3) flash.display3D.Context3D.createRectangleTexture
-@:require(flash11_3) flash.display.BitmapData.drawWithQuality
-
-flash.display.BitmapData.$quality : StageQuality;
-
-enum flash.display.BitmapEncodingColorSpace;
-
-flash.display.JPEGXREncoderOptions.$colorSpace : BitmapEncodingColorSpace;
-flash.display.JPEGXREncoderOptions.colorSpace : BitmapEncodingColorSpace;
-
-@:require(flash11_3) flash.display.BitmapData.encode
-@:require(flash11_3) flash.display.Stage.allowsFullScreenInteractive
-
-@:require(flash11_3) static flash.events.Event.FRAME_LABEL;
-@:require(flash11_3) static flash.events.Event.SUSPEND;
-
-@:require(flash11_3) static flash.events.FullScreenEvent.FULL_SCREEN_INTERACTIVE_ACCEPTED;
-@:require(flash11_3) flash.events.FullScreenEvent.interactive;
-
-@:require(flash11_3) static flash.events.MouseEvent.RELEASE_OUTSIDE;
-
-@:require(flash11_3) flash.net.NetStream.useJitterBuffer;
-
-@:require(flash11_3) flash.system.ApplicationDomain.getQualifiedDefinitionNames;
-
-@:require(flash11_3) flash.system.SecurityDomain.domainID;
-
-@:require(flash11_3) flash.system.ApplicationInstaller;
-@:require(flash11_3) flash.system.AuthorizedFeatures;
-@:require(flash11_3) flash.system.AuthorizedFeaturesLoader;

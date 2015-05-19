@@ -23,7 +23,6 @@
  * DAMAGE.
  */
 package neko.net;
-import sys.net.Socket;
 
 class Poll {
 

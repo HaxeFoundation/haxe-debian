@@ -30,6 +30,8 @@ type context = {
 	mutable macros : bool;
 	mutable curclass : string;
 	mutable curmethod : string;
+	mutable locals : (string , bool) PMap.t;
+	mutable curblock : texpr list;
 	mutable inits : (tclass * texpr) list;
 }
 
@@ -77,6 +79,57 @@ let gen_global_name ctx path =
 		ctx.curglobal <- ctx.curglobal + 1;
 		Hashtbl.add ctx.globals path name;
 		name
+
+let add_local ctx v p =
+	let rec loop flag e =
+		match e.eexpr with
+		| TLocal a ->
+			if flag && a = v then raise Exit
+		| TFunction f ->
+			if not (List.exists (fun (a,_,_) -> a = v) f.tf_args) then loop true f.tf_expr
+		| TVars l ->
+			if List.exists (fun (a,_,_) -> a = v) l then raise Not_found;
+			Type.iter (loop flag) e
+		| TFor (a,_,e1,e2) ->
+			loop flag e1;
+			if a <> v then loop flag e2
+		| TMatch (e,_,cases,eo) ->
+			loop flag e;
+			(match eo with None -> () | Some e -> loop flag e);
+			List.iter (fun (_,params,e) ->
+				match params with
+				| Some l when List.exists (fun (a,_) -> a = Some v) l -> ()
+				| _ -> loop flag e
+			) cases
+		| TBlock l ->
+			(try
+				List.iter (loop flag) l
+			with
+				Not_found -> ())
+		| TTry (e,catchs) ->
+			loop flag e;
+			List.iter (fun (a,_,e) -> if a <> v then loop flag e) catchs
+		| _ ->
+			Type.iter (loop flag) e
+	in
+	let isref = (try
+		List.iter (loop false) ctx.curblock;
+		false
+	with
+		| Not_found -> false
+		| Exit -> true
+	) in
+	ctx.locals <- PMap.add v isref ctx.locals;
+	isref
+
+let block ctx curblock =
+	let l = ctx.locals in
+	let b = ctx.curblock in
+	ctx.curblock <- curblock;
+	(fun() ->
+		ctx.locals <- l;
+		ctx.curblock <- b;
+	)
 
 let null p =
 	(EConst Null,p)
@@ -156,13 +209,7 @@ let rec gen_big_string ctx p s =
 let gen_constant ctx pe c =
 	let p = pos ctx pe in
 	match c with
-	| TInt i ->
-		(try
-			let h = Int32.to_int (Int32.shift_right_logical i 24) in
-			if (h land 128 = 0) <> (h land 64 = 0) then raise Exit;
-			int p (Int32.to_int i)
-		with _ ->
-			error "This integer is too big to be compiled to a Neko 31-bit integer. Please use a Float instead" pe)
+	| TInt i -> (try int p (Int32.to_int i) with _ -> error "This integer is too big to be compiled to a Neko 31-bit integer. Please use a Float instead" pe)
 	| TFloat f -> (EConst (Float f),p)
 	| TString s -> call p (field p (ident p "String") "new") [gen_big_string ctx p s]
 	| TBool b -> (EConst (if b then True else False),p)
@@ -179,7 +226,7 @@ and gen_unop ctx p op flag e =
 	| Decrement -> (EBinop ((if flag = Prefix then "-=" else "--="), gen_expr ctx e , int p 1),p)
 	| Not -> call p (builtin p "not") [gen_expr ctx e]
 	| Neg -> (EBinop ("-",int p 0, gen_expr ctx e),p)
-	| NegBits -> (EBinop ("-",int p (-1), gen_expr ctx e),p)
+	| NegBits -> error "Operation not available" e.epos
 
 and gen_call ctx p e el =
 	match e.eexpr , el with
@@ -190,7 +237,7 @@ and gen_call ctx p e el =
 			this p;
 			array p (List.map (gen_expr ctx) el)
 		]
-	| TLocal { v_name = "__resources__" }, [] ->
+	| TLocal "__resources__", [] ->
 		call p (builtin p "array") (Hashtbl.fold (fun name data acc ->
 			(EObject [("name",gen_constant ctx e.epos (TString name));("data",gen_big_string ctx p data)],p) :: acc
 		) ctx.com.resources [])
@@ -210,13 +257,12 @@ and gen_expr ctx e =
 	match e.eexpr with
 	| TConst c ->
 		gen_constant ctx e.epos c
-	| TLocal v when v.v_name.[0] = '$' ->
-		(EConst (Builtin (String.sub v.v_name 1 (String.length v.v_name - 1))),p)
-	| TLocal v ->
-		if v.v_capture then
-			(EArray (ident p v.v_name,int p 0),p)
+	| TLocal s ->
+		let isref = try PMap.find s ctx.locals with Not_found -> false in
+		if isref then
+			(EArray (ident p s,int p 0),p)
 		else
-			ident p v.v_name
+			ident p s
 	| TEnumField (e,f) ->
 		field p (gen_type_path p e.e_path) f
 	| TArray (e1,e2) ->
@@ -226,8 +272,6 @@ and gen_expr ctx e =
 	| TBinop (op,e1,e2) ->
 		gen_binop ctx p op e1 e2
 	| TField (e,f) ->
-		field p (gen_expr ctx e) f
-	| TClosure (({ eexpr = TTypeExpr _ } as e),f) ->
 		field p (gen_expr ctx e) f
 	| TClosure (e2,f) ->
 		(match follow e.etype with
@@ -248,9 +292,7 @@ and gen_expr ctx e =
 	| TParenthesis e ->
 		(EParenthesis (gen_expr ctx e),p)
 	| TObjectDecl fl ->
-		let hasToString = ref false in
-		let fl = List.map (fun (f,e) -> if f = "toString" then hasToString := (match follow e.etype with TFun ([],_) -> true | _ -> false); f , gen_expr ctx e) fl in
-		(EObject (if !hasToString then ("__string",ident p "@default__string") :: fl else fl),p)
+		(EObject (List.map (fun (f,e) -> f , gen_expr ctx e) fl),p)
 	| TArrayDecl el ->
 		call p (field p (ident p "Array") "new1") [array p (List.map (gen_expr ctx) el); int p (List.length el)]
 	| TCall (e,el) ->
@@ -260,48 +302,65 @@ and gen_expr ctx e =
 	| TUnop (op,flag,e) ->
 		gen_unop ctx p op flag e
 	| TVars vl ->
-		(EVars (List.map (fun (v,e) ->
+		(EVars (List.map (fun (v,_,e) ->
+			let isref = add_local ctx v p in
 			let e = (match e with
 				| None ->
-					if v.v_capture then
+					if isref then
 						Some (call p (builtin p "array") [null p])
 					else
 						None
 				| Some e ->
 					let e = gen_expr ctx e in
-					if v.v_capture then
+					if isref then
 						Some (call p (builtin p "array") [e])
 					else
 						Some e
 			) in
-			v.v_name , e
+			v , e
 		) vl),p)
 	| TFunction f ->
-		let inits = List.fold_left (fun acc (a,c) ->
-			let acc = if a.v_capture then
-				(EBinop ("=",ident p a.v_name,call p (builtin p "array") [ident p a.v_name]),p) :: acc
+		let b = block ctx [f.tf_expr] in
+		let inits = List.fold_left (fun acc (a,c,t) ->
+			let acc = (match c with
+				| None | Some TNull -> acc
+				| Some c ->	gen_expr ctx (Codegen.set_default ctx.com a c t e.epos) :: acc
+			) in
+			if add_local ctx a p then
+				(EBinop ("=",ident p a,call p (builtin p "array") [ident p a]),p) :: acc
 			else
 				acc
-			in
-			match c with
-			| None | Some TNull -> acc
-			| Some c ->	gen_expr ctx (Codegen.set_default ctx.com a c e.epos) :: acc			
 		) [] f.tf_args in
 		let e = gen_expr ctx f.tf_expr in
 		let e = (match inits with [] -> e | _ -> EBlock (List.rev (e :: inits)),p) in
-		(EFunction (List.map arg_name f.tf_args, with_return e),p)
+		let e = (EFunction (List.map arg_name f.tf_args, with_return e),p) in
+		b();
+		e
 	| TBlock el ->
-		(EBlock (List.map (gen_expr ctx) el), p)
-	| TFor (v, it, e) ->
+		let b = block ctx el in
+		let rec loop = function
+			| [] -> []
+			| e :: l ->
+				ctx.curblock <- l;
+				let e = gen_expr ctx e in
+				e :: loop l
+		in
+		let e = (EBlock (loop el), p) in
+		b();
+		e
+	| TFor (v, _, it, e) ->
 		let it = gen_expr ctx it in
+		let b = block ctx [e] in
+		let isref = add_local ctx v p in
 		let e = gen_expr ctx e in
+		b();
 		let next = call p (field p (ident p "@tmp") "next") [] in
-		let next = (if v.v_capture then call p (builtin p "array") [next] else next) in
+		let next = (if isref then call p (builtin p "array") [next] else next) in
 		(EBlock
 			[(EVars ["@tmp", Some it],p);
 			(EWhile (call p (field p (ident p "@tmp") "hasNext") [],
 				(EBlock [
-					(EVars [v.v_name, Some next],p);
+					(EVars [v, Some next],p);
 					e
 				],p)
 			,NormalWhile),p)]
@@ -313,9 +372,9 @@ and gen_expr ctx e =
 	| TTry (e,catchs) ->
 		let rec loop = function
 			| [] -> call p (builtin p "rethrow") [ident p "@tmp"]
-			| (v,e) :: l ->
+			| (v,t,e) :: l ->
 				let e2 = loop l in
-				let path = (match follow v.v_type with
+				let path = (match follow t with
 					| TInst (c,_) -> Some c.cl_path
 					| TEnum (e,_) -> Some e.e_path
 					| TDynamic _ -> None
@@ -325,11 +384,14 @@ and gen_expr ctx e =
 					| None -> (EConst True,p)
 					| Some path -> call p (field p (gen_type_path p (["neko"],"Boot")) "__instanceof") [ident p "@tmp"; gen_type_path p path]
 				) in
+				let b = block ctx [e] in
+				let isref = add_local ctx v p in
 				let id = ident p "@tmp" in
-				let id = (if v.v_capture then call p (builtin p "array") [id] else id) in
+				let id = (if isref then call p (builtin p "array") [id] else id) in
 				let e = gen_expr ctx e in
+				b();
 				(EIf (cond,(EBlock [
-					EVars [v.v_name,Some id],p;
+					EVars [v,Some id],p;
 					e;
 				],p),Some e2),p)
 		in
@@ -354,9 +416,8 @@ and gen_expr ctx e =
 	| TCast (e,None) ->
 		gen_expr ctx e
 	| TCast (e1,Some t) ->
-		gen_expr ctx (Codegen.default_cast ~vtmp:"@tmp" ctx.com e1 t e.etype e.epos)
+		gen_expr ctx (Codegen.default_cast ctx.com e1 t e.etype e.epos)
 	| TMatch (e,_,cases,eo) ->
-		let p = pos ctx e.epos in
 		let etmp = (EVars ["@tmp",Some (gen_expr ctx e)],p) in
 		let eindex = field p (ident p "@tmp") "index" in
 		let gen_params params e =
@@ -364,18 +425,21 @@ and gen_expr ctx e =
 			| None ->
 				gen_expr ctx e
 			| Some el ->
+				let b = block ctx [e] in
 				let count = ref (-1) in
-				let vars = List.fold_left (fun acc v ->
+				let vars = List.fold_left (fun acc (v,_) ->
 					incr count;
 					match v with
 					| None ->
 						acc
 					| Some v ->
+						let isref = add_local ctx v p in
 						let e = (EArray (ident p "@tmp",int p (!count)),p) in
-						let e = (if v.v_capture then call p (builtin p "array") [e] else e) in
-						(v.v_name , Some e) :: acc
+						let e = (if isref then call p (builtin p "array") [e] else e) in
+						(v , Some e) :: acc
 				) [] el in
 				let e = gen_expr ctx e in
+				b();
 				(EBlock [
 					(EVars ["@tmp",Some (field p (ident p "@tmp") "args")],p);
 					(match vars with [] -> null p | _ -> EVars vars,p);
@@ -469,7 +533,7 @@ let gen_class ctx c =
 	| Some f ->
 		(match follow f.cf_type with
 		| TFun (args,_) ->
-			let params = List.map (fun (n,_,_) -> n) args in
+			let params = List.map arg_name args in
 			gen_method ctx p f ["new",(EFunction (params,(EBlock [
 				(EVars ["@o",Some (call p (builtin p "new") [null p])],p);
 				(call p (builtin p "objsetproto") [ident p "@o"; clpath]);
@@ -483,7 +547,12 @@ let gen_class ctx c =
 	let fstring = (try
 		let f = PMap.find "toString" c.cl_fields in
 		match follow f.cf_type with
-		| TFun ([],_) -> ["__string",ident p "@default__string"]
+		| TFun ([],_) ->
+			["__string",(EFunction ([],(EBlock [
+				EVars ["@s",Some (call p (field p (this p) "toString") [])] ,p;
+				EIf ((EBinop ("!=",call p (builtin p "typeof") [ident p "@s"],builtin p "tobject"),p),(EReturn (Some (null p)),p),None),p;
+				EReturn (Some (field p (ident p "@s") "__s")),p;
+			],p)),p)]
 		| _ -> []
 	with Not_found ->
 		[]
@@ -499,14 +568,9 @@ let gen_class ctx c =
 	let build (f,e) = (EBinop ("=",field p (ident p "@tmp") f,e),p) in
 	let tmp = (EVars ["@tmp",Some (call p (builtin p "new") [null p])],p) in
 	let estat = (EBinop ("=", stpath, ident p "@tmp"),p) in
-	let gen_props props = (EObject (List.map (fun (n,s) -> n,str p s) props),p) in
-	let sprops = (match Codegen.get_properties c.cl_ordered_statics with
-		| [] -> []
-		| l -> ["__properties__",gen_props l]
-	) in
 	let sfields = List.map build
 		(
-			("prototype",clpath) :: sprops @
+			("prototype",clpath) ::
 			PMap.fold (gen_method ctx p) c.cl_statics (fnew @ others)
 		)
 	in
@@ -514,30 +578,10 @@ let gen_class ctx c =
 	let mfields = List.map build
 		(PMap.fold (gen_method ctx p) c.cl_fields (fserialize :: fstring))
 	in
-	let props = Codegen.get_properties c.cl_ordered_fields in
 	let emeta = (EBinop ("=",field p clpath "__class__",stpath),p) ::
-		(match props with
-		| [] -> []
-		| _ ->
-			let props = gen_props props in
-			let props = (match c.cl_super with
-				| Some (csup,_) when Codegen.has_properties csup ->
-					(EBlock [
-						(EVars ["@tmp",Some props],p);
-						call p (builtin p "objsetproto") [ident p "@tmp";field p (field p (gen_type_path p csup.cl_path) "prototype") "__properties__"];
-						ident p "@tmp"
-					],p)
-				| _ -> props					
-			) in
-			[EBinop ("=",field p clpath "__properties__",props),p])
-		@ match c.cl_path with
+		match c.cl_path with
 		| [] , name -> [(EBinop ("=",field p (ident p "@classes") name,ident p name),p)]
 		| _ -> []
-	in
-	let emeta = if ctx.macros then
-		(EBinop ("=",field p stpath "__ct__",call p (builtin p "typewrap") [Obj.magic (TClassDecl c)]),p) :: emeta
-	else
-		emeta
 	in
 	let eextends = (match c.cl_super with
 		| None -> []
@@ -552,7 +596,7 @@ let gen_enum_constr ctx path c =
 	let p = pos ctx c.ef_pos in
 	(EBinop ("=",field p path c.ef_name, match follow c.ef_type with
 		| TFun (params,_) ->
-			let params = List.map (fun (n,_,_) -> n) params in
+			let params = List.map arg_name params in
 			(EFunction (params,
 				(EBlock [
 					(EVars ["@tmp",Some (EObject [
@@ -676,11 +720,6 @@ let gen_name ctx acc t =
 			| None -> []
 			| Some e -> [EBinop ("=",field p path "__meta__", gen_expr ctx e),p]
 		) in
-		let meta = if ctx.macros then
-			(EBinop ("=",field p path "__et__",call p (builtin p "typewrap") [Obj.magic t]),p) :: meta
-		else
-			meta
-		in
 		setname :: setconstrs :: meta @ acc
 	| TClassDecl c ->
 		if c.cl_extern then
@@ -725,6 +764,8 @@ let new_context com macros =
 		curclass = "$boot";
 		curmethod = "$init";
 		inits = [];
+		curblock = [];
+		locals = PMap.empty;
 	}
 
 let header() =
@@ -746,11 +787,6 @@ let header() =
 		"@serialize",func [] (call p (fields ["neko";"Boot";"__serialize"]) [this p]);
 		"@tag_serialize",func [] (call p (fields ["neko";"Boot";"__tagserialize"]) [this p]);
 		"@lazy_error",func ["e"] (call p (builtin p "varargs") [func ["_"] (call p (builtin p "throw") [ident p "e"])]);
-		"@default__string",func [] (EBlock [
-			EVars ["@s",Some (call p (field p (this p) "toString") [])] ,p;
-			EIf ((EBinop ("!=",call p (builtin p "typeof") [ident p "@s"],builtin p "tobject"),p),(EReturn (Some (null p)),p),None),p;
-			EReturn (Some (field p (ident p "@s") "__s")),p;
-		],p)
 	] in
 	let inits = inits @ List.map (fun nargs ->
 		let args = Array.to_list (Array.init nargs (fun i -> Printf.sprintf "%c" (char_of_int (int_of_char 'a' + i)))) in
@@ -778,16 +814,16 @@ let build ctx types =
 	let vars = List.concat (List.map (gen_static_vars ctx) types) in
 	packs @ methods @ boot :: names @ inits @ vars
 
-let generate com =
+let generate com libs =
 	let ctx = new_context com false in
 	let t = Common.timer "neko generation" in
-	let libs = (ENeko (generate_libs_init com.neko_libs) , { psource = "<header>"; pline = 1; }) in
+	let libs = (ENeko (generate_libs_init libs) , { psource = "<header>"; pline = 1; }) in	
 	let el = build ctx com.types in
 	let emain = (match com.main with None -> [] | Some e -> [gen_expr ctx e]) in
 	let e = (EBlock ((header()) @ libs :: el @ emain), null_pos) in
 	let neko_file = (try Filename.chop_extension com.file with _ -> com.file) ^ ".neko" in
 	let ch = IO.output_channel (open_out_bin neko_file) in
-	let source = Common.defined com "neko-source" in
+	let source = Common.defined com "neko_source" in
 	if source then Nxml.write ch (Nxml.to_xml e) else Binast.write ch e;
 	IO.close_out ch;
 	t();

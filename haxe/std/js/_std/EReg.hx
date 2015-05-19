@@ -35,6 +35,8 @@
 	public function match( s : String ) : Bool {
 		r.m = r.exec(s);
 		r.s = s;
+		r.l = untyped __js__("RegExp.leftContext");
+		r.r = untyped __js__("RegExp.rightContext");
 		return (r.m != null);
 	}
 
@@ -44,13 +46,17 @@
 
 	public function matchedLeft() : String {
 		if( r.m == null ) throw "No string matched";
-		return r.s.substr(0,r.m.index);
+		if( r.l == null ) return r.s.substr(0,r.m.index);
+		return r.l;
 	}
 
 	public function matchedRight() : String {
 		if( r.m == null ) throw "No string matched";
-		var sz = r.m.index+r.m[0].length;
-		return r.s.substr(sz,r.s.length-sz);
+		if( r.r == null ) {
+			var sz = r.m.index+r.m[0].length;
+			return r.s.substr(sz,r.s.length-sz);
+		}
+		return r.r;
 	}
 
 	public function matchedPos() : { pos : Int, len : Int } {

@@ -43,10 +43,8 @@ class StringBuf {
 	/**
 		Adds the representation of any value to the string buffer.
 	**/
-	public inline function add( x : Dynamic ) {
-		#if js
-			b[b.length] = x == null ? 'null' : x;
-		#elseif cpp
+	public inline function add( ?x : Dynamic ) {
+		#if (js || cpp)
 			b[b.length] = x;
 		#else
 			b += x;

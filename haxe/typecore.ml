@@ -25,32 +25,21 @@ type type_patch = {
 	mutable tp_meta : Ast.metadata;
 }
 
-type current_fun =
-	| FMember
-	| FStatic
-	| FConstructor
-	| FMemberLocal
-
-type macro_mode =
-	| MExpr
-	| MBuild
-	| MMacroType
-
 type typer_globals = {
 	types_module : (path, path) Hashtbl.t;
 	modules : (path , module_def) Hashtbl.t;
 	mutable delayed : (unit -> unit) list;
+	constructs : (path , Ast.access list * Ast.type_param list * Ast.func) Hashtbl.t;
 	doinline : bool;
 	mutable core_api : typer option;
 	mutable macros : ((unit -> unit) * typer) option;
 	mutable std : module_def;
 	mutable hook_generate : (unit -> unit) list;
 	type_patches : (path, (string * bool, type_patch) Hashtbl.t * type_patch) Hashtbl.t;
-	mutable get_build_infos : unit -> (module_type * Ast.class_field list) option;
 	(* api *)
 	do_inherit : typer -> Type.tclass -> Ast.pos -> Ast.class_flag -> bool;
 	do_create : Common.context -> typer;
-	do_macro : typer -> macro_mode -> path -> string -> Ast.expr list -> Ast.pos -> Ast.expr option;
+	do_macro : typer -> path -> string -> Ast.expr list -> Ast.pos -> Ast.expr option;
 	do_load_module : typer -> path -> pos -> module_def;
 	do_optimize : typer -> texpr -> texpr;
 	do_build_instance : typer -> module_type -> pos -> ((string * t) list * path * (t list -> t));
@@ -74,14 +63,16 @@ and typer = {
 	mutable curmethod : string;
 	mutable untyped : bool;
 	mutable in_super_call : bool;
+	mutable in_constructor : bool;
+	mutable in_static : bool;
 	mutable in_loop : bool;
 	mutable in_display : bool;
-	mutable curfun : current_fun;
 	mutable ret : t;
-	mutable locals : (string, tvar) PMap.t;
+	mutable locals : (string, t) PMap.t;
+	mutable locals_map : (string, string) PMap.t;
+	mutable locals_map_inv : (string, string) PMap.t;
 	mutable opened : anon_status ref list;
 	mutable param_type : t option;
-	mutable vthis : tvar option;
 }
 
 type error_msg =
@@ -126,8 +117,6 @@ let unify_error_msg ctx = function
 		"Optional attribute of parameter " ^ n ^ " differs"
 	| Cant_force_optional ->
 		"Optional parameters can't be forced"
-	| Invariant_parameter _ ->
-		"Type parameters are invariant"
 
 let rec error_msg = function
 	| Module_not_found m -> "Class not found : " ^ Ast.s_type_path m
@@ -175,23 +164,69 @@ let exc_protect f =
 
 let save_locals ctx =
 	let locals = ctx.locals in
-	(fun() -> ctx.locals <- locals)
+	let map = ctx.locals_map in
+	let inv = ctx.locals_map_inv in
+	(fun() ->
+		ctx.locals <- locals;
+		ctx.locals_map <- map;
+		ctx.locals_map_inv <- inv;
+	)
 
-let add_local ctx n t =
-	let v = alloc_var n t in
-	ctx.locals <- PMap.add n v ctx.locals;
-	v
+let add_local ctx v t =
+	let rec loop n =
+		let nv = (if n = 0 then v else v ^ string_of_int n) in
+		if PMap.mem nv ctx.locals || PMap.mem nv ctx.locals_map_inv then
+			loop (n+1)
+		else begin
+			ctx.locals <- PMap.add v t ctx.locals;
+			if n <> 0 then begin
+				ctx.locals_map <- PMap.add v nv ctx.locals_map;
+				ctx.locals_map_inv <- PMap.add nv v ctx.locals_map_inv;
+			end;
+			nv
+		end
+	in
+	loop 0
 
 let gen_local ctx t =
-	(* ensure that our generated local does not mask an existing one *)
 	let rec loop n =
 		let nv = (if n = 0 then "_g" else "_g" ^ string_of_int n) in
-		if PMap.mem nv ctx.locals then
+		if PMap.mem nv ctx.locals || PMap.mem nv ctx.locals_map_inv then
 			loop (n+1)
 		else
 			nv
 	in
 	add_local ctx (loop 0) t
+
+let rec is_nullable = function
+	| TMono r ->
+		(match !r with None -> true | Some t -> is_nullable t)
+	| TType ({ t_path = ([],"Null") },[_]) ->
+		false
+	| TLazy f ->
+		is_nullable (!f())
+	| TType (t,tl) ->
+		is_nullable (apply_params t.t_types tl t.t_type)
+	| TFun _ ->
+		true
+	| TInst ({ cl_path = (["haxe"],"Int32") },[])
+	| TInst ({ cl_path = ([],"Int") },[])
+	| TInst ({ cl_path = ([],"Float") },[])
+	| TEnum ({ e_path = ([],"Bool") },[]) -> true
+	| _ ->
+		false
+
+let rec is_null = function
+	| TMono r ->
+		(match !r with None -> false | Some t -> is_null t)
+	| TType ({ t_path = ([],"Null") },[t]) ->
+		is_nullable t
+	| TLazy f ->
+		is_null (!f())
+	| TType (t,tl) ->
+		is_null (apply_params t.t_types tl t.t_type)
+	| _ ->
+		false
 
 let not_opened = ref Closed
 let mk_anon fl = TAnon { a_fields = fl; a_status = not_opened; }
@@ -199,10 +234,9 @@ let mk_anon fl = TAnon { a_fields = fl; a_status = not_opened; }
 let delay ctx f =
 	ctx.g.delayed <- f :: ctx.g.delayed
 
-let mk_field name t p = {
+let mk_field name t = {
 	cf_name = name;
 	cf_type = t;
-	cf_pos = p;
 	cf_doc = None;
 	cf_meta = no_meta;
 	cf_public = true;
@@ -210,19 +244,3 @@ let mk_field name t p = {
 	cf_expr = None;
 	cf_params = [];
 }
-
-let fake_modules = Hashtbl.create 0
-let create_fake_module ctx file =
-	let file = Common.unique_full_path file in
-	let mdep = (try Hashtbl.find fake_modules file with Not_found ->
-		let mdep = {
-			m_id = alloc_mid();
-			m_path = (["$DEP"],file);
-			m_types = [];
-			m_extra = module_extra file (Common.get_signature ctx.com) (file_time file) MFake;
-		} in
-		Hashtbl.add fake_modules file mdep;
-		mdep
-	) in
-	Hashtbl.replace ctx.g.modules mdep.m_path mdep;
-	mdep

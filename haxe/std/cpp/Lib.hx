@@ -54,7 +54,6 @@ class Lib {
 			default : return function(_1) { throw e; };
 			}
 		}
-		return null;
 	}
 
 	public static function rethrow(inExp:Dynamic) { throw inExp; }

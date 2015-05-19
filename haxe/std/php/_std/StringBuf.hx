@@ -30,8 +30,7 @@
 		b = "";
 	}
 
-	public function add( x : Dynamic ) : Void {
-		untyped if( __call__('is_null',x) ) x = 'null' else if( __call__('is_bool',x) ) x = x?'true':'false';
+	public inline function add( ?x : Dynamic ) : Void {
 		b += x;
 	}
 

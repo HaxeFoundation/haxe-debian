@@ -26,9 +26,6 @@
 #else
 #	include <limits.h>
 #	include <unistd.h>
-#	include <sys/time.h>
-#	include <sys/times.h>
-#	include <caml/memory.h>
 #endif
 #ifdef __APPLE__
 #	include <sys/param.h>
@@ -39,10 +36,6 @@
 #	include <sys/param.h>
 #	include <sys/sysctl.h>
 #	include <sys/user.h>
-#endif
-
-#ifndef CLK_TCK
-#	define CLK_TCK	100
 #endif
 
 
@@ -184,75 +177,9 @@ CAMLprim value get_full_path( value f ) {
 		failwith("get_full_path");
 	return caml_copy_string(path);
 #else
-	value cpath;
-	char *path = realpath(String_val(f),NULL);
-	if( path == NULL )
+	char path[PATH_MAX];
+	if( realpath(String_val(f),path) == NULL )
 		failwith("get_full_path");
-	cpath = caml_copy_string(path);
-	free(path);
-	return cpath;
-#endif
-}
-
-CAMLprim value get_real_path( value path ) {
-#ifdef _WIN32
-	value path2 = caml_copy_string(String_val(path));
-	char *cur = String_val(path2);
-	if( cur[0] == '\\' && cur[1] == '\\' ) {
-		cur = strchr(cur,'\\');
-		if( cur != NULL ) cur++;
-	} else if( cur[0] != 0 && cur[1] == ':' ) {
-		char c = cur[0];
-		if( c >= 'a' && c <= 'z' )
-			cur[0] = c - 'a' + 'A';
-		cur += 2;
-		if( cur[0] == '\\' )
-			cur++;
-	}
-	while( cur ) {
-		char *next = strchr(cur,'\\');
-		SHFILEINFOA infos;
-		if( next != NULL )
-			*next = 0;
-		else if( *cur == 0 )
-			break;
-		if( SHGetFileInfoA( String_val(path2), 0, &infos, sizeof(infos), SHGFI_DISPLAYNAME ) != 0 )
-			memcpy(cur,infos.szDisplayName,strlen(infos.szDisplayName)+1);
-		if( next != NULL ) {
-			*next = '\\';
-			cur = next + 1;
-		} else
-			cur = NULL;
-	}
-	return path2;
-#else
-	return path;
-#endif
-}
-
-CAMLprim value sys_time() {
-#ifdef _WIN32
-#define EPOCH_DIFF	(134774*24*60*60.0)
-	static LARGE_INTEGER freq;
-	static int freq_init = -1;
-	LARGE_INTEGER counter;
-	if( freq_init == -1 )
-		freq_init = QueryPerformanceFrequency(&freq);
-	if( !freq_init || !QueryPerformanceCounter(&counter) ) {
-		SYSTEMTIME t;
-		FILETIME ft;
-		ULARGE_INTEGER ui;
-		GetSystemTime(&t);
-		if( !SystemTimeToFileTime(&t,&ft) )
-			failwith("sys_cpu_time");
-		ui.LowPart = ft.dwLowDateTime;
-		ui.HighPart = ft.dwHighDateTime;
-		return caml_copy_double( ((double)ui.QuadPart) / 10000000.0 - EPOCH_DIFF );
-	}
-	return caml_copy_double( ((double)counter.QuadPart) / ((double)freq.QuadPart) );
-#else
-	struct tms t;
-	times(&t);
-	return caml_copy_double( ((double)(t.tms_utime + t.tms_stime)) / CLK_TCK );
+	return caml_copy_string(path);
 #endif
 }

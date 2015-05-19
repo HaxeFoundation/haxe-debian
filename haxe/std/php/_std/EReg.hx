@@ -32,7 +32,7 @@
 	var options : String;
 	var re : String;
 	var matches : ArrayAccess<Dynamic>;
-	
+
 	public function new( r : String, opt : String ) : Void {
 		this.pattern = r;
 		var a = opt.split("g");
@@ -40,12 +40,11 @@
 		if( global )
 			opt = a.join("");
 		this.options = opt;
-		this.re = untyped __php__("'\"' . str_replace('\"','\\\\\"',$r) . '\"' . $opt");
+		this.re = "/" + untyped __call__("str_replace", "/", "\\/", r) + "/" + opt;
 	}
 
 	public function match( s : String ) : Bool {
 		var p : Int = untyped __call__("preg_match", re, s, matches, __php__("PREG_OFFSET_CAPTURE"));
-		
 		if(p > 0)
 			last = s;
 		else
@@ -54,7 +53,7 @@
 	}
 
 	public function matched( n : Int ) : String {
-		if ( n < 0 ) throw "EReg::matched";
+		if( n < 0 ) throw "EReg::matched";
 		// we can't differenciate between optional groups at the end of a match
 		// that have not been matched and invalid groups
 		if( n >= untyped __call__("count", matches)) return null;

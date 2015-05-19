@@ -61,7 +61,7 @@ class ProxyDetect {
 	}
 
 	static function detectFF( basedir : String ) {
-		var files = try sys.FileSystem.readDirectory(basedir) catch( e : Dynamic ) return null;
+		var files = try neko.FileSystem.readDirectory(basedir) catch( e : Dynamic ) return null;
 		var profile = null;
 		for( f in files )
 			if( f.substr(-8) == ".default" ) {
@@ -70,7 +70,7 @@ class ProxyDetect {
 			}
 		if( profile == null )
 			return null;
-		var prefs = sys.io.File.getContent(basedir+"/"+profile+"/prefs.js");
+		var prefs = neko.io.File.getContent(basedir+"/"+profile+"/prefs.js");
 		// enabled ?
 		var r = ~/user_pref\("network\.proxy\.type", 1\);/;
 		if( !r.match(prefs) )
@@ -88,17 +88,17 @@ class ProxyDetect {
 	}
 
 	static function detectIE() {
-		var dir = Sys.getEnv("TMP");
+		var dir = neko.Sys.getEnv("TMP");
 		if( dir == null )
 			dir = ".";
 		var temp = dir + "/proxy.txt";
-		if( Sys.command('regedit /E "'+temp+'" "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"') != 0 ) {
+		if( neko.Sys.command('regedit /E "'+temp+'" "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"') != 0 ) {
 			// might fail without appropriate rights
 			return null;
 		}
 		// it's possible that if registry access was disabled the proxy file is not created
-		var content = try sys.io.File.getContent(temp) catch( e : Dynamic ) return null;
-		sys.FileSystem.deleteFile(temp);
+		var content = try neko.io.File.getContent(temp) catch( e : Dynamic ) return null;
+		neko.FileSystem.deleteFile(temp);
 		// turn 16-bit string into 8-bit one
 		var b = new StringBuf();
 		var p = 0;
@@ -153,7 +153,7 @@ class ProxyDetect {
 	}
 
 	static function detectOSX() {
-		var prefs = sys.io.File.getContent("/Library/Preferences/SystemConfiguration/preferences.plist");
+		var prefs = neko.io.File.getContent("/Library/Preferences/SystemConfiguration/preferences.plist");
 		var xml = Xml.parse(prefs).firstElement().firstElement(); // plist/dict
 		var data : Dynamic = parseOSXConfiguration(xml);
 		for( nsname in Reflect.fields(data.NetworkServices) ) {
@@ -165,10 +165,10 @@ class ProxyDetect {
 	}
 
 	static function detectAll() : ProxySettings {
-		switch( Sys.systemName() ) {
+		switch( neko.Sys.systemName() ) {
 		case "Windows":
 			try {
-				var ffdir = Sys.getEnv("APPDATA")+"/Mozilla/Firefox/Profiles";
+				var ffdir = neko.Sys.getEnv("APPDATA")+"/Mozilla/Firefox/Profiles";
 				var p = detectFF(ffdir);
 				if( p == null )
 					throw "No Firefox proxy";
@@ -180,10 +180,10 @@ class ProxyDetect {
 			var p = detectOSX();
 			if( p != null )
 				return p;
-			var ffdir = Sys.getEnv("HOME")+"/Library/Application Support/Firefox/Profiles";
+			var ffdir = neko.Sys.getEnv("HOME")+"/Library/Application Support/Firefox/Profiles";
 			return detectFF(ffdir);
 		case "Linux":
-			var ffdir = Sys.getEnv("HOME")+"/.mozilla/firefox";
+			var ffdir = neko.Sys.getEnv("HOME")+"/.mozilla/firefox";
 			return detectFF(ffdir);
 		default:
 			throw "This system is not supported";

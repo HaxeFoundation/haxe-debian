@@ -47,9 +47,9 @@ enum ValueType {
 			return c;
 	}
 
-	public static function getEnum( o : EnumValue ) : Enum<Dynamic> untyped {
+	public static function getEnum( o : Dynamic ) : Enum<Dynamic> untyped {
 		if (o==null) return null;
-		return untyped o.__GetClass();
+		return o.__GetClass();
 	}
 
 
@@ -135,31 +135,17 @@ enum ValueType {
 			return a==b;
 	}
 
-	public static function enumConstructor( e : EnumValue ) : String {
-			return untyped e.__Tag();
+	public static function enumConstructor( e : Dynamic ) : String {
+			return e.__Tag();
 	}
 
-	public static function enumParameters( e : EnumValue ) : Array<Dynamic> {
+	public static function enumParameters( e : Dynamic ) : Array<Dynamic> {
 			var result : Array<Dynamic> =  untyped e.__EnumParams();
 			return result==null ? [] : result;
 	}
 
-	public inline static function enumIndex( e : EnumValue ) : Int {
-			return untyped e.__Index();
-	}
-
-	public static function allEnums<T>( e : Enum<T> ) : Array<T> {
-      var names:Array<String> =  untyped e.GetClassFields();
-		var enums = new Array<T>();
-      for(name in names)
-      {
-         try {
-            var result:T = untyped e.mConstructEnum(name,null);
-            enums.push( result );
-         } catch ( invalidArgCount:String) {
-         }
-      }
-		return enums;
+	public inline static function enumIndex( e : Dynamic ) : Int {
+			return e.__Index();
 	}
 
 }

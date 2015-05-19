@@ -1,39 +1,61 @@
 package flash.system;
 
-extern class Capabilities {
-	static var _internal(default,null) : UInt;
-	static var avHardwareDisable(default,null) : Bool;
-	@:require(flash10_1) static var cpuArchitecture(default,null) : String;
-	static var hasAccessibility(default,null) : Bool;
-	static var hasAudio(default,null) : Bool;
-	static var hasAudioEncoder(default,null) : Bool;
-	static var hasEmbeddedVideo(default,null) : Bool;
-	static var hasIME(default,null) : Bool;
-	static var hasMP3(default,null) : Bool;
-	static var hasPrinting(default,null) : Bool;
-	static var hasScreenBroadcast(default,null) : Bool;
-	static var hasScreenPlayback(default,null) : Bool;
-	static var hasStreamingAudio(default,null) : Bool;
-	static var hasStreamingVideo(default,null) : Bool;
-	static var hasTLS(default,null) : Bool;
-	static var hasVideoEncoder(default,null) : Bool;
-	static var isDebugger(default,null) : Bool;
-	@:require(flash10) static var isEmbeddedInAcrobat(default,null) : Bool;
-	static var language(default,null) : String;
-	static var localFileReadDisable(default,null) : Bool;
-	static var manufacturer(default,null) : String;
-	@:require(flash10) static var maxLevelIDC(default,null) : String;
-	static var os(default,null) : String;
-	static var pixelAspectRatio(default,null) : Float;
-	static var playerType(default,null) : String;
-	static var screenColor(default,null) : String;
-	static var screenDPI(default,null) : Float;
-	static var screenResolutionX(default,null) : Float;
-	static var screenResolutionY(default,null) : Float;
-	static var serverString(default,null) : String;
-	@:require(flash10_1) static var supports32BitProcesses(default,null) : Bool;
-	@:require(flash10_1) static var supports64BitProcesses(default,null) : Bool;
-	@:require(flash10_1) static var touchscreenType(default,null) : TouchscreenType;
-	static var version(default,null) : String;
-	@:require(flash11) static function hasMultiChannelAudio(type : String) : Bool;
+extern class Capabilities
+{
+	static var hasAudio:Bool;
+	static var hasMP3:Bool;
+	static var hasAudioEncoder:Bool;
+	static var hasVideoEncoder:Bool;
+	static var screenResolutionX:Float;
+	static var screenResolutionY:Float;
+	static var screenDPI:Float;
+	static var screenColor:String;
+	static var pixelAspectRatio:Float;
+	static var hasAccessibility:Bool;
+	static var input:String;
+	static var isDebugger:Bool;
+	static var language:String;
+	static var manufacturer:String;
+	static var os:String;
+	static var serverString:String;
+	static var version:String;
+	static var hasPrinting:Bool;
+	static var playerType:String;
+	static var hasStreamingAudio:Bool;
+	static var hasScreenBroadcast:Bool;
+	static var hasScreenPlayback:Bool;
+	static var hasStreamingVideo:Bool;
+	static var hasEmbeddedVideo:Bool;
+	static var avHardwareDisable:Bool;
+	static var localFileReadDisable:Bool;
+	static var windowlessDisable:Bool;
+
+	#if flash_lite
+	static var hasCompoundSound:Bool;
+	static var hasEmail:Bool;
+	static var hasMMS:Bool;
+	static var hasSMS:Bool;
+	static var hasMFI:Bool;
+	static var hasMIDI:Bool;
+	static var hasSMAF:Bool;
+	static var hasDataLoading:Bool;
+	static var has4WayKeyAS:Bool;
+	static var hasMouse:Bool;
+	static var hasMappableSoftKeys:Bool;
+	static var hasCMIDI:Bool;
+	static var hasStylus:Bool;
+	static var screenOrientation:String;
+	static var hasSharedObjects:Bool;
+	static var hasQWERTYKeyboard:Bool;
+	static var softKeyCount:Float;
+	static var audioMIMETypes:Array<String>;
+	static var imageMIMETypes:Array<String>;
+	static var videoMIMETypes:Array<String>;
+	static var MIMETypes:String;
+	#end
+
+	private static function __init__() : Void untyped {
+		flash.system.Capabilities = _global["System"]["capabilities"];
+	}
+
 }

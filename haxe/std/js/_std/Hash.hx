@@ -28,7 +28,13 @@
 	private var h : Dynamic;
 
 	public function new() : Void {
-		h = {};
+		untyped {
+			h = __js__("{}");
+			if( h.__proto__ != null ) {
+				h.__proto__ = null;
+				__js__("delete")(h.__proto__);
+			}
+		}
 	}
 
 	public function set( key : String, value : T ) : Void {
@@ -40,24 +46,31 @@
 	}
 
 	public function exists( key : String ) : Bool {
-		return untyped h.hasOwnProperty("$"+key);
+		try {
+			key = "$"+key;
+			return untyped this.hasOwnProperty.call(h,key);
+		}catch(e:Dynamic){
+			untyped __js__("
+				for(var i in this.h)
+					if( i == key ) return true;
+			");
+			return false;
+		}
 	}
 
 	public function remove( key : String ) : Bool {
-		key = "$"+key;
-		if( untyped !h.hasOwnProperty(key) ) return false;
-		untyped __js__("delete")(h[key]);
+		if( !exists(key) )
+			return false;
+		untyped __js__("delete")(h["$"+key]);
 		return true;
 	}
 
 	public function keys() : Iterator<String> {
-		var a = [];
-		untyped {
-			__js__("for( var key in this.h ) {");
-				if( h.hasOwnProperty(key) )
-					a.push(key.substr(1));
-			__js__("}");
-		}
+		var a = new Array<String>();
+		untyped __js__("
+			for(var i in this.h)
+				a.push(i.substr(1));
+		");
 		return a.iterator();
 	}
 
@@ -65,8 +78,8 @@
 		return untyped {
 			ref : h,
 			it : keys(),
-			hasNext : function() { return __this__.it.hasNext(); },
-			next : function() { var i = __this__.it.next(); return __this__.ref["$"+i]; }
+			hasNext : function() { return this.it.hasNext(); },
+			next : function() { var i = this.it.next(); return this.ref["$"+i]; }
 		};
 	}
 

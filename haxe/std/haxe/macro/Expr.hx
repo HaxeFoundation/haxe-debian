@@ -24,16 +24,8 @@
  */
 package haxe.macro;
 
-#if macro
 extern enum Position {
 }
-#else
-typedef Position = {
-	var file : String;
-	var min : Int;
-	var max : Int;
-}
-#end
 
 enum Constant {
 	CInt( v : String );
@@ -72,7 +64,7 @@ enum Binop {
 
 enum Unop {
 	OpIncrement;
-	OpDecrement;
+	OpIDecrement;
 	OpNot;
 	OpNeg;
 	OpNegBits;
@@ -82,12 +74,6 @@ typedef Expr = {
 	var expr : ExprDef;
 	var pos : Position;
 }
-
-#if !haxe3
-typedef ExprRequire<T> = Expr;
-#end
-
-typedef ExprOf<T> = Expr;
 
 enum ExprDef {
 	EConst( c : Constant );
@@ -102,15 +88,14 @@ enum ExprDef {
 	ENew( t : TypePath, params : Array<Expr> );
 	EUnop( op : Unop, postFix : Bool, e : Expr );
 	EVars( vars : Array<{ name : String, type : Null<ComplexType>, expr : Null<Expr> }> );
-	EFunction( name : Null<String>, f : Function );
+	EFunction( f : Function );
 	EBlock( exprs : Array<Expr> );
-	EFor( it : Expr, expr : Expr );
-	EIn( e1 : Expr, e2 : Expr );
+	EFor( v : String, it : Expr, expr : Expr );
 	EIf( econd : Expr, eif : Expr, eelse : Null<Expr> );
 	EWhile( econd : Expr, e : Expr, normalWhile : Bool );
 	ESwitch( e : Expr, cases : Array<{ values : Array<Expr>, expr : Expr }>, edef : Null<Expr> );
 	ETry( e : Expr, catches : Array<{ name : String, type : ComplexType, expr : Expr }> );
-	EReturn( ?e : Null<Expr> );
+	EReturn( e : Null<Expr> );
 	EBreak;
 	EContinue;
 	EUntyped( e : Expr );
@@ -119,7 +104,6 @@ enum ExprDef {
 	EDisplay( e : Expr, isCall : Bool );
 	EDisplayNew( t : TypePath );
 	ETernary( econd : Expr, eif : Expr, eelse : Expr );
-	ECheckType( e : Expr, t : ComplexType );
 }
 
 enum ComplexType {
@@ -128,86 +112,44 @@ enum ComplexType {
 	TAnonymous( fields : Array<Field> );
 	TParent( t : ComplexType );
 	TExtend( p : TypePath, fields : Array<Field> );
-	TOptional( t : ComplexType );
 }
 
 typedef TypePath = {
 	var pack : Array<String>;
 	var name : String;
 	var params : Array<TypeParam>;
-	@:optional var sub : Null<String>;
+	var sub : Null<String>;
 }
 
 enum TypeParam {
 	TPType( t : ComplexType );
-	TPExpr( e : Expr );
+	TPConst( c : Constant );
 }
 
 typedef Function = {
+	var name : Null<String>;
 	var args : Array<FunctionArg>;
 	var ret : Null<ComplexType>;
-	var expr : Null<Expr>;
-	var params : Array<{ name : String, constraints : Array<ComplexType> }>;
+	var expr : Expr;
 }
 
 typedef FunctionArg = {
 	var name : String;
 	var opt : Bool;
 	var type : Null<ComplexType>;
-	@:optional var value : Null<Expr>;
+	var value : Null<Expr>;
 }
-
-typedef Metadata = Array<{ name : String, params : Array<Expr>, pos : Position }>;
 
 typedef Field = {
 	var name : String;
-	@:optional var doc : Null<String>;
-	@:optional var access : Array<Access>;
-	var kind : FieldType;
+	var isPublic : Null<Bool>;
+	var type : FieldType;
 	var pos : Position;
-	@:optional var meta : Metadata;
-}
-
-enum Access {
-	APublic;
-	APrivate;
-	AStatic;
-	AOverride;
-	ADynamic;
-	AInline;
 }
 
 enum FieldType {
-	FVar( t : Null<ComplexType>, ?e : Null<Expr> );
-	FFun( f : Function );
-	FProp( get : String, set : String, t : ComplexType, ?e : Null<Expr> );
+	FVar( t : ComplexType );
+	FProp( t : ComplexType, get : String, set : String );
+	FFun( args : Array<{ name : String, opt : Bool, type : ComplexType }>, ret : ComplexType );
 }
 
-typedef TypeDefinition = {
-	var pack : Array<String>;
-	var name : String;
-	var pos : Position;
-	var meta : Metadata;
-	var params : Array<{ name : String, constraints : Array<ComplexType> }>;
-	var isExtern : Bool;
-	var kind : TypeDefKind;
-	var fields : Array<Field>;
-}
-
-enum TypeDefKind {
-	TDEnum;
-	TDStructure;
-	TDClass( ?extend : TypePath, ?implement : Array<TypePath>, ?isInterface : Bool );
-}
-
-/**
-	This error can be used to handle or produce compilation errors in macros.
-**/
-class Error {
-	public var message : String;
-	public var pos : Expr.Position;
-	public function new(m,p) {
-		this.message = m;
-		this.pos = p;
-	}
-}

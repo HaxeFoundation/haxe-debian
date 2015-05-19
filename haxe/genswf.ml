@@ -158,7 +158,6 @@ let rec make_tpath = function
 			| [] , "XMLList" -> ["flash";"xml"], "XMLList"
 			| [] , "QName" -> ["flash";"utils"], "QName"
 			| [] , "Namespace" -> ["flash";"utils"], "Namespace"
-			| [] , "RegExp" -> ["flash";"utils"], "RegExp"
 			| ["__AS3__";"vec"] , "Vector" -> ["flash"], "Vector"
 			| _ -> pack, name
 		in
@@ -229,7 +228,6 @@ let build_class com c file =
 	let pos = { pfile = file ^ "@" ^ s_type_path (path.tpackage,path.tname); pmin = 0; pmax = 0 } in
 	let getters = Hashtbl.create 0 in
 	let setters = Hashtbl.create 0 in
-	let override = Hashtbl.create 0 in
 	let as3_native = Common.defined com "as3_native" in
 	let is_xml = (match path.tpackage, path.tname with
 		| ["flash";"xml"], ("XML" | "XMLList") -> true
@@ -269,14 +267,11 @@ let build_class com c file =
 		match f.hlf_kind with
 		| HFVar v ->
 			if v.hlv_const then
-				cf.cff_kind <- FProp ("default","never",make_type v.hlv_type,None)
+				cf.cff_kind <- FProp ("default","never",make_type v.hlv_type)
 			else
 				cf.cff_kind <- FVar (Some (make_type v.hlv_type),None);
 			cf :: acc
-		| HFMethod m when m.hlm_override ->
-			Hashtbl.add override (name,stat) ();
-			acc
-		| HFMethod m ->
+		| HFMethod m when not m.hlm_override ->
 			(match m.hlm_kind with
 			| MK3Normal ->
 				let t = m.hlm_type in
@@ -323,13 +318,12 @@ let build_class com c file =
 					args @ List.map (fun _ -> incr pn; ("p" ^ string_of_int !pn,true,Some (make_type None),None)) [1;2;3;4;5]
 				else args in
 				let f = {
-					f_params = [];
 					f_args = args;
 					f_type = Some (make_type t.hlmt_ret);
-					f_expr = None;
+					f_expr = (EBlock [],pos)
 				} in
 				cf.cff_meta <- mk_meta();
-				cf.cff_kind <- FFun f;
+				cf.cff_kind <- FFun ([],f);
 				cf :: acc
 			| MK3Getter ->
 				Hashtbl.add getters (name,stat) m.hlm_type.hlmt_ret;
@@ -368,15 +362,14 @@ let build_class com c file =
 			cff_doc = None;
 			cff_access = flags;
 			cff_meta = [];
-			cff_kind = if get && set then FVar (Some (make_type t), None) else FProp ((if get then "default" else "never"),(if set then "default" else "never"),make_type t,None);
+			cff_kind = if get && set then FVar (Some (make_type t), None) else FProp ((if get then "default" else "never"),(if set then "default" else "never"),make_type t);
 		}
 	in
 	let fields = Hashtbl.fold (fun (name,stat) t acc ->
-		if Hashtbl.mem override (name,stat) then acc else
 		make_get_set name stat (Some t) (try Some (Hashtbl.find setters (name,stat)) with Not_found -> None) :: acc
 	) getters fields in
 	let fields = Hashtbl.fold (fun (name,stat) t acc ->
-		if Hashtbl.mem getters (name,stat) || Hashtbl.mem override (name,stat) then
+		if Hashtbl.mem getters (name,stat) then
 			acc
 		else
 			make_get_set name stat None (Some t) :: acc
@@ -393,13 +386,17 @@ let build_class com c file =
 				| FVar (Some (CTPath { tpackage = []; tname = ("String" | "Int" | "UInt") as tname }),None) when List.mem AStatic f.cff_access ->
 					if !real_type = "" then real_type := tname else if !real_type <> tname then raise Exit;
 					(f.cff_name,None,[],[],pos) :: loop l
-				| FFun { f_args = [] } when f.cff_name = "new" -> loop l
+				| FFun (_,{ f_args = [] }) when f.cff_name = "new" -> loop l
 				| _ -> raise Exit
 		in
+		(match path.tpackage, path.tname with
+		| ["flash";"net"], "URLRequestMethod"
+		| ["flash";"filters"], "BitmapFilterQuality"
+		| ["flash";"display"], ("BitmapDataChannel" | "GraphicsPathCommand")  -> raise Exit
+		| _ -> ());
 		List.iter (function HExtends _ | HImplements _ -> raise Exit | _ -> ()) flags;
 		let constr = loop fields in
-		let name = "fakeEnum:" ^ String.concat "." (path.tpackage @ [path.tname]) in
-		if not (Common.defined com name) then raise Exit;
+		if constr = [] then raise Exit;
 		let enum_data = {
 			d_name = path.tname;
 			d_doc = None;
@@ -420,26 +417,33 @@ let build_class com c file =
 	} in
 	(path.tpackage, [(EClass class_data,pos)])
 
-let extract_data (_,tags) =
-	let t = Common.timer "read swf" in
-	let h = Hashtbl.create 0 in
-	let rec loop_field f =
-		match f.hlf_kind with
-		| HFClass c ->
-			let path = make_tpath f.hlf_name in
-			(match path with
-			| { tpackage = []; tname = "Float" | "Bool" | "MethodClosure" | "Int" | "UInt" | "Dynamic" } -> ()
-			| _ -> Hashtbl.add h (path.tpackage,path.tname) c)
-		| _ -> ()
-	in
-	List.iter (fun t ->
-		match t.tdata with
-		| TActionScript3 (_,as3) ->
-			List.iter (fun i -> Array.iter loop_field i.hls_fields) (As3hlparse.parse as3)
-		| _ -> ()
-	) tags;
-	t();
-	h
+let extract_data swf =
+	let cache = ref None in
+	(fun() ->
+		match !cache with
+		| Some h -> h
+		| None ->
+			let _, tags = swf() in
+			let t = Common.timer "read swf" in
+			let h = Hashtbl.create 0 in
+			let rec loop_field f =
+				match f.hlf_kind with
+				| HFClass c ->
+					let path = make_tpath f.hlf_name in
+					(match path with
+					| { tpackage = []; tname = "Float" | "Bool" | "MethodClosure" | "Int" | "UInt" | "Dynamic" } -> ()
+					| _ -> Hashtbl.add h (path.tpackage,path.tname) c)
+				| _ -> ()
+			in
+			List.iter (fun t ->
+				match t.tdata with
+				| TActionScript3 (_,as3) ->
+					List.iter (fun i -> Array.iter loop_field i.hls_fields) (As3hlparse.parse as3)
+				| _ -> ()
+			) tags;
+			cache := Some h;
+			t();
+			h)
 
 let remove_debug_infos as3 =
 	let hl = As3hlparse.parse as3 in
@@ -512,19 +516,25 @@ let remove_debug_infos as3 =
 	As3hlparse.flatten (List.map loop_static hl)
 
 let parse_swf com file =
-	let t = Common.timer "read swf" in
-	let file = (try Common.find_file com file with Not_found -> failwith ("SWF Library not found : " ^ file)) in
-	let ch = IO.input_channel (open_in_bin file) in
-	let h, tags = (try Swf.parse ch with _ -> failwith ("The input swf " ^ file ^ " is corrupted")) in
-	IO.close_in ch;
-	List.iter (fun t ->
-		match t.tdata with
-		| TActionScript3 (id,as3) when not com.debug && not com.display ->
-			t.tdata <- TActionScript3 (id,remove_debug_infos as3)
-		| _ -> ()
-	) tags;
-	t();
-	(h,tags)
+	let data = ref None in
+	(fun () ->
+		match !data with
+		| Some swf -> swf
+		| None ->
+			let t = Common.timer "read swf" in
+			let file = (try Common.find_file com file with Not_found -> failwith ("SWF Library not found : " ^ file)) in
+			let ch = IO.input_channel (open_in_bin file) in
+			let h, tags = (try Swf.parse ch with _ -> failwith ("The input swf " ^ file ^ " is corrupted")) in
+			IO.close_in ch;
+			List.iter (fun t ->
+				match t.tdata with
+				| TActionScript3 (id,as3) when not com.debug && not com.display ->
+					t.tdata <- TActionScript3 (id,remove_debug_infos as3)
+				| _ -> ()
+			) tags;
+			t();
+			data := Some (h,tags);
+			(h,tags))
 
 (* ------------------------------- *)
 
@@ -541,12 +551,7 @@ let swf_ver = function
 	| 9. -> 9
 	| 10. | 10.1 -> 10
 	| 10.2 -> 11
-	| 10.3 -> 12
-	| 11. -> 13
-	| 11.1 -> 14
-	| 11.2 -> 15
-	| 11.3 -> 16
-	| 11.4 -> 17
+	| 11. -> 12
 	| _ -> assert false
 
 let convert_header com (w,h,fps,bg) =
@@ -614,16 +619,16 @@ let build_dependencies t =
 			List.iter add_type pl;
 			List.iter add_expr el;
 		| TFunction f ->
-			List.iter (fun (v,_) -> add_type v.v_type) f.tf_args;
+			List.iter (fun (_,_,t) -> add_type t) f.tf_args;
 			add_type f.tf_type;
 			add_expr f.tf_expr;
-		| TFor (v,e1,e2) ->
-			add_type v.v_type;
+		| TFor (_,t,e1,e2) ->
+			add_type t;
 			add_expr e1;
 			add_expr e2;
 		| TVars vl ->
-			List.iter (fun (v,e) ->
-				add_type v.v_type;
+			List.iter (fun (_,t,e) ->
+				add_type t;
 				match e with
 				| None -> ()
 				| Some e -> add_expr e
@@ -795,7 +800,7 @@ let build_swf8 com codeclip exports =
 	clips @ code
 
 let build_swf9 com file swc =
-	let boot_name = if swc <> None || Common.defined com "haxe-boot" then "haxe" else "boot_" ^ (String.sub (Digest.to_hex (Digest.string (Filename.basename file))) 0 4) in
+	let boot_name = if swc <> None || Common.defined com "haxe-boot" then "haxe" else "boot_" ^ (String.sub (Digest.to_hex (Digest.string file)) 0 4) in
 	let code = Genswf9.generate com boot_name in
 	let code = (match swc with
 	| Some cat ->
@@ -820,128 +825,8 @@ let build_swf9 com file swc =
 		) code in
 		[tag (TActionScript3 (None,As3hlparse.flatten inits))]
 	) in
-	let cid = ref 0 in
-	let classes = ref [{ f9_cid = None; f9_classname = boot_name }] in
-	let res = Hashtbl.fold (fun name data acc ->
-		incr cid;
-		classes := { f9_cid = Some !cid; f9_classname = s_type_path (Genswf9.resource_path name) } :: !classes;
-		tag (TBinaryData (!cid,data)) :: acc
-	) com.resources [] in
-	let bmp = List.fold_left (fun acc t ->
-		match t with
-		| TClassDecl c ->
-			let rec loop = function
-				| [] -> acc
-				| (":bitmap",[EConst (String file),p],_) :: l ->
-					let file = try Common.find_file com file with Not_found -> file in
-					let data = (try Std.input_file ~bin:true file with _  -> error "File not found" p) in
-					incr cid;
-					classes := { f9_cid = Some !cid; f9_classname = s_type_path c.cl_path } :: !classes;
-					tag (TBitsJPEG2 { bd_id = !cid; bd_data = data; bd_table = None; bd_alpha = None; bd_deblock = None }) :: loop l
-				| (":file",[EConst (String file),p],_) :: l ->
-					let file = try Common.find_file com file with Not_found -> file in
-					let data = (try Std.input_file ~bin:true file with _  -> error "File not found" p) in
-					incr cid;
-					classes := { f9_cid = Some !cid; f9_classname = s_type_path c.cl_path } :: !classes;
-					tag (TBinaryData (!cid,data)) :: loop l
-				| (":sound",[EConst (String file),p],_) :: l ->
-					let file = try Common.find_file com file with Not_found -> file in
-					let data = (try Std.input_file ~bin:true file with _  -> error "File not found" p) in
-					let make_flags fmt mono freq bits =
-						let fbits = (match freq with 5512 when fmt <> 2 -> 0 | 11025 -> 1 | 22050 -> 2 | 44100 -> 3 | _ -> failwith ("Unsupported frequency " ^ string_of_int freq)) in
-						let bbits = (match bits with 8 -> 0 | 16 -> 1 | _ -> failwith ("Unsupported bits " ^ string_of_int bits)) in
-						(fmt lsl 4) lor (fbits lsl 2) lor (bbits lsl 1) lor (if mono then 0 else 1)
-					in
-					let flags, samples, data = (match List.rev (ExtString.String.nsplit (String.lowercase file) ".") with
-						| "wav" :: _ -> 
-							(try 
-								let i = IO.input_string data in
-								if IO.nread i 4 <> "RIFF" then raise Exit;
-								ignore(IO.nread i 4); (* size *)
-								if IO.nread i 4 <> "WAVE" || IO.nread i 4 <> "fmt " || IO.read_i32 i <> 0x10 then raise Exit;
-								if IO.read_ui16 i <> 1 then failwith "Not a PCM file";
-								let chan = IO.read_ui16 i in
-								if chan > 2 then failwith "Too many channels";
-								let freq = IO.read_i32 i in
-								ignore(IO.read_i32 i);
-								ignore(IO.read_i16 i);
-								let bits = IO.read_ui16 i in
-								if IO.nread i 4 <> "data" then raise Exit;
-								let data_size = IO.read_i32 i in
-								let data = IO.nread i data_size in								
-								make_flags 0 (chan = 1) freq bits, (data_size * 8 / (chan * bits)), data
-							with Exit | IO.No_more_input | IO.Overflow _ ->
-								error "Invalid WAV file" p
-							| Failure msg ->
-								error ("Invalid WAV file (" ^ msg ^ ")") p
-							)
-						| "mp3" :: _ ->
-							(try
-								let i = IO.input_string data in
-								if IO.read_byte i <> 0xFF then raise Exit;								
-								let ver = ((IO.read_byte i) lsr 3) land 3 in
-								let sampling = [|11025;0;22050;44100|].(ver) in
-								ignore(IO.read_byte i);
-								let mono = (IO.read_byte i) lsr 6 = 3 in
-								let samples = ref 0 in
-								let i = IO.input_string data in
-								let rec read_frame() =
-									match (try IO.read_byte i with IO.No_more_input -> -1) with
-									| -1 ->
-										()
-									| 73 -> 
-										(* ID3 *)
-										if IO.nread i 2 <> "D3" then raise Exit;
-										ignore(IO.read_ui16 i); (* version *)
-										ignore(IO.read_byte i); (* flags *)
-										let size = IO.read_byte i land 0x7F in
-										let size = size lsl 7 lor (IO.read_byte i land 0x7F) in
-										let size = size lsl 7 lor (IO.read_byte i land 0x7F) in
-										let size = size lsl 7 lor (IO.read_byte i land 0x7F) in
-										ignore(IO.nread i size); (* id3 data *)
-										read_frame()
-									| 0xFF ->
-										let infos = IO.read_byte i in
-										let ver = (infos lsr 3) land 3 in
-										let layer = (infos lsr 1) land 3 in
-										let bits = IO.read_byte i in
-										let bitrate = (if ver = 3 then [|0;32;40;48;56;64;80;96;112;128;160;192;224;256;320;-1|] else [|0;8;16;24;32;40;48;56;64;80;96;112;128;144;160;-1|]).(bits lsr 4) in
-										let srate = [|
-											[|11025;-1;22050;44100|];
-											[|12000;-1;24000;48000|];
-											[|8000;-1;16000;32000|];
-											[|-1;-1;-1;-1|]
-										|].((bits lsr 2) land 2).(ver) in
-										let pad = (bits lsr 1) land 1 in
-										ignore(IO.read_byte i);
-										let bpp = (if ver = 3 then 144 else 72) in
-										let size = ((bpp * bitrate * 1000) / srate) + pad - 4 in										
-										ignore(IO.nread i size);
-										samples := !samples + (if layer = 3 then 384 else 1152);
-										read_frame()
-									| _ ->
-										raise Exit
-								in
-								read_frame();
-								make_flags 2 mono sampling 16, (!samples), ("\x00\x00" ^ data)
-							with Exit | IO.No_more_input | IO.Overflow _ ->
-								error "Invalid MP3 file" p
-							| Failure msg ->
-								error ("Invalid MP3 file (" ^ msg ^ ")") p
-							)
-						| _ ->
-							error "Sound extension not supported (only WAV or MP3)" p
-					) in
-					incr cid;
-					classes := { f9_cid = Some !cid; f9_classname = s_type_path c.cl_path } :: !classes;
-					tag (TSound { so_id = !cid; so_flags = flags; so_samples = samples; so_data = data }) :: loop l
-				| _ :: l -> loop l
-			in
-			loop c.cl_meta
-		| _ -> acc
-	) [] com.types in
-	let clips = [tag (TF9Classes (List.rev !classes))] in
-	res @ bmp @ code @ clips
+	let clips = [tag (TF9Classes [{ f9_cid = None; f9_classname = boot_name }])] in
+	code @ clips
 
 let merge com file priority (h1,tags1) (h2,tags2) =
   (* prioritize header+bgcolor for first swf *)
@@ -968,7 +853,7 @@ let merge com file priority (h1,tags1) (h2,tags2) =
 				let path = parse_path e.exp_name in
 				let b = List.exists (fun t -> t_path t = path) com.types in
 				if not b && fst path = [] then List.iter (fun t ->
-					if snd (t_path t) = snd path then error ("Linkage name '" ^ snd path ^ "' in '" ^ file ^  "' should be '" ^ s_type_path (t_path t) ^"'") (t_infos t).mt_pos;
+					if snd (t_path t) = snd path then error ("Linkage name '" ^ snd path ^ "' in '" ^ file ^  "' should be '" ^ s_type_path (t_path t) ^"'") (t_pos t);
 				) com.types;
 				b
 			) el in
@@ -1053,9 +938,9 @@ let generate com swf_header =
 								if has_meta ":bind" c.cl_meta then
 									toremove := (t_path t) :: !toremove
 								else
-									error ("Class already exists in '" ^ file ^ "', use @:bind to redefine it") (t_infos t).mt_pos
+									error ("Class already exists in '" ^ file ^ "', use @:bind to redefine it") (t_pos t)
 							| _ ->
-								error ("Invalid redefinition of class defined in '" ^ file ^ "'") (t_infos t).mt_pos
+								error ("Invalid redefinition of class defined in '" ^ file ^ "'") (t_pos t)
 					) com.types;
 				) el
 			| _ -> ()

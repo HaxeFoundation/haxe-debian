@@ -31,11 +31,11 @@
 	}
 
 	public function set( key : String, value : T ) : Void {
-		untyped __Internal.__SetField(key,value,true);
+		untyped __Internal.__SetField(key,value);
 	}
 
 	public function get( key : String ) : Null<T> {
-		return untyped __Internal.__Field(key,true);
+		return untyped __Internal.__Field(key);
 	}
 
 	public function exists( key : String ) : Bool {
@@ -62,10 +62,9 @@
 		var a:Array<String> = [];
 		untyped __Internal.__GetFields(a);
 		var it = a.iterator();
-		var me = this;
 		return untyped {
 			hasNext : function() { return it.hasNext(); },
-			next : function() { return me.__Internal.__Field(it.next(),true); }
+			next : function() { return  untyped __Internal.__Field(it.next()); }
 		};
 	}
 

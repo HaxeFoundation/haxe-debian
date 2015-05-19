@@ -112,7 +112,7 @@ let gen_constr e =
 
 let gen_type_params ipos priv path params pos m =
 	let mpriv = (if priv then [("private","1")] else []) in
-	let mpath = (if m.m_path <> path then [("module",snd (gen_path m.m_path false))] else []) in
+	let mpath = (if m.mpath <> path then [("module",snd (gen_path m.mpath false))] else []) in
 	let file = (if ipos && pos <> null_pos then [("file",pos.pfile)] else []) in
 	gen_path path priv :: ("params", String.concat ":" (List.map fst params)) :: (file @ mpriv @ mpath)
 
@@ -126,7 +126,8 @@ let rec exists f c =
 			| Some (csup,_) -> exists f csup
 
 let gen_type_decl com pos t =
-	let m = (t_infos t).mt_module in
+	let path = t_path t in
+	let m = (try List.find (fun m -> List.exists (fun t2 -> t_path t2 = path) m.mtypes) com.modules with Not_found -> { mpath = t_path t; mtypes = [t] }) in
 	match t with
 	| TClassDecl c ->
 		let stats = List.map (gen_field ["static","1"]) c.cl_ordered_statics in
@@ -362,7 +363,6 @@ let generate_type com t =
 			| Some t ->
 				(match c.cl_path with
 				| ["flash";"errors"], _ -> ext
-				| _ when t == t_dynamic -> " implements Dynamic" :: ext
 				| _ -> (" implements Dynamic<" ^ stype t ^ ">") :: ext)
 		) in
 		let ext = (match c.cl_path with

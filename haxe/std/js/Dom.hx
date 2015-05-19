@@ -186,8 +186,6 @@ typedef Document = {> HtmlDom,
 	function getElementsByName( name : String ) : HtmlCollection<HtmlDom>;
 	function createElement( name : String ) : HtmlDom;
 	function createTextNode( text : String ) : HtmlDom;
-	
-	var activeElement : HtmlDom;
 }
 
 typedef Event = {
@@ -630,7 +628,6 @@ typedef Window = {
 	var onresize : Event -> Void;
 	var onscroll : Event -> Void;
 	var onunload : Event -> Void;
-
-	var onerror : String -> String -> Int -> Bool;
+	var onerror : Event -> Void;
 
 }

@@ -23,7 +23,8 @@
  * DAMAGE.
  */
 package neko.db;
-#if !spod_macro
+
+import Reflect;
 
 class Transaction {
 
@@ -68,4 +69,3 @@ class Transaction {
 	}
 
 }
-#end

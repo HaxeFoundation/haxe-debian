@@ -35,7 +35,7 @@ class Md5 {
 		#elseif php
 			return untyped __call__("md5", s);
 		#else
-			return new Md5().doEncode(s);
+			return inst.doEncode(s);
 		#end
 	}
 
@@ -51,6 +51,8 @@ class Md5 {
  * Updated by Greg Holt 2000 - 2001.
  * See http://pajhome.org.uk/site/legal.html for details.
  */
+
+	static var inst = new Md5();
 
 	function new() {
 	}

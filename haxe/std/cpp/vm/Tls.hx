@@ -24,6 +24,8 @@
  */
 package cpp.vm;
 
+#if HXCPP_MULTI_THREADED
+
 class Tls<T> {
 
 	static var sFreeSlot = 0;
@@ -45,3 +47,6 @@ class Tls<T> {
 
 }
 
+#else
+You_need_to_define_HXCPP_MULTI_THREADED_to_use_the_Tls_class
+#end
