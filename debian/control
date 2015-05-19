@@ -3,7 +3,7 @@ Section: devel
 Priority: optional
 Maintainer: Debian Flash Team <pkg-flash-devel@lists.alioth.debian.org>
 Uploaders: Gabriele Giacone <1o5g4r8o@gmail.com>
-Standards-Version: 3.9.4
+Standards-Version: 3.9.6
 Build-Depends: camlp4 (>= 3.11),
                debhelper (>= 9),
                libxml-light-ocaml-dev,
