@@ -1,10 +1,12 @@
 Source: haxe
 Section: devel
 Priority: optional
-Maintainer: Debian QA Group <packages@qa.debian.org>
+Maintainer: Debian Flash Team <pkg-flash-devel@lists.alioth.debian.org>
+Uploaders: Gabriele Giacone <1o5g4r8o@gmail.com>
 Standards-Version: 3.9.4
 Build-Depends: debhelper (>= 9), ocaml, ocaml-best-compilers | ocaml-native-compilers, ocaml-findlib, libxml-light-ocaml-dev, camlp4 (>= 3.11), zlib1g-dev, neko (>= 1.8.1~)
-Vcs-Hg: http://anonscm.debian.org/hg/collab-maint/haxe
+Vcs-Git: git://anonscm.debian.org/collab-maint/haxe.git
+Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/haxe.git
 Homepage: http://haxe.org
 
 Package: haxe
