@@ -26,4 +26,4 @@ override_dh_clean:
 	dh_clean
 
 get-orig-source:
-	uscan --verbose --rename --repack --compression xz --force-download
+	uscan --verbose --rename --compression xz --force-download

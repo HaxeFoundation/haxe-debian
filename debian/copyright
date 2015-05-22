@@ -1,89 +1,176 @@
-This is the Debian packaging of the haXe compiler, compiled by Jens
-Peter Secher <jps@debian.org>.
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: The Haxe Foundation
+Upstream-Contact: http://haxe.org/foundation/contact.html
+Source: https://github.com/HaxeFoundation/haxe
+Files-Excluded: std/js/jquery-latest.min.js std/js/swfobject-1.5.js
 
-The original source was extracted from the public CVS repository
-(:pserver:anonymous@cvs.motion-twin.com:/cvsroot) as described in the
-get-orig-source target in the debian/rules file of the Debian source
-package.
+Files: *
+Copyright: 2005-2013, Haxe Foundation
+License: Expat
 
----[ haXe compiler License begin ]---
+Files: debian/*
+Copyright: 2004-2008, Nicolas Cannasse
+ 2015, Gabriele Giacone <1o5g4r8o@gmail.com>
+License: GPL-2+
 
-  Copyright (c)2005 Nicolas Cannasse
+Files: debian/haxe-mode.el
+Copyright: 2006-2009, Jens Peter Secher
+License: GPL-3+
 
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
+Files: doc/*
+Copyright: 2004-2008, Nicolas Cannasse
+License: GPL-2+
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+Files: libs/*
+Copyright: 2004-2008, Nicolas Cannasse
+License: GPL-2+
 
-  You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301,
-  USA.
+Files: libs/extc/zlib/*
+Copyright: 1995-2005, Jean-loup Gailly and Mark Adler
+License: Zlib
 
----[ haXe compiler License end ]---
+Files: libs/extc/zlib/zconf.h
+Copyright: 1995-2005, Jean-loup Gailly
+License: Zlib
 
-The full GNU General Public License is located in the file
-/usr/share/common-licenses/GPL-2 on a Debian system.
+Files: libs/extlib/*
+Copyright: 201, 2003, 2004, 2012, Nicolas Cannasse
+License: LGPL-2.1+
 
+Files: libs/extlib/dllist.ml
+  libs/extlib/dllist.mli
+Copyright: 2004, Brian Hurt, Jesse Guardiani
+License: LGPL-2.1+
 
-The haXe compile-time library in /usr/share/haxe is distributed under
-the following license.
+Files: libs/extlib/dynArray.ml
+  libs/extlib/dynArray.mli
+  libs/extlib/extList.ml
+  libs/extlib/extList.mli
+Copyright: 2003, Nicolas Cannasse
+  2003, Brian Hurt
+License: LGPL-2.1+
 
----[ haXe library license begin ]---
+Files: libs/extlib/extArray.ml
+  libs/extlib/extArray.mli
+Copyright: 2005, Richard W.M. Jones (rich @ annexia.org)
+License: LGPL-2.1+
 
-  Copyright (c) 2005, The haXe Project Contributors
-  All rights reserved.
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions are met:
+Files: libs/extlib/optParse.ml
+  libs/extlib/optParse.mli
+Copyright: 2004, Bardur Arantsson
+License: LGPL-2.1+
 
-    - Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    - Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
+Files: libs/extlib/pMap.ml
+  libs/extlib/pMap.mli
+Copyright: 1996-2003, Xavier Leroy, Nicolas Cannasse, Markus Mottl
+License: LGPL-2.1+
 
-  THIS SOFTWARE IS PROVIDED BY THE HAXE PROJECT CONTRIBUTORS "AS IS" AND ANY
-  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-  DISCLAIMED. IN NO EVENT SHALL THE HAXE PROJECT CONTRIBUTORS BE LIABLE FOR
-  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-  OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
-  DAMAGE.
+Files: libs/extlib/std.ml
+Copyright: 2003, Nicolas Cannasse and Markus Mottl
+License: LGPL-2.1+
 
----[ haXe library license end ]---
+Files: libs/extlib/uChar.ml
+  libs/extlib/uChar.mli
+  libs/extlib/uTF8.ml
+  libs/extlib/uTF8.mli
+Copyright: 2002, 2003, Yamagata Yoriyuki
+License: LGPL-2.1+
 
+Files: libs/javalib/*
+Copyright: 2004-2012, Nicolas Cannasse and Caue Waneck
+License: GPL-2+
 
-The Emacs mode for haXe was written by yours truly and has the
-following license.
+Files: libs/neko/ncompile.ml
+Copyright: 2005, Motion-Twin
+License: LGPL-2.1+
 
----[ haxe-mode license begin ]---
+Files: libs/xml-light/*
+Copyright: 2003, Nicolas Cannasse (ncannasse@motion-twin.com)
+License: LGPL-2.1+
 
-  Copyright (C) 2006-2009 Jens Peter Secher
+Files: libs/xml-light/xml.mli
+Copyright: 2003, Nicolas Cannasse (ncannasse@motion-twin.com)
+  2002, 2003, Nicolas Cannasse}
+License: LGPL-2.1+
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+Files: libs/xml-light/xmlParser.ml
+Copyright: 2003, Nicolas Cannasse (ncannasse@motion-twin.com)
+  2003, Jacques Garrigue
+License: LGPL-2.1+
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+License: Expat
+ The MIT License
+ .
+ Permission is hereby granted, free of charge, to any person
+ obtaining a copy of this software and associated
+ documentation files (the "Software"), to deal in the Software
+ without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense,
+ and/or sell copies of the Software, and to permit persons to
+ whom the Software is furnished to do so, subject to the
+ following conditions:
+ .
+ The above copyright notice and this permission notice shall
+ be included in all copies or substantial portions of the
+ Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+ WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR
+ PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+ SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ CONNECTION WITH THE SOFTWARE OR THE USE OR
+ OTHER DEALINGS IN THE SOFTWARE.
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; version 2 dated June, 1991, or (at
+ your option) any later version.
+ .
+ On Debian systems, the complete text of version 2 of the GNU General
+ Public License can be found in '/usr/share/common-licenses/GPL-2'.
 
----[ haxe-mode license end ]---
+License: GPL-3+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; version 3 dated June, 2007, or (at
+ your option) any later version.
+ .
+ On Debian systems, the complete text of version 3 of the GNU General
+ Public License can be found in '/usr/share/common-licenses/GPL-3'.
 
+License: LGPL-2.1+
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU Lesser General Public License as published by the
+ Free Software Foundation; version 2.1 of the License, or (at
+ your option) any later version.
+ .
+ On Debian systems, the complete text of version 2.1 of the GNU Lesser
+ Public License can be found in `/usr/share/common-licenses/LGPL-2.1'.
 
-The full GNU General Public License is located in the file
-/usr/share/common-licenses/GPL-3 on a Debian system.
+License: Zlib
+ The zlib License
+ .
+ This software is provided 'as-is', without any express or implied
+ warranty. In no event will the authors be held liable for any damages
+ arising from the use of this software.
+ .
+ Permission is granted to anyone to use this software for any purpose,
+ including commercial applications, and to alter it and redistribute it
+ freely, subject to the following restrictions:
+ .
+   1. The origin of this software must not be misrepresented; you must
+      not claim that you wrote the original software. If you use this
+      software in a product, an acknowledgment in the product
+      documentation would be appreciated but is not required.
+ .
+   2. Altered source versions must be plainly marked as such, and must
+      not be misrepresented as being the original software.
+ .
+   3. This notice may not be removed or altered from any source
+      distribution.
