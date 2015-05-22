@@ -1,2 +1,3 @@
 version=3
-http://haxe.org/file/haxe-(.+)-linux32\.tar\.gz
+opts="dversionmangle=s/\+dfsg//,uversionmangle=s/-/~/g,repacksuffix=+dfsg"\
+ https://github.com/HaxeFoundation/haxe/tags .*/(\d\S*)\.tar\.gz
