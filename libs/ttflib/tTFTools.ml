@@ -1,3 +1,25 @@
+(*
+ * Copyright (C)2005-2014 Haxe Foundation
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ *)
+
 open TTFData
 
 type glyf_transformation_matrix = {
@@ -184,38 +206,24 @@ let map_char_code cc c4 =
 	end
 
 let parse_range_str str =
-	let len = String.length str in
-	let last = ref str.[0] in
-	let offset = ref 1 in
+	let last = ref (Char.code '\\') in
+	let range = ref false in
 	let lut = Hashtbl.create 0 in
-	if len = 1 then
-		Hashtbl.add lut (Char.code !last) true
-	else
-		while !offset < len do
-			let cur = str.[!offset] in
-			begin match cur with
-			| '-' when !last = '\\' ->
-				Hashtbl.replace lut (Char.code '-') true;
-				incr offset;
-			| c when !offset = len - 1 ->
-				Hashtbl.replace lut (Char.code !last) true;
-				Hashtbl.replace lut (Char.code cur) true;
-				incr offset
-			| '-' ->
-				let first, last = match Char.code !last, Char.code str.[!offset + 1] with
-					| first,last when first > last -> last,first
-					| first,last -> first,last
-				in
-				for i = first to last do
-					Hashtbl.add lut i true
-				done;
-				offset := !offset + 2;
-			| c ->
-				Hashtbl.replace lut (Char.code !last) true;
-				incr offset;
-			end;
-			last := cur;
-		done;
+	UTF8.iter (fun code ->
+		let code = UChar.code code in
+		if code = Char.code '-' && !last <> Char.code '\\' then
+			range := true
+		else if !range then begin
+			range := false;
+			for i = !last to code do
+				Hashtbl.replace lut i true;
+			done;
+		end else begin
+			Hashtbl.replace lut code true;
+			last := code;
+		end
+	) str;
+	if !range then Hashtbl.replace lut (Char.code '-') true;
 	lut
 
 let build_lut ttf range_str =

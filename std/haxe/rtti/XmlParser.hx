@@ -91,12 +91,12 @@ class XmlParser {
 			f1.set = RMethod;
 			return true;
 		}
-		return false;
+		return Type.enumEq(f1.get, f2.get) && Type.enumEq(f1.set, f2.set);
 	}
 
 	function mergeDoc( f1 : ClassField, f2 : ClassField ) {
 		if( f1.doc == null )
-			f2.doc = f2.doc;
+			f1.doc = f2.doc;
 		else if( f2.doc == null )
 			f2.doc = f1.doc;
 		return true;
@@ -178,14 +178,15 @@ class XmlParser {
 	function mergeAbstracts( a : Abstractdef, a2 : Abstractdef ) {
 		if( curplatform == null )
 			return false;
-		if( a.subs.length != a2.subs.length || a.supers.length != a2.supers.length )
+		if( a.to.length != a2.to.length || a.from.length != a2.from.length )
 			return false;
-		for( i in 0...a.subs.length )
-			if( !TypeApi.typeEq(a.subs[i],a2.subs[i]) )
+		for( i in 0...a.to.length )
+			if( !TypeApi.typeEq(a.to[i].t,a2.to[i].t) )
 				return false;
-		for( i in 0...a.supers.length )
-			if( !TypeApi.typeEq(a.supers[i],a2.supers[i]) )
+		for( i in 0...a.from.length )
+			if( !TypeApi.typeEq(a.from[i].t,a2.from[i].t) )
 				return false;
+		if (a2.impl != null) mergeClasses(a.impl, a2.impl);
 		a.platforms.add(curplatform);
 		return true;
 	}
@@ -231,6 +232,7 @@ class XmlParser {
 					else
 						tinf.doc = inf.doc;
 				}
+				if (tinf.path == "haxe._Int64.NativeInt64") continue;
 				if( tinf.module == inf.module && tinf.doc == inf.doc && tinf.isPrivate == inf.isPrivate )
 					switch( ct ) {
 					case TClassdecl(c):
@@ -332,6 +334,14 @@ class XmlParser {
 		return ml;
 	}
 
+	function xoverloads( x : Fast ) : List<ClassField> {
+		var l = new List();
+		for ( m in x.elements ) {
+			l.add(xclassfield(m));
+		}
+		return l;
+	}
+
 	function xpath( x : Fast ) : PathParams {
 		var path = mkPath(x.att.path);
 		var params = new List();
@@ -383,15 +393,17 @@ class XmlParser {
 		};
 	}
 
-	function xclassfield( x : Fast, ?defPublic ) : ClassField {
+	function xclassfield( x : Fast, ?defPublic = false ) : ClassField {
 		var e = x.elements;
 		var t = xtype(e.next());
 		var doc = null;
 		var meta = [];
+		var overloads = null;
 		for( c in e )
 			switch( c.name ) {
 			case "haxe_doc": doc = c.innerData;
 			case "meta": meta = xmeta(c);
+			case "overloads": overloads = xoverloads(c);
 			default: xerror(c);
 			}
 		return {
@@ -403,9 +415,11 @@ class XmlParser {
 			doc : doc,
 			get : if( x.has.get ) mkRights(x.att.get) else RNormal,
 			set : if( x.has.set ) mkRights(x.att.set) else RNormal,
-			params : if( x.has.params ) mkTypeParams(x.att.params) else null,
+			params : if( x.has.params ) mkTypeParams(x.att.params) else [],
 			platforms : defplat(),
 			meta : meta,
+			overloads: overloads,
+			expr : if( x.has.expr ) x.att.expr else null
 		};
 	}
 
@@ -465,8 +479,8 @@ class XmlParser {
 	}
 
 	function xabstract( x : Fast ) : Abstractdef {
-		var doc = null;
-		var meta = [], subs = [], supers = [];
+		var doc = null, impl = null, athis = null;
+		var meta = [], to = [], from = [];
 		for( c in x.elements )
 			switch( c.name ) {
 			case "haxe_doc":
@@ -475,10 +489,14 @@ class XmlParser {
 				meta = xmeta(c);
 			case "to":
 				for( t in c.elements )
-					subs.push(xtype(t));
+					to.push({t: xtype(new Fast(t.x.firstElement())), field: t.has.field ? t.att.field : null});
 			case "from":
 				for( t in c.elements )
-					supers.push(xtype(t));
+					from.push({t: xtype(new Fast(t.x.firstElement())), field: t.has.field ? t.att.field : null});
+			case "impl":
+				impl = xclass(c.node.resolve("class"));
+			case "this":
+				athis = xtype(new Fast(c.x.firstElement()));
 			default:
 				xerror(c);
 			}
@@ -491,8 +509,10 @@ class XmlParser {
 			params : mkTypeParams(x.att.params),
 			platforms : defplat(),
 			meta : meta,
-			subs : subs,
-			supers : supers,
+			athis : athis,
+			to : to,
+			from : from,
+			impl: impl
 		};
 	}
 
@@ -541,6 +561,7 @@ class XmlParser {
 			var args = new List();
 			var aname = x.att.a.split(":");
 			var eargs = aname.iterator();
+			var evalues = x.has.v ? x.att.v.split(":").iterator() : null;
 			for( e in x.elements ) {
 				var opt = false;
 				var a = eargs.next();
@@ -550,10 +571,12 @@ class XmlParser {
 					opt = true;
 					a = a.substr(1);
 				}
+				var v = evalues == null ? null : evalues.next();
 				args.add({
 					name : a,
 					opt : opt,
 					t : xtype(e),
+					value : v == "" ? null : v
 				});
 			}
 			var ret = args.last();

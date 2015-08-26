@@ -26,17 +26,18 @@ package haxe;
 	from which the Unserializer class can recreate the original representation.
 
 	This class can be used in two ways:
-		- create a new Serializer() instance, call its serialize() method with
+
+	- create a new Serializer() instance, call its serialize() method with
 		any argument and finally retrieve the String representation from
 		toString()
-		- call Serializer.run() to obtain the serialized representation of a
+	- call Serializer.run() to obtain the serialized representation of a
 		single argument
 
 	Serialization is guaranteed to work for all haxe-defined classes, but may
 	or may not work for instances of external/native classes.
 
 	The specification of the serialization format can be found here:
-		http://haxe.org/manual/serialization/format
+	`http://haxe.org/manual/serialization/format`
 **/
 class Serializer {
 
@@ -73,14 +74,14 @@ class Serializer {
 	var scount : Int;
 
 	/**
-		The individual cache setting for [this] Serializer instance.
+		The individual cache setting for `this` Serializer instance.
 
 		See USE_CACHE for a complete description.
 	**/
 	public var useCache : Bool;
 
 	/**
-		The individual enum index setting for [this] Serializer instance.
+		The individual enum index setting for `this` Serializer instance.
 
 		See USE_ENUM_INDEX for a complete description.
 	**/
@@ -89,11 +90,11 @@ class Serializer {
 	/**
 		Creates a new Serializer instance.
 
-		Subsequent calls to [this].serialize() will append values to the
+		Subsequent calls to `this.serialize` will append values to the
 		internal buffer of this String. Once complete, the contents can be
-		retrieved through a call to [this].toString() .
+		retrieved through a call to `this.toString`.
 
-		Each Serializer instance maintains its own cache if [this].useCache is
+		Each Serializer instance maintains its own cache if this.useCache` is
 		true.
 	**/
 	public function new() {
@@ -106,7 +107,7 @@ class Serializer {
 	}
 
 	/**
-		Return the String representation of [this] Serializer.
+		Return the String representation of `this` Serializer.
 
 		The exact format specification can be found here:
 		http://haxe.org/manual/serialization/format
@@ -142,6 +143,8 @@ class Serializer {
 		x : exception
 		y : urlencoded string
 		z : zero
+		A : Class<Dynamic>
+		B : Enum<Dynamic>
 		M : haxe.ds.ObjectMap
 		C : custom
 	*/
@@ -185,7 +188,7 @@ class Serializer {
 		return false;
 	}
 
-	#if flash9
+	#if flash
 	// only the instance variables
 
 	function serializeClassFields(v,c) {
@@ -211,13 +214,13 @@ class Serializer {
 	}
 
 	/**
-		Serializes [v].
+		Serializes `v`.
 
 		All haxe-defined values and objects with the exception of functions can
 		be serialized. Serialization of external/native objects is not
 		guaranteed to work.
 
-		The values of [this].useCache and [this].useEnumIndex may affect
+		The values of `this.useCache` and `this.useEnumIndex` may affect
 		serialization output.
 	**/
 	public function serialize( v : Dynamic ) {
@@ -225,6 +228,7 @@ class Serializer {
 		case TNull:
 			buf.add("n");
 		case TInt:
+			var v : Int = v;
 			if( v == 0 ) {
 				buf.add("z");
 				return;
@@ -232,6 +236,7 @@ class Serializer {
 			buf.add("i");
 			buf.add(v);
 		case TFloat:
+			var v : Float = v;
 			if( Math.isNaN(v) )
 				buf.add("k");
 			else if( !Math.isFinite(v) )
@@ -249,14 +254,14 @@ class Serializer {
 			}
 			if( useCache && serializeRef(v) )
 				return;
-			switch( #if (neko || cs) Type.getClassName(c) #else c #end ) {
-			case #if (neko || cs) "Array" #else cast Array #end:
+			switch( #if (neko || cs || python) Type.getClassName(c) #else c #end ) {
+			case #if (neko || cs || python) "Array" #else cast Array #end:
 				var ucount = 0;
 				buf.add("a");
-				#if flash9
+				#if (flash || python)
 				var v : Array<Dynamic> = v;
 				#end
-				var l = #if (neko || flash9 || php || cs || java) v.length #elseif cpp v.__length() #else v[untyped "length"] #end;
+				var l = #if (neko || flash || php || cs || java || python) v.length #elseif cpp v.__length() #else __getField(v, "length") #end;
 				for( i in 0...l ) {
 					if( v[i] == null )
 						ucount++;
@@ -282,17 +287,17 @@ class Serializer {
 					}
 				}
 				buf.add("h");
-			case #if (neko || cs) "List" #else cast List #end:
+			case #if (neko || cs || python) "List" #else cast List #end:
 				buf.add("l");
 				var v : List<Dynamic> = v;
 				for( i in v )
 					serialize(i);
 				buf.add("h");
-			case #if (neko || cs) "Date" #else cast Date #end:
+			case #if (neko || cs || python) "Date" #else cast Date #end:
 				var d : Date = v;
 				buf.add("v");
-				buf.add(d.toString());
-			case #if (neko || cs) "haxe.ds.StringMap" #else cast haxe.ds.StringMap #end:
+				buf.add(d.getTime());
+			case #if (neko || cs || python) "haxe.ds.StringMap" #else cast haxe.ds.StringMap #end:
 				buf.add("b");
 				var v : haxe.ds.StringMap<Dynamic> = v;
 				for( k in v.keys() ) {
@@ -300,7 +305,7 @@ class Serializer {
 					serialize(v.get(k));
 				}
 				buf.add("h");
-			case #if (neko || cs) "haxe.ds.IntMap" #else cast haxe.ds.IntMap #end:
+			case #if (neko || cs || python) "haxe.ds.IntMap" #else cast haxe.ds.IntMap #end:
 				buf.add("q");
 				var v : haxe.ds.IntMap<Dynamic> = v;
 				for( k in v.keys() ) {
@@ -309,11 +314,11 @@ class Serializer {
 					serialize(v.get(k));
 				}
 				buf.add("h");
-			case #if (neko || cs) "haxe.ds.ObjectMap" #else cast haxe.ds.ObjectMap #end:
+			case #if (neko || cs || python) "haxe.ds.ObjectMap" #else cast haxe.ds.ObjectMap #end:
 				buf.add("M");
 				var v : haxe.ds.ObjectMap<Dynamic,Dynamic> = v;
 				for ( k in v.keys() ) {
-					#if (js || flash8 || neko)
+					#if (js || neko)
 					var id = Reflect.field(k, "__id__");
 					Reflect.deleteField(k, "__id__");
 					serialize(k);
@@ -324,7 +329,7 @@ class Serializer {
 					serialize(v.get(k));
 				}
 				buf.add("h");
-			case #if (neko || cs) "haxe.io.Bytes" #else cast haxe.io.Bytes #end:
+			case #if (neko || cs || python) "haxe.io.Bytes" #else cast haxe.io.Bytes #end:
 				var v : haxe.io.Bytes = v;
 				#if neko
 				var chars = new String(base_encode(v.getData(),untyped BASE64.__s));
@@ -361,18 +366,18 @@ class Serializer {
 				buf.add(":");
 				buf.add(chars);
 			default:
-				cache.pop();
-				if( #if flash9 try v.hxSerialize != null catch( e : Dynamic ) false #elseif (cs || java) Reflect.hasField(v, "hxSerialize") #else v.hxSerialize != null #end  ) {
+				if( useCache ) cache.pop();
+				if( #if flash try v.hxSerialize != null catch( e : Dynamic ) false #elseif (cs || java || python) Reflect.hasField(v, "hxSerialize") #else v.hxSerialize != null #end  ) {
 					buf.add("C");
 					serializeString(Type.getClassName(c));
-					cache.push(v);
+					if( useCache ) cache.push(v);
 					v.hxSerialize(this);
 					buf.add("g");
 				} else {
 					buf.add("c");
 					serializeString(Type.getClassName(c));
-					cache.push(v);
-					#if flash9
+					if( useCache ) cache.push(v);
+					#if flash
 					serializeClassFields(v,c);
 					#else
 					serializeFields(v);
@@ -380,14 +385,30 @@ class Serializer {
 				}
 			}
 		case TObject:
-			if( useCache && serializeRef(v) )
-				return;
-			buf.add("o");
-			serializeFields(v);
+			if (Std.is(v,Class)) {
+				var className = Type.getClassName(v);
+				#if (flash || cpp)
+				// Currently, Enum and Class are the same for flash and cpp.
+				//  use resolveEnum to test if it is actually an enum
+				if (Type.resolveEnum(className)!=null) buf.add("B") else
+				#end
+				buf.add("A");
+				serializeString(className);
+			} else if (Std.is(v,Enum)) {
+				buf.add("B");
+				serializeString(Type.getEnumName(v));
+			} else {
+				if( useCache && serializeRef(v) )
+					return;
+				buf.add("o");
+				serializeFields(v);
+			}
 		case TEnum(e):
-			if( useCache && serializeRef(v) )
-				return;
-			cache.pop();
+			if( useCache ) {
+				if( serializeRef(v) )
+					return;
+				cache.pop();
+			}
 			buf.add(useEnumIndex?"j":"w");
 			serializeString(Type.getEnumName(e));
 			#if neko
@@ -405,10 +426,11 @@ class Serializer {
 				for( i in 0...l )
 					serialize(v.args[i]);
 			}
-			#elseif flash9
+			#elseif flash
 			if( useEnumIndex ) {
 				buf.add(":");
-				buf.add(v.index);
+				var i : Int = v.index;
+				buf.add(i);
 			} else
 				serializeString(v.tag);
 			buf.add(":");
@@ -450,7 +472,7 @@ class Serializer {
 				for( i in 0...l )
 					serialize(untyped __field__(v, __php__("params"), i));
 			}
-			#elseif (java || cs)
+			#elseif (java || cs || python)
 			if( useEnumIndex ) {
 				buf.add(":");
 				buf.add(Type.enumIndex(v));
@@ -474,12 +496,12 @@ class Serializer {
 			} else
 				serializeString(v[0]);
 			buf.add(":");
-			var l = v[untyped "length"];
+			var l = __getField(v, "length");
 			buf.add(l - 2);
 			for( i in 2...l )
 				serialize(v[i]);
 			#end
-			cache.push(v);
+			if( useCache ) cache.push(v);
 		case TFunction:
 			throw "Cannot serialize function";
 		default:
@@ -494,9 +516,11 @@ class Serializer {
 		}
 	}
 
+	@:extern inline function __getField(o:Dynamic, f:String):Dynamic return untyped o[f];
+
 	public function serializeException( e : Dynamic ) {
 		buf.add("x");
-		#if flash9
+		#if flash
 		if( untyped __is__(e,__global__["Error"]) ) {
 			var e : flash.errors.Error = e;
 			var s = e.getStackTrace();
@@ -511,10 +535,10 @@ class Serializer {
 	}
 
 	/**
-		Serializes [v] and returns the String representation.
+		Serializes `v` and returns the String representation.
 
 		This is a convenience function for creating a new instance of
-		Serializer, serialize [v] into it and obtain the result through a call
+		Serializer, serialize `v` into it and obtain the result through a call
 		to toString().
 	**/
 	public static function run( v : Dynamic ) {

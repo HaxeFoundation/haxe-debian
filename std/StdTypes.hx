@@ -19,52 +19,55 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// standard haXe types
+// standard Haxe types
 
 /**
-	The standard Void type. Only [null] values can be of the type [Void].
+	The standard Void type. Only `null` values can be of the type `Void`.
 **/
 @:coreType abstract Void { }
 
 /**
 	The standard Float type, this is a double-precision IEEE 64bit float.
+
+	On static targets, null cannot be assigned to Float. If this is necessary,
+	`Null<Float>` can be used instead.
 **/
 @:coreType @:notNull @:runtimeValue abstract Float { }
 
 /**
 	The standard Int type. Its precision depends on the platform.
+
+	On static targets, null cannot be assigned to Int. If this is necessary,
+	`Null<Int>` can be used instead.
 **/
 @:coreType @:notNull @:runtimeValue abstract Int to Float { }
-
-#if (flash9 || flash9doc || cs)
-/**
-	The unsigned Int type is only defined for Flash9. It's currently
-	handled the same as a normal Int.
-**/
-@:coreType @:notNull @:runtimeValue abstract UInt to Int from Int { }
-#end
 
 #if (java || cs)
 @:coreType @:notNull @:runtimeValue abstract Single to Float from Float {}
 #end
 
 /**
-	[Null] can be useful in two cases. In order to document some methods
-	that accepts or can return a [null] value, or for the Flash9 compiler and AS3
+	`Null` can be useful in two cases. In order to document some methods
+	that accepts or can return a `null` value, or for the Flash compiler and AS3
 	generator to distinguish between base values that can be null and others that
 	can't.
 **/
 typedef Null<T> = T
 
 /**
-	The standard Boolean type is represented as an enum with two choices.
+	The standard Boolean type, which can either be true or false.
+
+	On static targets, null cannot be assigned to Bool. If this is necessary,
+	`Null<Bool>` can be used instead.
 **/
 @:coreType @:notNull @:runtimeValue abstract Bool {
 }
 
 /**
-	Dynamic is an internal compiler type which has special behavior.
-	See the haXe language reference for more informations.
+	Dynamic is a special type which is compatible with all other types.
+
+	Use of Dynamic should be minimized as it prevents several compiler
+	checks and optimizations.
 **/
 @:coreType @:runtimeValue abstract Dynamic<T> {
 }
@@ -77,30 +80,33 @@ typedef Null<T> = T
 	custom iterators.
 **/
 typedef Iterator<T> = {
-	
+
 	/**
 		Returns false if the iteration is complete, true otherwise.
-		
+
 		Usually iteration is considered to be complete if all elements of the
 		underlying data structure were handled through calls to next(). However,
 		in custom iterators any logic may be used to determine the completion
 		state.
 	**/
 	function hasNext() : Bool;
-	
+
 	/**
 		Returns the current item of the Iterator and advances to the next one.
-		
-		This method is not required to check hasNext() first. A call to this
-		method while hasNext() is false yields unspecified behavior.
+
+		This method is not required to check `hasNext` first. A call to this
+		method while `hasNext` is false yields unspecified behavior.
+
+		On the other hand iterators should not require a call to `hasNext`
+		before the first call to `next` if an element is available.
 	**/
 	function next() : T;
-	
+
 }
 
 /**
 	An Iterable is a data structure which has an iterator() method.
-	See [Lambda] for generic functions on iterable structures.
+	See `Lambda` for generic functions on iterable structures.
 **/
 typedef Iterable<T> = {
 	function iterator() : Iterator<T>;
@@ -108,6 +114,6 @@ typedef Iterable<T> = {
 
 /**
 	ArrayAccess is used to indicate a class that can be accessed using brackets.
-	The type parameter represent the type of the elements stored.
+	The type parameter represents the type of the elements stored.
 **/
 extern interface ArrayAccess<T> { }

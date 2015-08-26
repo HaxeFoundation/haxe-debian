@@ -24,7 +24,7 @@ import haxe.PosInfos;
 
 @:keepSub
 @:publicFields
-class TestCase #if mt_build implements mt.Protect #end {
+class TestCase {
 	public var currentTest : TestStatus;
 
 	public function new( ) {
@@ -42,7 +42,7 @@ class TestCase #if mt_build implements mt.Protect #end {
 
 	function assertTrue( b:Bool, ?c : PosInfos ) : Void {
 		currentTest.done = true;
-		if (b == false){
+		if (b != true){
 			currentTest.success = false;
 			currentTest.error   = "expected true but was false";
 			currentTest.posInfos = c;

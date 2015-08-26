@@ -32,110 +32,52 @@ package haxe;
 **/
 class Resource {
 
-	#if (java || cs)
-	static var content : Array<String>;
-	#else
 	static var content : Array<{ name : String, data : String, str : String }>;
-	#end
-
-	#if cs
-	static var paths : haxe.ds.StringMap<String>;
-
-	#if cs @:keep #end private static function getPaths():haxe.ds.StringMap<String>
-	{
-		if (paths != null)
-			return paths;
-		var p = new haxe.ds.StringMap();
-		var all:cs.NativeArray<String> = untyped __cs__("typeof(haxe.Resource).Assembly.GetManifestResourceNames()");
-		for (i in 0...all.Length)
-		{
-			var path = all[i];
-			var name = path.substr(path.indexOf("Resources.") + 10);
-			p.set(name, path);
-		}
-
-		return paths = p;
-	}
-	#end
 
 	/**
 		Lists all available resource names. The resource name is the name part
 		of the -resource file@name command line parameter.
 	**/
 	public static function listNames() : Array<String> {
-		var names = new Array();
-		#if (java || cs)
-		for ( x in content )
-			names.push(x);
-		#else
-		for ( x in content )
-			names.push(x.name);
-		#end
-		return names;
+		return [for (x in content) x.name];
 	}
 
 	/**
-		Retrieves the resource identified by [name] as a String.
+		Retrieves the resource identified by `name` as a String.
 
-		If [name] does not match any resource name, null is returned.
+		If `name` does not match any resource name, null is returned.
 	**/
 	public static function getString( name : String ) : String {
-		#if java
-		var stream = cast(Resource, java.lang.Class<Dynamic>).getResourceAsStream("/" + name);
-		if (stream == null)
-			return null;
-		var stream = new java.io.NativeInput(stream);
-		return stream.readAll().toString();
-		#elseif cs
-		var str:cs.system.io.Stream = untyped __cs__("typeof(haxe.Resource).Assembly.GetManifestResourceStream((string)getPaths().get(name).@value)");
-		if (str != null)
-			return new cs.io.NativeInput(str).readAll().toString();
-		return null;
-		#else
 		for( x in content )
 			if( x.name == name ) {
 				#if neko
 				return new String(x.data);
 				#else
 				if( x.str != null ) return x.str;
-				var b : haxe.io.Bytes = haxe.Unserializer.run(x.data);
+				var b : haxe.io.Bytes = haxe.crypto.Base64.decode(x.data);
 				return b.toString();
 				#end
 			}
 		return null;
-		#end
 	}
 
 	/**
-		Retrieves the resource identified by [name] as an instance of
+		Retrieves the resource identified by `name` as an instance of
 		haxe.io.Bytes.
 
-		If [name] does not match any resource name, null is returned.
+		If `name` does not match any resource name, null is returned.
 	**/
 	public static function getBytes( name : String ) : haxe.io.Bytes {
-		#if java
-		var stream = cast(Resource, java.lang.Class<Dynamic>).getResourceAsStream("/" + name);
-		if (stream == null)
-			return null;
-		var stream = new java.io.NativeInput(stream);
-		return stream.readAll();
-		#elseif cs
-		var str:cs.system.io.Stream = untyped __cs__("typeof(haxe.Resource).Assembly.GetManifestResourceStream((string)getPaths().get(name).@value)");
-		if (str != null)
-			return new cs.io.NativeInput(str).readAll();
-		return null;
-		#else
 		for( x in content )
 			if( x.name == name ) {
 				#if neko
 				return haxe.io.Bytes.ofData(cast x.data);
 				#else
 				if( x.str != null ) return haxe.io.Bytes.ofString(x.str);
-				return haxe.Unserializer.run(x.data);
+				return haxe.crypto.Base64.decode(x.data);
 				#end
 			}
 		return null;
-		#end
 	}
 
 	static function __init__() {
@@ -146,8 +88,6 @@ class Resource {
 		content = null;
 		#elseif as3
 		null;
-		#elseif (java || cs)
-		//do nothing
 		#else
 		content = untyped __resources__();
 		#end

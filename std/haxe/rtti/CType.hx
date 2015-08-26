@@ -25,12 +25,14 @@ typedef Path = String
 
 typedef Platforms = List<String>
 
+typedef FunctionArgument = { name : String, opt : Bool, t : CType, ?value:String }
+
 enum CType {
 	CUnknown;
 	CEnum( name : Path, params : List<CType> );
 	CClass( name : Path, params : List<CType> );
 	CTypedef( name : Path, params : List<CType> );
-	CFunction( args : List<{ name : String, opt : Bool, t : CType }>, ret : CType );
+	CFunction( args : List<FunctionArgument>, ret : CType );
 	CAnonymous( fields : List<ClassField> );
 	CDynamic( ?t : CType );
 	CAbstract( name : Path, params : List<CType> );
@@ -59,13 +61,15 @@ typedef ClassField = {
 	var type : CType;
 	var isPublic : Bool;
 	var isOverride : Bool;
-	var doc : String;
+	var doc : Null<String>;
 	var get : Rights;
 	var set : Rights;
 	var params : TypeParams;
 	var platforms : Platforms;
 	var meta : MetaData;
 	var line : Null<Int>;
+	var overloads : Null<List<ClassField>>;
+	var expr : Null<String>;
 }
 
 typedef TypeInfos = {
@@ -73,7 +77,7 @@ typedef TypeInfos = {
 	var module : Path;
 	var file : Null<String>;
 	var params : TypeParams;
-	var doc : String;
+	var doc : Null<String>;
 	var isPrivate : Bool;
 	var platforms : Platforms;
 	var meta : MetaData;
@@ -82,7 +86,7 @@ typedef TypeInfos = {
 typedef Classdef = {> TypeInfos,
 	var isExtern : Bool;
 	var isInterface : Bool;
-	var superClass : PathParams;
+	var superClass : Null<PathParams>;
 	var interfaces : List<PathParams>;
 	var fields : List<ClassField>;
 	var statics : List<ClassField>;
@@ -104,12 +108,14 @@ typedef Enumdef = {> TypeInfos,
 
 typedef Typedef = {> TypeInfos,
 	var type : CType;
-	var types : haxe.ds.StringMap<CType>; // by platform
+	var types : Map<String,CType>; // by platform
 }
 
 typedef Abstractdef = {> TypeInfos,
-	var subs : Array<CType>;
-	var supers : Array<CType>;
+	var to : Array<{t:CType, field:Null<String>}>;
+	var from : Array<{t:CType, field:Null<String>}>;
+	var impl : Classdef;
+	var athis : CType;
 }
 
 enum TypeTree {
@@ -202,7 +208,7 @@ class TypeApi {
 		case CFunction(args,ret):
 			switch( t2 ) {
 			case CFunction(args2,ret2):
-				return leq(function(a,b) {
+				return leq(function(a:FunctionArgument,b:FunctionArgument) {
 					return a.name == b.name && a.opt == b.opt && typeEq(a.t,b.t);
 				},args,args2) && typeEq(ret,ret2);
 			default:
@@ -257,4 +263,44 @@ class TypeApi {
 		return true;
 	}
 
+}
+
+class CTypeTools {
+	static public function toString(t:CType):String {
+		return switch (t) {
+			case CUnknown:
+				"unknown";
+			case CClass(name, params), CEnum(name, params), CTypedef(name, params), CAbstract(name, params):
+				nameWithParams(name, params);
+			case CFunction(args, ret):
+				if (args.length == 0) {
+					"Void -> " +toString(ret);
+				} else {
+					args.map(functionArgumentName).join(" -> ");
+				}
+			case CDynamic(d):
+				if (d == null) {
+					"Dynamic";
+				} else {
+					"Dynamic<" + toString(d) + ">";
+				}
+			case CAnonymous(fields):
+				"{ " + fields.map(classField).join(", ");
+		}
+	}
+
+	static function nameWithParams(name:String, params:List<CType>) {
+		if (params.length == 0) {
+			return name;
+		}
+		return name + "<" + params.map(toString).join(", ") + ">";
+	}
+
+	static function functionArgumentName(arg:FunctionArgument) {
+		return (arg.opt ? "?" : "") + arg.name + ":" + toString(arg.t) + (arg.value == null ? "" : " = " +arg.value);
+	}
+
+	static function classField(cf:ClassField) {
+		return cf.name + ":" +toString(cf.type);
+	}
 }

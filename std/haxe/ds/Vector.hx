@@ -21,6 +21,10 @@
  */
 package haxe.ds;
 
+#if cpp
+using cpp.NativeArray;
+#end
+
 private typedef VectorData<T> = #if flash10
 	flash.Vector<T>
 #elseif neko
@@ -37,21 +41,20 @@ private typedef VectorData<T> = #if flash10
 	A Vector is a storage of fixed size. It can be faster than Array on some
 	targets, and is never slower.
 **/
-@:arrayAccess
 abstract Vector<T>(VectorData<T>) {
 	/**
-		Creates a new Vector of length [length].
+		Creates a new Vector of length `length`.
 
-		Initially [this] Vector contains [length] neutral elements:
-			- always null on dynamic targets
-			- 0, 0.0 or false for Int, Float and Bool respectively on static
-			targets
-			- null for other types on static targets
+		Initially `this` Vector contains `length` neutral elements:
 
-		If [length] is less than or equal to 0, the result is unspecified.
+		- always null on dynamic targets
+		- 0, 0.0 or false for Int, Float and Bool respectively on static targets
+		- null for other types on static targets
+
+		If `length` is less than or equal to 0, the result is unspecified.
 	**/
 	public inline function new(length:Int) {
-		#if flash9
+		#if flash10
 			this = new flash.Vector<T>(length, true);
 		#elseif neko
 			this = untyped __dollar__amake(length);
@@ -62,7 +65,10 @@ abstract Vector<T>(VectorData<T>) {
 		#elseif java
 			this = new java.NativeArray(length);
 		#elseif cpp
-			this = untyped (new Array<T>()).__SetSizeExact(length);
+			this = new Array<T>();
+			untyped this.__SetSizeExact(length);
+		#elseif python
+			this = python.Syntax.pythonCode("[{0}]*{1}", null, length);
 		#else
 			this = [];
 			untyped this.length = length;
@@ -70,27 +76,39 @@ abstract Vector<T>(VectorData<T>) {
 	}
 
 	/**
-		Returns the value at index [index].
+		Returns the value at index `index`.
 
-		If [index] is negative or exceeds [this].length, the result is
+		If `index` is negative or exceeds `this.length`, the result is
 		unspecified.
 	**/
-	public inline function get(index:Int):Null<T> {
+	@:arrayAccess public inline function get(index:Int):T {
+		#if cpp
+		return this.unsafeGet(index);
+		#elseif python
+		return python.internal.ArrayImpl.unsafeGet(this, index);
+		#else
 		return this[index];
+		#end
 	}
 
 	/**
-		Sets the value at index [index] to [val].
+		Sets the value at index `index` to `val`.
 
-		If [index] is negative or exceeds [this].length, the result is
+		If `index` is negative or exceeds `this.length`, the result is
 		unspecified.
 	**/
-	public inline function set(index:Int, val:T):T {
+	@:arrayAccess public inline function set(index:Int, val:T):T {
+		#if cpp
+		return this.unsafeSet(index,val);
+		#elseif python
+		return python.internal.ArrayImpl.unsafeSet(this, index, val);
+		#else
 		return this[index] = val;
+		#end
 	}
 
 	/**
-		Returns the length of [this] Vector.
+		Returns the length of `this` Vector.
 	**/
 	public var length(get, never):Int;
 
@@ -101,17 +119,21 @@ abstract Vector<T>(VectorData<T>) {
 			return this.Length;
 		#elseif java
 			return this.length;
+		#elseif python
+			return this.length;
 		#else
 			return untyped this.length;
 		#end
 	}
 
 	/**
-		Copies [length] of elements from [src] Vector, beginning at [srcPos] to [dest] Vector, beginning at [destPos]
+		Copies `length` of elements from `src` Vector, beginning at `srcPos` to
+		`dest` Vector, beginning at `destPos`
 
-		The results are unspecified if [length] results in out-of-bounds access, or if [src] or [dest] are null
+		The results are unspecified if `length` results in out-of-bounds access,
+		or if `src` or `dest` are null
 	**/
-	public static #if (cs || java || neko) inline #end function blit<T>(src:Vector<T>, srcPos:Int, dest:Vector<T>, destPos:Int, len:Int):Void
+	public static #if (cs || java || neko || cpp) inline #end function blit<T>(src:Vector<T>, srcPos:Int, dest:Vector<T>, destPos:Int, len:Int):Void
 	{
 		#if neko
 			untyped __dollar__ablit(dest,destPos,src,srcPos,len);
@@ -119,6 +141,8 @@ abstract Vector<T>(VectorData<T>) {
 			java.lang.System.arraycopy(src, srcPos, dest, destPos, len);
 		#elseif cs
 			cs.system.Array.Copy(cast src, srcPos,cast dest, destPos, len);
+		#elseif cpp
+			dest.toData().blit(destPos,src.toData(), srcPos,len);
 		#else
 			for (i in 0...len)
 			{
@@ -128,7 +152,28 @@ abstract Vector<T>(VectorData<T>) {
 	}
 
 	/**
-		Extracts the data of [this] Vector.
+		Creates a new Array, copy the content from the Vector to it, and returns it.
+	**/
+	public #if (flash || cpp) inline #end function toArray():Array<T> {
+		#if cpp
+			return this.copy();
+		#elseif python
+			return this.copy();
+		#else
+			var a = new Array();
+			var len = length;
+			#if (neko)
+			// prealloc good size
+			if( len > 0 ) a[len - 1] = get(0);
+			#end
+			for( i in 0...len )
+				a[i] = get(i);
+			return a;
+		#end
+	}
+
+	/**
+		Extracts the data of `this` Vector.
 
 		This returns the internal representation type.
 	**/
@@ -136,31 +181,42 @@ abstract Vector<T>(VectorData<T>) {
 		return cast this;
 
 	/**
-		Initializes a new Vector from [data].
+		Initializes a new Vector from `data`.
 
-		Since [data] is the internal representation of Vector, this is a no-op.
+		Since `data` is the internal representation of Vector, this is a no-op.
 
-		If [data] is null, the corresponding Vector is also [null].
+		If `data` is null, the corresponding Vector is also `null`.
 	**/
 	static public inline function fromData<T>(data:VectorData<T>):Vector<T>
 		return cast data;
 
 	/**
-		Creates a new Vector by copying the elements of [array].
+		Creates a new Vector by copying the elements of `array`.
 
 		This always creates a copy, even on platforms where the internal
 		representation is Array.
 
 		The elements are not copied and retain their identity, so
-		a[i] == Vector.fromArrayCopy(a).get(i) is true for any valid i.
+		`a[i] == Vector.fromArrayCopy(a).get(i)` is true for any valid i.
 
-		If [array] is null, the result is unspecified.
+		If `array` is null, the result is unspecified.
 	**/
+	#if as3 @:extern #end
 	static public inline function fromArrayCopy<T>(array:Array<T>):Vector<T> {
+		#if python
+		return cast array.copy();
+		#elseif flash10
+		return fromData(flash.Vector.ofArray(array));
+		#elseif java
+		return fromData(java.Lib.nativeArray(array,false));
+		#elseif cs
+		return fromData(cs.Lib.nativeArray(array,false));
+		#else
 		// TODO: Optimize this for flash (and others?)
 		var vec = new Vector<T>(array.length);
 		for (i in 0...array.length)
 			vec.set(i, array[i]);
 		return vec;
+		#end
 	}
 }

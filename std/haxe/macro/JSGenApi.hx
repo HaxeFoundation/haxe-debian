@@ -28,7 +28,7 @@ import haxe.macro.Type;
 typedef JSGenApi = {
 	/** the file in which the JS code can be generated **/
 	var outputFile : String;
-	/** all the types that were compiled by haXe **/
+	/** all the types that were compiled by Haxe **/
 	var types : Array<Type>;
 	/** the main call expression, if a -main class is defined **/
 	var main : Null<TypedExpr>;
@@ -40,6 +40,10 @@ typedef JSGenApi = {
 	function setTypeAccessor( callb : Type -> String ) : Void;
 	/** tells if the given identifier is a JS keyword **/
 	function isKeyword( ident : String ) : Bool;
+	/** add a feature **/
+	function addFeature( f : String ) : Bool;
+	/** check if a feature is used **/
+	function hasFeature( f : String ) : Bool;
 	/** quote and escape the given string constant **/
 	function quoteString( s : String ) : String;
 	/** create the metadata expression for the given type **/

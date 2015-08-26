@@ -21,55 +21,52 @@
  */
 import cs.NativeArray;
 
-/**
-	An Array is a storage for values. You can access it using indexes or
-	with its API. On the server side, it's often better to use a [List] which
-	is less memory and CPU consuming, unless you really need indexed access.
-**/
-@:classCode('
-	public Array(T[] native)
-	{
-		this.__a = native;
-		this.length = native.Length;
-	}
-')
-@:final @:coreApi class Array<T> implements ArrayAccess<T> {
+#if core_api_serialize
+@:meta(System.Serializable)
+#end
+@:final class Array<T> implements ArrayAccess<T> {
 
-	/**
-		The length of the Array
-	**/
 	public var length(default,null) : Int;
 
 	private var __a:NativeArray<T>;
 
-	@:functionCode('
-			return new Array<X>(native);
-	')
-	private static function ofNative<X>(native:NativeArray<X>):Array<X>
+#if erase_generics
+	inline private static function ofNative<X>(native:NativeArray<Dynamic>):Array<X>
 	{
-		return null;
+		return new Array(native);
+	}
+#else
+	inline private static function ofNative<X>(native:NativeArray<X>):Array<X>
+	{
+		return new Array(native);
+	}
+#end
+
+	inline private static function alloc<Y>(size:Int):Array<Y>
+	{
+		return new Array(new NativeArray(size));
 	}
 
-	@:functionCode('
-			return new Array<Y>(new Y[size]);
-	')
-	private static function alloc<Y>(size:Int):Array<Y>
-	{
-		return null;
-	}
-
-	/**
-		Creates a new Array.
-	**/
-	public function new() : Void
+	@:overload public function new() : Void
 	{
 		this.length = 0;
 		this.__a = new NativeArray(0);
 	}
 
-	/**
-		Returns a new Array by appending [a] to [this].
-	**/
+#if erase_generics
+	@:overload private function new(native:NativeArray<Dynamic>)
+	{
+		this.length = native.Length;
+		this.__a = untyped native;
+	}
+#else
+	@:overload private function new(native:NativeArray<T>)
+	{
+		this.length = native.Length;
+		this.__a = native;
+	}
+#end
+
 	public function concat( a : Array<T> ) : Array<T>
 	{
 		var len = length + a.length;
@@ -98,9 +95,36 @@ import cs.NativeArray;
 		this.length = len;
 	}
 
-	/**
-		Returns a representation of an array with [sep] for separating each element.
-	**/
+	public function indexOf( x : T, ?fromIndex:Int ) : Int
+	{
+		var len = length, i:Int = (fromIndex == null) ? 0 : fromIndex;
+		if (i < 0)
+		{
+			i += len;
+			if (i < 0) i = 0;
+		}
+		else if (i >= len)
+		{
+			return -1;
+		}
+		return cs.system.Array.IndexOf(__a, x, i, len - i);
+	}
+
+	public function lastIndexOf( x : T, ?fromIndex:Int ) : Int
+	{
+		var len = length, i:Int = (fromIndex == null) ? len - 1 : fromIndex;
+		if (i >= len)
+		{
+			i = len - 1;
+		}
+		else if (i < 0)
+		{
+			i += len;
+			if (i < 0) return -1;
+		}
+		return cs.system.Array.LastIndexOf(__a, x, i, i + 1);
+	}
+
 	public function join( sep : String ) : String
 	{
 		var buf = new StringBuf();
@@ -120,9 +144,6 @@ import cs.NativeArray;
 		return buf.toString();
 	}
 
-	/**
-		Removes the last element of the array and returns it.
-	**/
 	public function pop() : Null<T>
 	{
 		var __a = __a;
@@ -139,9 +160,6 @@ import cs.NativeArray;
 		}
 	}
 
-	/**
-		Adds the element [x] at the end of the array.
-	**/
 	public function push(x : T) : Int
 	{
 		if (length >= __a.Length)
@@ -157,9 +175,6 @@ import cs.NativeArray;
 		return ++length;
 	}
 
-	/**
-		Reverse the order of elements of the Array.
-	**/
 	public function reverse() : Void
 	{
 		var i = 0;
@@ -176,9 +191,6 @@ import cs.NativeArray;
 		}
 	}
 
-	/**
-		Removes the first element and returns it.
-	**/
 	public function shift() : Null<T>
 	{
 		var l = this.length;
@@ -195,12 +207,6 @@ import cs.NativeArray;
 		return x;
 	}
 
-	/**
-		Copies the range of the array starting at [pos] up to,
-		but not including, [end]. Both [pos] and [end] can be
-		negative to count from the end: -1 is the last item in
-		the array.
-	**/
 	public function slice( pos : Int, ?end : Int ) : Array<T>
 	{
 		if( pos < 0 ){
@@ -223,11 +229,6 @@ import cs.NativeArray;
 		return ofNative(newarr);
 	}
 
-	/**
-		Sort the Array according to the comparison public function [f].
-		[f(x,y)] should return [0] if [x == y], [>0] if [x > y]
-		and [<0] if [x < y].
-	**/
 	public function sort( f : T -> T -> Int ) : Void
 	{
 		if (length == 0)
@@ -235,34 +236,27 @@ import cs.NativeArray;
 		quicksort(0, length - 1, f);
 	}
 
-	/**
-		quicksort author: tong disktree
-		http://blog.disktree.net/2008/10/26/array-sort-performance.html
-	 */
 	private function quicksort( lo : Int, hi : Int, f : T -> T -> Int ) : Void
 	{
-        var buf = __a;
+		var buf = __a;
 		var i = lo, j = hi;
-        var p = buf[(i + j) >> 1];
+		var p = buf[(i + j) >> 1];
 		while ( i <= j )
 		{
-			while ( f(buf[i], p) < 0 ) i++;
-            while ( f(buf[j], p) > 0 ) j--;
+			while ( i < hi && f(buf[i], p) < 0 ) i++;
+			while ( j > lo && f(buf[j], p) > 0 ) j--;
 			if ( i <= j )
 			{
-                var t = buf[i];
-                buf[i++] = buf[j];
-                buf[j--] = t;
-            }
+				var t = buf[i];
+				buf[i++] = buf[j];
+				buf[j--] = t;
+			}
 		}
 
 		if( lo < j ) quicksort( lo, j, f );
-        if( i < hi ) quicksort( i, hi, f );
+		if( i < hi ) quicksort( i, hi, f );
 	}
 
-	/**
-		Removes [len] elements starting from [pos] an returns them.
-	**/
 	public function splice( pos : Int, len : Int ) : Array<T>
 	{
 		if( len < 0 ) return new Array();
@@ -314,9 +308,6 @@ import cs.NativeArray;
 			a[this.length + len] = null;
 	}
 
-	/**
-		Returns a displayable representation of the Array content.
-	**/
 	public function toString() : String
 	{
 		var ret = new StringBuf();
@@ -336,9 +327,6 @@ import cs.NativeArray;
 		return ret.toString();
 	}
 
-	/**
-		Adds the element [x] at the start of the array.
-	**/
 	public function unshift( x : T ) : Void
 	{
 		var __a = __a;
@@ -358,10 +346,6 @@ import cs.NativeArray;
 		++this.length;
 	}
 
-	/**
-		Inserts the element [x] at the position [pos].
-		All elements after [pos] are moved one index ahead.
-	**/
 	public function insert( pos : Int, x : T ) : Void
 	{
 		var l = this.length;
@@ -396,11 +380,6 @@ import cs.NativeArray;
 		}
 	}
 
-	/**
-		Removes the first occurence of [x].
-		Returns false if [x] was not present.
-		Elements are compared by using standard equality.
-	**/
 	public function remove( x : T ) : Bool
 	{
 		var __a = __a;
@@ -435,10 +414,6 @@ import cs.NativeArray;
 		return ret;
 	}
 
-	/**
-		Returns a copy of the Array. The values are not
-		copied, only the Array structure.
-	**/
 	public function copy() : Array<T>
 	{
 		var len = length;
@@ -448,28 +423,14 @@ import cs.NativeArray;
 		return ofNative(newarr);
 	}
 
-	/**
-		Returns an iterator of the Array values.
-	**/
-	public function iterator() : Iterator<T>
+	public inline function iterator() : Iterator<T>
 	{
-		var i = 0;
-		var len = length;
-		return
-		{
-			hasNext:function() return i < len,
-			next:function() return __a[i++]
-		};
+		return new ArrayIterator<T>(this);
 	}
 
 	private function __get(idx:Int):T
 	{
-		var __a = __a;
-		var idx:UInt = idx;
-		if (idx >= length)
-			return null;
-
-		return __a[idx];
+		return if ((cast idx : UInt) >= length) null else __a[idx];
 	}
 
 	private function __set(idx:Int, v:T):T
@@ -501,4 +462,22 @@ import cs.NativeArray;
 	{
 		return __a[idx] = val;
 	}
+}
+
+@:final
+private class ArrayIterator<T>
+{
+	var arr:Array<T>;
+	var len:Int;
+	var i:Int;
+
+	public inline function new(a:Array<T>)
+	{
+		arr = a;
+		len = a.length;
+		i = 0;
+	}
+
+	public inline function hasNext():Bool return i < len;
+	public inline function next():T return arr[i++];
 }

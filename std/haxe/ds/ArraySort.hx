@@ -23,26 +23,27 @@
 package haxe.ds;
 
 /**
-	ArraySort provides a stable implementation of merge sort through its sort()
-	method. It should be used instead of Array.sort() in cases where the order
+	ArraySort provides a stable implementation of merge sort through its `sort`
+	method. It should be used instead of `Array.sort` in cases where the order
 	of equal elements has to be retained on all targets.
 **/
 class ArraySort {
+
 	/**
-		Sorts Array [a] according to the comparison function [cmp], where
-		[cmp(x,y)] returns 0 if x == y, a positive Int if x > y and a
-		negative Int if x < y.
-		
-		This operation modifies Array [a] in place.
-		
+		Sorts Array `a` according to the comparison function `cmp`, where
+		`cmp(x,y)` returns 0 if `x == y`, a positive Int if `x > y` and a
+		negative Int if `x < y`.
+
+		This operation modifies Array `a` in place.
+
 		This operation is stable: The order of equal elements is preserved.
-		
-		If [a] or [cmp] are null, the result is unspecified.
+
+		If `a` or `cmp` are null, the result is unspecified.
 	**/
 	static public function sort<T>(a:Array<T>, cmp:T -> T -> Int) {
 		rec(a, cmp, 0, a.length);
 	}
-	
+
 	static function rec<T>(a:Array<T>, cmp, from, to) {
 		var middle = (from + to) >> 1;
 		if (to - from < 12) {
@@ -63,7 +64,7 @@ class ArraySort {
 		rec(a, cmp, middle, to);
 		doMerge(a, cmp, from, middle, to, middle - from, to - middle);
 	}
-	
+
 	static function doMerge<T>(a:Array<T>, cmp, from, pivot, to, len1, len2) {
 		var first_cut, second_cut, len11, len22, new_mid;
 		if (len1 == 0 || len2 == 0)
@@ -89,7 +90,7 @@ class ArraySort {
 		doMerge(a, cmp, from, first_cut, new_mid, len11, len22);
 		doMerge(a, cmp, new_mid, second_cut, to, len1 - len11, len2 - len22);
 	}
-	
+
 	static function rotate<T>(a:Array<T>, cmp, from, mid, to) {
 		var n;
 		if (from == mid || mid == to) return;
@@ -107,7 +108,7 @@ class ArraySort {
 			a[p1] = val;
 		}
 	}
-	
+
 	static function gcd(m, n) {
 		while (n != 0) {
 			var t = m % n;
@@ -116,7 +117,7 @@ class ArraySort {
 		}
 		return m;
 	}
-	
+
 	static function upper<T>(a:Array<T>, cmp, from, to, val) {
 		var len = to - from, half, mid;
 		while (len > 0) {
@@ -131,7 +132,7 @@ class ArraySort {
 		}
 		return from;
 	}
-	
+
 	static function lower<T>(a:Array<T>, cmp, from, to, val) {
 		var len = to - from, half, mid;
 		while (len > 0) {
@@ -145,13 +146,13 @@ class ArraySort {
 		}
 		return from;
 	}
-	
+
 	static function swap<T>(a:Array<T>, i, j) {
 		var tmp = a[i];
 		a[i] = a[j];
 		a[j] = tmp;
 	}
-	
+
 	static inline function compare<T>(a:Array<T>, cmp, i, j) {
 		return cmp(a[i], a[j]);
 	}
