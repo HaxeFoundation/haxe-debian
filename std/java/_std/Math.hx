@@ -19,9 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-/**
-	This class defines mathematical functions and constants.
-**/
+
 @:coreApi
 @:native("java.lang.Math") extern class Math
 {
@@ -44,7 +42,9 @@
 	static function floor(v:Float):Int;
 	static function ceil(v:Float):Int;
 	static function atan(v:Float):Float;
-	static function fround(v:Float):Float;
+	inline static function fround(v:Float):Float {
+		return ffloor(v + 0.5);
+	}
 	static function ffloor(v:Float):Float;
 	static function fceil(v:Float):Float;
 	static function asin(v:Float):Float;

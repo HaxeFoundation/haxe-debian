@@ -21,6 +21,7 @@
   <build>
     <option directives="" />
     <option flashStrict="False" />
+    <option noInlineOnDebug="False" />
     <option mainClass="" />
     <option enabledebug="False" />
     <option additional="" />
@@ -128,6 +129,27 @@
     <hidden path="matcher.obj" />
     <hidden path="matcher.cmx" />
     <hidden path="matcher.cmi" />
+    <hidden path="version.obj" />
+    <hidden path="version.cmi" />
+    <hidden path="version.cmx" />
+    <hidden path="haxe.exe.manifest" />
+    <hidden path="obj" />
+    <hidden path="filters.obj" />
+    <hidden path="filters.cmi" />
+    <hidden path="filters.cmx" />
+    <hidden path="genpy.obj" />
+    <hidden path="genpy.cmi" />
+    <hidden path="genpy.cmx" />
+    <hidden path="analyzer.cmi" />
+    <hidden path="analyzer.cmx" />
+    <hidden path="analyzer.obj" />
+    <hidden path="CONTRIBUTING.md" />
+    <hidden path="README.md" />
+    <hidden path="Makefile" />
+    <hidden path="Makefile.win" />
+    <hidden path="appveyor.yml" />
+    <hidden path="version.ml" />
+    <hidden path="lib" />
   </hiddenPaths>
   <!-- Executed before build -->
   <preBuildCommand>make -j4 MSVC=1 FD_OUTPUT=1 -f Makefile.win kill haxe</preBuildCommand>
@@ -137,6 +159,7 @@
   <options>
     <option showHiddenPaths="False" />
     <option testMovie="Default" />
+    <option testMovieCommand="" />
   </options>
   <!-- Plugin storage -->
   <storage />

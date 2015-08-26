@@ -31,11 +31,11 @@ private enum FileKind {
 class FileSystem {
 
 	public static function exists( path : String ) : Bool {
-		return sys_exists(untyped path.__s);
+		return sys_exists(untyped (haxe.io.Path.removeTrailingSlashes(path)).__s);
 	}
 
-	public static function rename( path : String, newpath : String ) : Void {
-		untyped sys_rename(path.__s,newpath.__s);
+	public static function rename( path : String, newPath : String ) : Void {
+		untyped sys_rename(path.__s,newPath.__s);
 	}
 
 	public static function stat( path : String ) : FileStat {
@@ -46,12 +46,17 @@ class FileSystem {
 		return s;
 	}
 
-	public static function fullPath( relpath : String ) : String {
-		return new String(file_full_path(untyped relpath.__s));
+	public static function fullPath( relPath : String ) : String {
+		return new String(file_full_path(untyped relPath.__s));
+	}
+
+	public static function absolutePath ( relPath : String ) : String {
+		if (haxe.io.Path.isAbsolute(relPath)) return relPath;
+		return haxe.io.Path.join([Sys.getCwd(), relPath]);
 	}
 
 	static function kind( path : String ) : FileKind {
-		var k = new String(sys_file_type(untyped path.__s));
+		var k = new String(sys_file_type(untyped (haxe.io.Path.removeTrailingSlashes(path)).__s));
 		return switch(k) {
 		case "file": kfile;
 		case "dir": kdir;
@@ -65,8 +70,12 @@ class FileSystem {
 
 	public static function createDirectory( path : String ) : Void {
 		var path = haxe.io.Path.addTrailingSlash(path);
-		var parts = [while ((path = haxe.io.Path.directory(path)) != "") path];
-		parts.reverse();
+		var _p = null;
+		var parts = [];
+		while (path != (_p = haxe.io.Path.directory(path))) {
+			parts.unshift(path);
+			path = _p;
+		}
 		for (part in parts) {
 			if (part.charCodeAt(part.length - 1) != ":".code && !exists(part))
 				sys_create_dir( untyped part.__s, 493 );

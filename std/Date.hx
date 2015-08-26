@@ -23,13 +23,14 @@
  /**
 	The Date class provides a basic structure for date and time related
 	information. Date instances can be created by
-		- new Date() for a specific date,
-		- Date.now() to obtain information about the current time,
-		- Date.fromTime() with a given timestamp or
-		- Date.fromString() by parsing from a String.
-	
-	There is some extra functions available in the [DateTools] class.
-	
+
+	- `new Date()` for a specific date,
+	- `Date.now()` to obtain information about the current time,
+	- `Date.fromTime()` with a given timestamp or
+	- `Date.fromString()` by parsing from a String.
+
+	There is some extra functions available in the `DateTools` class.
+
 	In the context of haxe dates, a timestamp is defined as the number of
 	milliseconds elapsed since 1st January 1970.
 **/
@@ -37,14 +38,15 @@ extern class Date
 {
 	/**
 		Creates a new date object from the given arguments.
-		
+
 		The behaviour of a Date instance is only consistent across platforms if
 		the the arguments describe a valid date.
-			- month: 0 to 11
-			- day: 1 to 31
-			- hour: 0 to 23
-			- min: 0 to 59
-			- sec: 0 to 59
+
+		- month: 0 to 11
+		- day: 1 to 31
+		- hour: 0 to 23
+		- min: 0 to 59
+		- sec: 0 to 59
 	**/
 	function new(year : Int, month : Int, day : Int, hour : Int, min : Int, sec : Int ) : Void;
 
@@ -55,43 +57,43 @@ extern class Date
 	function getTime() : Float;
 
 	/**
-		Returns the hours of [this] Date (0-23 range).
+		Returns the hours of `this` Date (0-23 range).
 	**/
 	function getHours() : Int;
 
 	/**
-		Returns the minutes of [this] Date (0-59 range).
+		Returns the minutes of `this` Date (0-59 range).
 	**/
 	function getMinutes() : Int;
 
 	/**
-		Returns the seconds of the [this] Date (0-59 range).
+		Returns the seconds of the `this` Date (0-59 range).
 	**/
 	function getSeconds() : Int;
 
 	/**
-		Returns the full year of [this] Date (4-digits).
+		Returns the full year of `this` Date (4-digits).
 	**/
 	function getFullYear() : Int;
 
 	/**
-		Returns the month of [this] Date (0-11 range).
+		Returns the month of `this` Date (0-11 range).
 	**/
 	function getMonth() : Int;
 
 	/**
-		Returns the day of [this] Date (1-31 range).
+		Returns the day of `this` Date (1-31 range).
 	**/
 	function getDate() : Int;
 
 	/**
-		Returns the day of the week of [this] Date (0-6 range).
+		Returns the day of the week of `this` Date (0-6 range).
 	**/
 	function getDay() : Int;
 
 	/**
-		Returns a string representation of [this] Date, by using the
-		standard format [YYYY-MM-DD HH:MM:SS]. See [DateTools.format] for
+		Returns a string representation of `this` Date, by using the
+		standard format [YYYY-MM-DD HH:MM:SS]. See `DateTools.format` for
 		other formating rules.
 	**/
 	function toString():String;
@@ -102,16 +104,18 @@ extern class Date
 	static function now() : Date;
 
 	/**
-		Returns a Date from timestamp [t].
+		Returns a Date from timestamp `t`.
 	**/
 	static function fromTime( t : Float ) : Date;
 
 	/**
-		Returns a Date from a formated string [s], with the following accepted
+		Returns a Date from a formated string `s`, with the following accepted
 		formats:
-			- [YYYY-MM-DD hh:mm:ss]
-			- [YYYY-MM-DD]
-			- [hh:mm:ss]
+
+		- `"YYYY-MM-DD hh:mm:ss"`
+		- `"YYYY-MM-DD"`
+		- `"hh:mm:ss"`
+
 		The first two formats are expressed in local time, the third in UTC
 		Epoch.
 	**/
@@ -120,17 +124,13 @@ extern class Date
 
 #if flash
 	private static function __init__() : Void untyped {
-		var d #if !swf_mark : Dynamic #end = Date;
+		var d : Dynamic = Date;
 		d.now = function() {
 			return __new__(Date);
 		};
 		d.fromTime = function(t){
 			var d : Date = __new__(Date);
-			#if flash9
 			d.setTime(t);
-			#else
-			d["setTime"]( t );
-			#end
 			return d;
 		};
 		d.fromString = function(s : String) {
@@ -138,17 +138,10 @@ extern class Date
 			case 8: // hh:mm:ss
 				var k = s.split(":");
 				var d : Date = __new__(Date);
-				#if flash9
 				d.setTime(0);
 				d.setUTCHours(k[0]);
 				d.setUTCMinutes(k[1]);
 				d.setUTCSeconds(k[2]);
-				#else
-				d["setTime"](0);
-				d["setUTCHours"](k[0]);
-				d["setUTCMinutes"](k[1]);
-				d["setUTCSeconds"](k[2]);
-				#end
 				return d;
 			case 10: // YYYY-MM-DD
 				var k = s.split("-");
@@ -162,7 +155,7 @@ extern class Date
 				throw "Invalid date format : " + s;
 			}
 		};
-		d.prototype[#if as3 "toStringHX" #else "toString" #end] = function() {
+		d.prototype[#if (as3 || no_flash_override) "toStringHX" #else "toString" #end] = function() {
 			var date : Date = __this__;
 			var m = date.getMonth() + 1;
 			var d = date.getDate();
@@ -176,12 +169,6 @@ extern class Date
 				+":"+(if( mi < 10 ) "0"+mi else ""+mi)
 				+":"+(if( s < 10 ) "0"+s else ""+s);
 		};
-		#if flash9
-		#elseif flash
-		d.prototype[__unprotect__("__class__")] = d;
-		d[__unprotect__("__name__")] = ["Date"];
-		#end
 	}
 #end
 }
-

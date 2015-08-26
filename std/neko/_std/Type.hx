@@ -97,13 +97,15 @@ enum ValueType {
 
 	public static function createInstance<T>( cl : Class<T>, args : Array<Dynamic> ) : T untyped {
 		var fnew = $objget(cl,$hash("new".__s));
+		var a = args.__neko();
+		// pad missing args with null's
 		var n = $nargs(fnew);
-		if( args.length < n ) {
-			args = args.copy();
-			while( args.length < n )
-				args.push(null);
+		if( n > $asize(a) ) {
+			var a2 = $amake(n);
+			$ablit(a2,0,a,0,$asize(a));
+			a = a2;
 		}
-		return $call(fnew,cl,args.__neko());
+		return $call(fnew,cl,a);
 	}
 
 	public static function createEmptyInstance<T>( cl : Class<T> ) : T untyped {
@@ -113,7 +115,7 @@ enum ValueType {
 	}
 
 	public static function createEnum<T>( e : Enum<T>, constr : String, ?params : Array<Dynamic> ) : T {
-		var f = Reflect.field(e,constr);
+		var f:Dynamic = Reflect.field(e,constr);
 		if( f == null ) throw "No such constructor "+constr;
 		if( Reflect.isFunction(f) ) {
 			if( params == null ) throw "Constructor "+constr+" need parameters";

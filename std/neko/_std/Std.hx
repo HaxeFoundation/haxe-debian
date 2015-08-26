@@ -26,6 +26,10 @@
 		return untyped neko.Boot.__instanceof(v,t);
 	}
 
+	public static function instance<T:{},S:T>( value : T, c : Class<S> ) : S {
+		return Std.is(value, c) ? cast value : null;
+	}
+
 	public static function string( s : Dynamic ) : String {
 		return new String(untyped __dollar__string(s));
 	}

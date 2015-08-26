@@ -1,7 +1,9 @@
 # Makefile contributed by Alain Frisch
+OCAMLOPT=ocamlopt
+OCAMLC=ocamlc
 
 MODULES = \
- enum bitSet dynArray extArray extHashtbl extList extString global IO option \
+ enum bitSet dynArray extArray extHashtbl extList extString global rbuffer IO option \
  pMap std uChar uTF8 base64 unzip refList optParse dllist multiArray
 
 # the list is topologically sorted
@@ -9,12 +11,22 @@ MODULES = \
 MLI = $(MODULES:=.mli)
 SRC = $(MLI) $(MODULES:=.ml) extLib.ml
 
-all:
-	ocamlc -a -o extLib.cma $(SRC)
-opt:
-	ocamlopt -g -a -o extLib.cmxa $(SRC)
+all: bytecode native
+
+opt: native
+
+bytecode: extLib.cma
+
+native: extLib.cmxa
+
+extLib.cma: $(SRC)
+	$(OCAMLC) -a -o extLib.cma $(SRC)
+
+extLib.cmxa: $(SRC)
+	$(OCAMLOPT) -g -a -o extLib.cmxa $(SRC)
+
 doc:
-	ocamlc -c $(MODULES:=.mli)
+	$(OCAMLC) -c $(MODULES:=.mli)
 	mkdir -p doc/
 	ocamldoc -sort -html -d doc/ $(MODULES:=.mli)
 	cp odoc_style.css doc/style.css
@@ -32,3 +44,9 @@ uninstall:
 clean:
 	rm -f $(wildcard *.cmo) $(wildcard *.cmx) $(wildcard *.o) $(wildcard *.cmi) $(wildcard *.cma) $(wildcard *.cmxa) $(wildcard *.a) $(wildcard *.lib) $(wildcard *.obj)
 	rm -Rf doc
+
+.PHONY: all opt bytecode native doc copy install uninstall clean
+
+Makefile: ;
+
+$(SRC): ;

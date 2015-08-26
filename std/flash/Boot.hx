@@ -51,7 +51,6 @@ class Boot extends flash.display.MovieClip {
 	public static var skip_constructor = false;
 
 	function start() {
-		#if (mt && !doc_gen) mt.flash.Init.check(); #end
 		#if dontWaitStage
 			init();
 		#else
@@ -209,6 +208,21 @@ class Boot extends flash.display.MovieClip {
 		return s;
 	}
 
+	static public function mapDynamic(d:Dynamic, f:Dynamic) {
+		if (Std.is(d, Array)) {
+			return untyped d["mapHX"](f);
+		} else {
+			return untyped d["map"](f);
+		}
+	}
+
+	static public function filterDynamic(d:Dynamic, f:Dynamic) {
+		if (Std.is(d, Array)) {
+			return untyped d["filterHX"](f);
+		} else {
+			return untyped d["filter"](f);
+		}
+	}
 
 	static function __init__() untyped {
 		var aproto = Array.prototype;
@@ -240,7 +254,7 @@ class Boot extends flash.display.MovieClip {
 		aproto.setPropertyIsEnumerable("insert", false);
 		aproto.setPropertyIsEnumerable("remove", false);
 		aproto.setPropertyIsEnumerable("iterator", false);
-		#if as3
+		#if (as3 || no_flash_override)
 		aproto.filterHX = function(f) {
 			var ret = [];
 			var i = 0;
@@ -266,7 +280,7 @@ class Boot extends flash.display.MovieClip {
 		aproto.setPropertyIsEnumerable("filterHX", false);
 		String.prototype.charCodeAtHX = function(i) : Null<Int> {
 		#else
-		aproto.filter = function(f) {
+		aproto["filter"] = function(f) {
 			var ret = [];
 			var i = 0;
 			var l = __this__.length;
@@ -277,7 +291,7 @@ class Boot extends flash.display.MovieClip {
 			}
 			return ret;
 		};
-		aproto.map = function(f) {
+		aproto["map"] = function(f) {
 			var ret = [];
 			var i = 0;
 			var l = __this__.length;

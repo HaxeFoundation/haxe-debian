@@ -1,0 +1,11 @@
+version: "{build}"
+
+install:
+    - cinst 7zip.commandline -y
+    - cinst haxe -y
+
+build_script:
+    - haxe test.hxml
+
+test_script:
+    - neko bin/test.n

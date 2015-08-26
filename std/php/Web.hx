@@ -142,7 +142,7 @@ class Web {
 		switch(r) {
 			case 100: code = "100 Continue";
 			case 101: code = "101 Switching Protocols";
-			case 200: code = "200 Continue";
+			case 200: code = "200 OK";
 			case 201: code = "201 Created";
 			case 202: code = "202 Accepted";
 			case 203: code = "203 Non-Authoritative Information";
@@ -210,6 +210,9 @@ class Web {
 			for(k in h.keys()) {
 				if(k.substr(0,5) == "HTTP_") {
 					_client_headers.add({ header : k.substr(5), value : h.get(k)});
+				// this is also a valid prefix (issue #1883)
+				} else if(k.substr(0,8) == "CONTENT_") {
+					_client_headers.add({ header : k, value : h.get(k)});
 				}
 			}
 		}
@@ -252,7 +255,7 @@ class Web {
 		Returns an hashtable of all Cookies sent by the client.
 		Modifying the hashtable will not modify the cookie, use setCookie instead.
 	**/
-	public static function getCookies():haxe.ds.StringMap<String> {
+	public static function getCookies():Map<String,String> {
 		return Lib.hashOfAssociativeArray(untyped __php__("$_COOKIE"));
 	}
 
@@ -289,7 +292,7 @@ class Web {
 		Get the multipart parameters as an hashtable. The data
 		cannot exceed the maximum size specified.
 	**/
-	public static function getMultipart( maxSize : Int ) : haxe.ds.StringMap<String> {
+	public static function getMultipart( maxSize : Int ) : Map<String,String> {
 		var h = new haxe.ds.StringMap();
 		var buf : StringBuf = null;
 		var curname = null;

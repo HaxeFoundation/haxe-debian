@@ -23,6 +23,7 @@
 open Ast
 open Type
 open Common
+open ExtString
 
 type xml =
 	| Node of string * (string * string) list * xml list
@@ -77,17 +78,9 @@ let rec follow_param t =
 		| Some t -> follow_param t
 		| _ -> t)
 	| TType ({ t_path = [],"Null" } as t,tl) ->
-		follow_param (apply_params t.t_types tl t.t_type)
+		follow_param (apply_params t.t_params tl t.t_type)
 	| _ ->
 		t
-
-let rec sexpr (e,_) =
-	match e with
-	| EConst c -> s_constant c
-	| EParenthesis e -> "(" ^ (sexpr e) ^ ")"
-	| EArrayDecl el -> "[" ^ (String.concat "," (List.map sexpr el)) ^ "]"
-	| EObjectDecl fl -> "{" ^ (String.concat "," (List.map (fun (n,e) -> n ^ ":" ^ (sexpr e)) fl)) ^ "}"
-	| _ -> "'???'"
 
 let gen_meta meta =
 	let meta = List.filter (fun (m,_,_) -> match m with Meta.Used | Meta.MaybeUsed | Meta.RealPath -> false | _ -> true) meta in
@@ -95,18 +88,41 @@ let gen_meta meta =
 	| [] -> []
 	| _ ->
 		let nodes = List.map (fun (m,el,_) ->
-			node "m" ["n",fst (MetaInfo.to_string m)] (List.map (fun e -> node "e" [] [gen_string (sexpr e)]) el)
+			node "m" ["n",fst (MetaInfo.to_string m)] (List.map (fun e -> node "e" [] [gen_string (Ast.s_expr e)]) el)
 		) meta in
 		[node "meta" [] nodes]
 
-let rec gen_type t =
+let rec gen_type ?(values=None) t =
 	match t with
 	| TMono m -> (match !m with None -> tag "unknown" | Some t -> gen_type t)
 	| TEnum (e,params) -> gen_type_decl "e" (TEnumDecl e) params
 	| TInst (c,params) -> gen_type_decl "c" (TClassDecl c) params
 	| TAbstract (a,params) -> gen_type_decl "x" (TAbstractDecl a) params
 	| TType (t,params) -> gen_type_decl "t" (TTypeDecl t) params
-	| TFun (args,r) -> node "f" ["a",String.concat ":" (List.map gen_arg_name args)] (List.map gen_type (List.map (fun (_,opt,t) -> if opt then follow_param t else t) args @ [r]))
+	| TFun (args,r) ->
+		let names = String.concat ":" (List.map gen_arg_name args) in
+		let values = match values with
+			| None -> []
+			| Some values ->
+				let has_value = ref false in
+				let values = List.map (fun (n,_,_) ->
+					try
+						let e = PMap.find n values in
+						has_value := true;
+						let s = Ast.s_expr e in
+						s
+					with Not_found ->
+						""
+				) args in
+				if !has_value then
+					["v",String.concat ":" values]
+				else
+					[]
+		in
+		let args = List.map (fun (_,opt,t) ->
+			if opt then follow_param t else t
+		) args in
+		node "f" (("a",names) :: values) (List.map gen_type (args @ [r]))
 	| TAnon a -> node "a" [] (pmap (fun f -> gen_field [] { f with cf_public = false }) a.a_fields)
 	| TDynamic t2 -> node "d" [] (if t == t2 then [] else [gen_type t2])
 	| TLazy f -> gen_type (!f())
@@ -124,16 +140,40 @@ and gen_field att f =
 		| AccInline -> (name,"inline") :: att
 	in
 	let att = (match f.cf_expr with None -> att | Some e -> ("line",string_of_int (Lexer.get_error_line e.epos)) :: att) in
-	let att = (match f.cf_kind with
-		| Var v -> add_get_set v.v_read "get" (add_get_set v.v_write "set" att)
+	let att,values = (match f.cf_kind with
+		| Var v ->
+			let att = try
+				begin match Meta.get Meta.Value f.cf_meta with
+					| (_,[e],_) -> ("expr",Ast.s_expr e) :: att
+					| _ -> att
+				end
+			with Not_found ->
+				att
+			in
+			add_get_set v.v_read "get" (add_get_set v.v_write "set" att),PMap.empty
 		| Method m ->
-			(match m with
+			let att = match m with
 			| MethNormal | MethMacro -> ("set", "method") :: att
 			| MethDynamic -> ("set", "dynamic") :: att
-			| MethInline -> ("get", "inline") :: ("set","null") :: att)
+			| MethInline -> ("get", "inline") :: ("set","null") :: att
+			in
+			att,get_value_meta f.cf_meta
 	) in
 	let att = (match f.cf_params with [] -> att | l -> ("params", String.concat ":" (List.map (fun (n,_) -> n) l)) :: att) in
-	node f.cf_name (if f.cf_public then ("public","1") :: att else att) (gen_type f.cf_type :: gen_meta f.cf_meta @ gen_doc_opt f.cf_doc)
+	let overloads = match List.map (gen_field []) f.cf_overloads with
+		| [] -> []
+		| nl -> [node "overloads" [] nl]
+	in
+	let field_name cf =
+		try
+			begin match Meta.get Meta.RealPath cf.cf_meta with
+				| _,[EConst (String (s)),_],_ -> s
+				| _ -> raise Not_found
+			end;
+		with Not_found ->
+			cf.cf_name
+	in
+	node (field_name f) (if f.cf_public then ("public","1") :: att else att) (gen_type ~values:(Some values) f.cf_type :: gen_meta f.cf_meta @ gen_doc_opt f.cf_doc @ overloads)
 
 let gen_constr e =
 	let doc = gen_doc_opt e.ef_doc in
@@ -144,7 +184,16 @@ let gen_constr e =
 		| _ ->
 			[] , doc
 	) in
-	node e.ef_name args t
+	node e.ef_name args (t @ gen_meta e.ef_meta)
+
+let gen_ordered_constr e =
+	let rec loop el = match el with
+		| n :: el ->
+			gen_constr (PMap.find n e.e_constrs) :: loop el
+		| [] ->
+			[]
+	in
+	loop e.e_names
 
 let gen_type_params ipos priv path params pos m =
 	let mpriv = (if priv then [("private","1")] else []) in
@@ -161,14 +210,20 @@ let rec exists f c =
 			| None -> false
 			| Some (csup,_) -> exists f csup
 
-let gen_type_decl com pos t =
+let rec gen_type_decl com pos t =
 	let m = (t_infos t).mt_module in
 	match t with
 	| TClassDecl c ->
-		let stats = List.map (gen_field ["static","1"]) (List.filter (fun cf -> cf.cf_name <> "__meta__") c.cl_ordered_statics) in
+		let stats = List.filter (fun cf ->
+			cf.cf_name <> "__meta__" && not (Meta.has Meta.GenericInstance cf.cf_meta)
+		) c.cl_ordered_statics in
+		let stats = List.map (gen_field ["static","1"]) stats in
+		let fields = List.filter (fun cf ->
+			not (Meta.has Meta.GenericInstance cf.cf_meta)
+		) c.cl_ordered_fields in
 		let fields = (match c.cl_super with
-			| None -> List.map (fun f -> f,[]) c.cl_ordered_fields
-			| Some (csup,_) -> List.map (fun f -> if exists f csup then (f,["override","1"]) else (f,[])) c.cl_ordered_fields
+			| None -> List.map (fun f -> f,[]) fields
+			| Some (csup,_) -> List.map (fun f -> if exists f csup then (f,["override","1"]) else (f,[])) fields
 		) in
 		let fields = List.map (fun (f,att) -> gen_field att f) fields in
 		let constr = (match c.cl_constructor with None -> [] | Some f -> [gen_field [] f]) in
@@ -185,25 +240,32 @@ let gen_type_decl com pos t =
 			| None -> []
 			| Some t -> [node "haxe_dynamic" [] [gen_type t]]
 		) in
-		node "class" (gen_type_params pos c.cl_private (tpath t) c.cl_types c.cl_pos m @ ext @ interf) (tree @ stats @ fields @ constr @ doc @ meta @ dynamic)
+		node "class" (gen_type_params pos c.cl_private (tpath t) c.cl_params c.cl_pos m @ ext @ interf) (tree @ stats @ fields @ constr @ doc @ meta @ dynamic)
 	| TEnumDecl e ->
 		let doc = gen_doc_opt e.e_doc in
 		let meta = gen_meta e.e_meta in
-		node "enum" (gen_type_params pos e.e_private (tpath t) e.e_types e.e_pos m) (pmap gen_constr e.e_constrs @ doc @ meta)
+		node "enum" (gen_type_params pos e.e_private (tpath t) e.e_params e.e_pos m) (gen_ordered_constr e  @ doc @ meta)
 	| TTypeDecl t ->
 		let doc = gen_doc_opt t.t_doc in
 		let meta = gen_meta t.t_meta in
 		let tt = gen_type t.t_type in
-		node "typedef" (gen_type_params pos t.t_private t.t_path t.t_types t.t_pos m) (tt :: doc @ meta)
+		node "typedef" (gen_type_params pos t.t_private t.t_path t.t_params t.t_pos m) (tt :: doc @ meta)
 	| TAbstractDecl a ->
 		let doc = gen_doc_opt a.a_doc in
 		let meta = gen_meta a.a_meta in
-		let sub = (match a.a_from with [] -> [] | l -> [node "from" [] (List.map (fun (t,_) -> gen_type t) l)]) in
-		let super = (match a.a_to with [] -> [] | l -> [node "to" [] (List.map (fun (t,_) -> gen_type t) l)]) in
-		node "abstract" (gen_type_params pos a.a_private (tpath t) a.a_types a.a_pos m) (sub @ super @ doc @ meta)
+		let mk_cast t = node "icast" [] [gen_type t] in
+		let mk_field_cast (t,cf) = node "icast" ["field",cf.cf_name] [gen_type t] in
+		let sub = (match a.a_from,a.a_from_field with [],[] -> [] | l1,l2 -> [node "from" [] ((List.map mk_cast l1) @ (List.map mk_field_cast l2))]) in
+		let super = (match a.a_to,a.a_to_field with [],[] -> [] | l1,l2 -> [node "to" [] ((List.map mk_cast l1) @ (List.map mk_field_cast l2))]) in
+		let impl = (match a.a_impl with None -> [] | Some c -> [node "impl" [] [gen_type_decl com pos (TClassDecl c)]]) in
+		let this = [node "this" [] [gen_type a.a_this]] in
+		node "abstract" (gen_type_params pos a.a_private (tpath t) a.a_params a.a_pos m) (sub @ this @ super @ doc @ meta @ impl)
+
+let escape_entities s =
+	Xml.to_string (Xml.PCData s)
 
 let att_str att =
-	String.concat "" (List.map (fun (a,v) -> Printf.sprintf " %s=\"%s\"" a v) att)
+	String.concat "" (List.map (fun (a,v) -> Printf.sprintf " %s=\"%s\"" a (escape_entities v)) att)
 
 let rec write_xml ch tabs x =
 	match x with
@@ -257,9 +319,27 @@ let conv_path p =
 	| x :: l when x.[0] = '_' -> List.rev (("priv" ^ x) :: l), snd p
 	| _ -> p
 
+let get_real_path meta path =
+	try
+		let real_path = match Meta.get Meta.RealPath meta with
+			| (_,[(EConst(String s),_)],_) ->
+				s
+			| _ -> raise Not_found
+		in
+		match List.rev (String.nsplit real_path ".") with
+			| name :: pack ->
+				(List.rev pack), name
+			| _ -> raise Not_found
+	with | Not_found ->
+		path
+
+
 let generate_type com t =
 	let base_path = "hxclasses" in
-	let pack , name = conv_path (t_path t) in
+	let pack, name =
+		let info = t_infos t in
+		get_real_path info.mt_meta info.mt_path
+	in
 	create_dir "." (base_path :: pack);
 	match pack, name with
 	| ["flash";"net"], "NetStreamPlayTransitions"
@@ -283,8 +363,8 @@ let generate_type com t =
 		| _ ->
 			t
 	in
-	let rec path p tl =
-		let p = conv_path p in
+	let rec path meta p tl =
+		let p = conv_path (get_real_path meta p) in
 		(if fst p = pack then snd p else s_type_path p) ^ (match tl with [] -> "" | _ -> "<" ^ String.concat "," (List.map stype tl) ^ ">")
 	and stype t =
 		match t with
@@ -293,15 +373,15 @@ let generate_type com t =
 			| None -> "Unknown"
 			| Some t -> stype t)
 		| TInst ({ cl_kind = KTypeParameter _ } as c,tl) ->
-			path ([],snd c.cl_path) tl
+			path [] ([],snd c.cl_path) tl
 		| TInst (c,tl) ->
-			path c.cl_path tl
+			path c.cl_meta c.cl_path tl
 		| TEnum (e,tl) ->
-			path e.e_path tl
+			path e.e_meta e.e_path tl
 		| TType (t,tl) ->
-			path t.t_path tl
+			path t.t_meta t.t_path tl
 		| TAbstract (a,tl) ->
-			path a.a_path tl
+			path a.a_meta a.a_path tl
 		| TAnon a ->
 			let fields = PMap.fold (fun f acc -> (f.cf_name ^ " : " ^ stype f.cf_type) :: acc) a.a_fields [] in
 			"{" ^ String.concat ", " fields ^ "}"
@@ -331,33 +411,48 @@ let generate_type com t =
 		| None ->
 			n ^ " : " ^ stype t
 		| Some (Ident "null") ->
-			"?" ^ n ^ " : " ^ stype (notnull t)
+			if is_nullable (notnull t) then
+				"?" ^ n ^ " : " ^ stype (notnull t)
+			else
+				(* we have not found a default value stored in metadata, let's generate it *)
+				n ^ " : " ^ stype t ^ " = " ^ (match follow t with
+					| TAbstract ({ a_path = [],("Int"|"Float"|"UInt") },_) -> "0"
+					| TAbstract ({ a_path = [],"Bool" },_) -> "false"
+					| _ -> "null")
 		| Some v ->
 			n ^ " : " ^ stype t ^ " = " ^ (match s_constant v with "nan" -> "0./*NaN*/" | v -> v)
 	in
 	let print_meta ml =
 		List.iter (fun (m,pl,_) ->
 			match m with
-			| Meta.DefParam | Meta.CoreApi | Meta.Used | Meta.MaybeUsed -> ()
+			| Meta.DefParam | Meta.CoreApi | Meta.Used | Meta.MaybeUsed | Meta.FlatEnum | Meta.Value | Meta.DirectlyUsed -> ()
 			| _ ->
 			match pl with
 			| [] -> p "@%s " (fst (MetaInfo.to_string m))
-			| l -> p "@%s(%s) " (fst (MetaInfo.to_string m)) (String.concat "," (List.map sexpr pl))
+			| l -> p "@%s(%s) " (fst (MetaInfo.to_string m)) (String.concat "," (List.map Ast.s_expr pl))
 		) ml
 	in
-	let access a =
+	let access is_read a =
 		match a, pack with
 		| AccNever, "flash" :: _ -> "null"
-		| _ -> s_access a
+		| _ -> s_access is_read a
 	in
-	let print_field stat f =
+	let rec print_field stat f =
 		p "\t";
 		print_meta f.cf_meta;
 		if stat then p "static ";
+		let name = try (match Meta.get Meta.RealPath f.cf_meta with
+				| (Meta.RealPath, [EConst( String s ), _], _) ->
+					s
+				| _ ->
+					raise Not_found)
+			with Not_found ->
+				f.cf_name
+		in
 		(match f.cf_kind with
 		| Var v ->
-			p "var %s" f.cf_name;
-			if v.v_read <> AccNormal || v.v_write <> AccNormal then p "(%s,%s)" (access v.v_read) (access v.v_write);
+			p "var %s" name;
+			if v.v_read <> AccNormal || v.v_write <> AccNormal then p "(%s,%s)" (access true v.v_read) (access false v.v_write);
 			p " : %s" (stype f.cf_type);
 		| Method m ->
 			let params, ret = (match follow f.cf_type with
@@ -386,14 +481,15 @@ let generate_type com t =
 					assert false
 			) in
 			let tparams = (match f.cf_params with [] -> "" | l -> "<" ^ String.concat "," (List.map fst l) ^ ">") in
-			p "function %s%s(%s) : %s" f.cf_name tparams (String.concat ", " (List.map sparam params)) (stype ret);
+			p "function %s%s(%s) : %s" name tparams (String.concat ", " (List.map sparam params)) (stype ret);
 		);
-		p ";\n"
+		p ";\n";
+		if Meta.has Meta.Overload f.cf_meta then List.iter (fun f -> print_field stat f) f.cf_overloads
 	in
 	(match t with
 	| TClassDecl c ->
 		print_meta c.cl_meta;
-		p "extern %s %s" (if c.cl_interface then "interface" else "class") (stype (TInst (c,List.map snd c.cl_types)));
+		p "extern %s %s" (if c.cl_interface then "interface" else "class") (stype (TInst (c,List.map snd c.cl_params)));
 		let ext = (match c.cl_super with
 		| None -> []
 		| Some (c,pl) -> [" extends " ^ stype (TInst (c,pl))]
@@ -434,7 +530,7 @@ let generate_type com t =
 		p "}\n";
 	| TEnumDecl e ->
 		print_meta e.e_meta;
-		p "extern enum %s {\n" (stype (TEnum(e,List.map snd e.e_types)));
+		p "extern enum %s {\n" (stype (TEnum(e,List.map snd e.e_params)));
 		let sort l =
 			let a = Array.of_list l in
 			Array.sort compare a;
@@ -451,12 +547,12 @@ let generate_type com t =
 		p "}\n"
 	| TTypeDecl t ->
 		print_meta t.t_meta;
-		p "typedef %s = " (stype (TType (t,List.map snd t.t_types)));
+		p "typedef %s = " (stype (TType (t,List.map snd t.t_params)));
 		p "%s" (stype t.t_type);
 		p "\n";
 	| TAbstractDecl a ->
 		print_meta a.a_meta;
-		p "abstract %s {}" (stype (TAbstract (a,List.map snd a.a_types)));
+		p "abstract %s {}" (stype (TAbstract (a,List.map snd a.a_params)));
 	);
 	IO.close_out ch
 

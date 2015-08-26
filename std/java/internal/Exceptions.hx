@@ -24,6 +24,22 @@ import java.lang.Throwable;
 import java.lang.RuntimeException;
 import java.lang.Exception;
 
+@:native("haxe.lang.Exceptions")
+class Exceptions {
+	private static var exception = new java.lang.ThreadLocal<java.lang.Throwable>();
+
+	@:keep private static function setException(exc:Throwable)
+	{
+		exception.set(exc);
+	}
+
+	public static function currentException()
+	{
+		return exception.get();
+	}
+}
+
+@:classCode("public static final long serialVersionUID = 5956463319488556322L;")
 @:nativeGen @:keep @:native("haxe.lang.HaxeException") private class HaxeException extends RuntimeException
 {
 	private var obj:Dynamic;
@@ -46,6 +62,13 @@ import java.lang.Exception;
 		return obj;
 	}
 
+#if !debug
+	@:overload override public function fillInStackTrace():Throwable
+	{
+		return this;
+	}
+#end
+
 	@:overload override public function toString():String
 	{
 		return "Haxe Exception: " + obj;
@@ -53,14 +76,15 @@ import java.lang.Exception;
 
 	public static function wrap(obj:Dynamic):RuntimeException
 	{
-		if (Std.is(obj, RuntimeException))
-			return obj;
-
-		if (Std.is(obj, String))
-			return new HaxeException(obj, obj, null);
-		else if (Std.is(obj, Throwable))
-			return new HaxeException(obj, null, obj);
-
-		return new HaxeException(obj, null, null);
+		var ret:RuntimeException = null;
+ 		if (Std.is(obj, RuntimeException))
+			ret = obj;
+		else if (Std.is(obj, String))
+			ret = new HaxeException(obj, obj, null);
+ 		else if (Std.is(obj, Throwable))
+			ret = new HaxeException(obj, null, obj);
+		else
+			ret = new HaxeException(obj, null, null);
+		return ret;
 	}
 }

@@ -7,6 +7,7 @@ extern class AVStream extends flash.events.EventDispatcher {
 	var bufferTime(null,default) : Float;
 	var captionStyle(null,default) : AVCaptionStyle;
 	var captionsEnabled : Bool;
+	var clientLivePoint(default,null) : Float;
 	var currentFPS(default,null) : Float;
 	var decoderType(default,null) : String;
 	var droppedFrames(default,null) : Int;
@@ -19,12 +20,16 @@ extern class AVStream extends flash.events.EventDispatcher {
 	var volume : Float;
 	function new(source : AVSource) : Void;
 	function dispose() : Void;
+	function fastForward(rate : Float) : AVResult;
 	function pause() : AVResult;
 	function play() : AVResult;
 	function resume() : Bool;
+	function rewind(rate : Float) : AVResult;
 	function seek(offset : Float, inBufferSeek : Bool = true) : AVResult;
+	function seekToKeyFrame(offset : Float, inBufferSeek : Bool = true) : AVResult;
 	function seekToLivePoint() : AVResult;
 	function seekToLocalTime(periodIndex : Int, time : Float) : AVResult;
+	function setPlaySpeed(speed : Float, reserved : Float) : Void;
 	function step(frames : Int) : AVResult;
 	static var HARDWARE : String;
 	static var SOFTWARE : String;

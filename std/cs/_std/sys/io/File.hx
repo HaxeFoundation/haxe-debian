@@ -21,9 +21,6 @@
  */
 package sys.io;
 
-/**
-	API for reading and writing to files.
-**/
 @:coreApi
 class File {
 
@@ -59,7 +56,7 @@ class File {
 
 	public static function read( path : String, binary : Bool = true ) : FileInput
 	{
-		#if std-buffer //standardize 4kb buffers
+		#if std_buffer //standardize 4kb buffers
 		var stream = new cs.system.io.FileStream(path, Open, Read, ReadWrite, 4096);
 		#else
 		var stream = new cs.system.io.FileStream(path, Open, Read, ReadWrite);
@@ -69,7 +66,7 @@ class File {
 
 	public static function write( path : String, binary : Bool = true ) : FileOutput
 	{
-		#if std-buffer //standardize 4kb buffers
+		#if std_buffer //standardize 4kb buffers
 		var stream = new cs.system.io.FileStream(path, Create, Write, ReadWrite, 4096);
 		#else
 		var stream = new cs.system.io.FileStream(path, Create, Write, ReadWrite);
@@ -79,7 +76,7 @@ class File {
 
 	public static function append( path : String, binary : Bool = true ) : FileOutput
 	{
-		#if std-buffer //standardize 4kb buffers
+		#if std_buffer //standardize 4kb buffers
 		var stream = new cs.system.io.FileStream(path, Append, Write, ReadWrite, 4096);
 		#else
 		var stream = new cs.system.io.FileStream(path, Append, Write, ReadWrite);
@@ -87,8 +84,8 @@ class File {
 		return new FileOutput(stream);
 	}
 
-	public static function copy( src : String, dst : String ) : Void
+	public static function copy( srcPath : String, dstPath : String ) : Void
 	{
-		cs.system.io.File.Copy(src, dst);
+		cs.system.io.File.Copy(srcPath, dstPath);
 	}
 }
