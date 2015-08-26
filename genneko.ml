@@ -35,6 +35,7 @@ type context = {
 	mutable curclass : string;
 	mutable curmethod : string;
 	mutable inits : (tclass * texpr) list;
+	mutable label_count : int;
 }
 
 let files = Hashtbl.create 0
@@ -50,20 +51,25 @@ let pos ctx p =
 		| false ->
 			try
 				Hashtbl.find files p.pfile
-			with Not_found -> try
-				(* lookup relative path *)
-				let len = String.length p.pfile in
-				let base = List.find (fun path ->
-					let l = String.length path in
-					len > l && String.sub p.pfile 0 l = path
-				) ctx.com.Common.class_path in
-				let l = String.length base in
-				let path = String.sub p.pfile l (len - l) in
+			with Not_found ->
+				let path = (match Common.defined ctx.com Common.Define.AbsolutePath with
+				| true -> if (Filename.is_relative p.pfile)
+					then Filename.concat (Sys.getcwd()) p.pfile
+					else p.pfile
+				| false -> try
+					(* lookup relative path *)
+					let len = String.length p.pfile in
+					let base = List.find (fun path ->
+						let l = String.length path in
+						len > l && String.sub p.pfile 0 l = path
+					) ctx.com.Common.class_path in
+					let l = String.length base in
+					String.sub p.pfile l (len - l)
+
+					with Not_found -> p.pfile
+				) in
 				Hashtbl.add files p.pfile path;
 				path
-			with Not_found ->
-				Hashtbl.add files p.pfile p.pfile;
-				p.pfile
 	) in
 	{
 		psource = file;
@@ -242,12 +248,16 @@ and gen_expr ctx e =
 					call p (ident p ("@closure" ^ string_of_int n)) [tmp;ident p "@fun"]
 			] , p
 		| _ -> assert false)
+	| TEnumParameter (e,_,i) ->
+		EArray (field p (gen_expr ctx e) "args",int p i),p
 	| TField (e,f) ->
 		field p (gen_expr ctx e) (field_name f)
 	| TTypeExpr t ->
 		gen_type_path p (t_path t)
 	| TParenthesis e ->
 		(EParenthesis (gen_expr ctx e),p)
+	| TMeta (_,e) ->
+		gen_expr ctx e
 	| TObjectDecl fl ->
 		let hasToString = ref false in
 		let fl = List.map (fun (f,e) -> if f = "toString" then hasToString := (match follow e.etype with TFun ([],_) -> true | _ -> false); f , gen_expr ctx e) fl in
@@ -260,9 +270,9 @@ and gen_expr ctx e =
 		call p (field p (gen_type_path p c.cl_path) "new") (List.map (gen_expr ctx) params)
 	| TUnop (op,flag,e) ->
 		gen_unop ctx p op flag e
-	| TVars vl ->
-		(EVars (List.map (fun (v,e) ->
-			let e = (match e with
+	| TVar (v,eo) ->
+		(EVars (
+			let e = (match eo with
 				| None ->
 					if v.v_capture then
 						Some (call p (builtin p "array") [null p])
@@ -275,8 +285,8 @@ and gen_expr ctx e =
 					else
 						Some e
 			) in
-			v.v_name , e
-		) vl),p)
+			[v.v_name, e]
+		),p)
 	| TFunction f ->
 		let inits = List.fold_left (fun acc (a,c) ->
 			let acc = if a.v_capture then
@@ -322,6 +332,7 @@ and gen_expr ctx e =
 				let path = (match follow v.v_type with
 					| TInst (c,_) -> Some c.cl_path
 					| TEnum (e,_) -> Some e.e_path
+					| TAbstract (a,_) -> Some a.a_path
 					| TDynamic _ -> None
 					| _ -> assert false
 				) in
@@ -359,64 +370,6 @@ and gen_expr ctx e =
 		gen_expr ctx e
 	| TCast (e1,Some t) ->
 		gen_expr ctx (Codegen.default_cast ~vtmp:"@tmp" ctx.com e1 t e.etype e.epos)
-	| TMatch (e,_,cases,eo) ->
-		let p = pos ctx e.epos in
-		let etmp = (EVars ["@tmp",Some (gen_expr ctx e)],p) in
-		let eindex = field p (ident p "@tmp") "index" in
-		let gen_params params e =
-			match params with
-			| None ->
-				gen_expr ctx e
-			| Some el ->
-				let count = ref (-1) in
-				let vars = List.fold_left (fun acc v ->
-					incr count;
-					match v with
-					| None ->
-						acc
-					| Some v ->
-						let e = (EArray (ident p "@tmp",int p (!count)),p) in
-						let e = (if v.v_capture then call p (builtin p "array") [e] else e) in
-						(v.v_name , Some e) :: acc
-				) [] el in
-				let e = gen_expr ctx e in
-				(EBlock [
-					(EVars ["@tmp",Some (field p (ident p "@tmp") "args")],p);
-					(match vars with [] -> null p | _ -> EVars vars,p);
-					e
-				],p)
-		in
-		(try
-		  (EBlock [
-			etmp;
-			(ESwitch (
-				eindex,
-				List.map (fun (cl,params,e2) ->
-					let cond = match cl with
-						| [s] -> int p s
-						| _ -> raise Exit
-					in
-					cond , gen_params params e2
-				) cases,
-				(match eo with None -> None | Some e -> Some (gen_expr ctx e))
-			),p)
-		  ],p)
-		with
-			Exit ->
-				(EBlock [
-					etmp;
-					(EVars ["@index",Some eindex],p);
-					List.fold_left (fun acc (cl,params,e2) ->
-						let cond = (match cl with
-							| [] -> assert false
-							| c :: l ->
-								let eq c = (EBinop ("==",ident p "@index",int p c),p) in
-								List.fold_left (fun acc c -> (EBinop ("||",acc,eq c),p)) (eq c) l
-						) in
-						EIf (cond,gen_params params e2,Some acc),p
-					) (match eo with None -> null p | Some e -> (gen_expr ctx e)) (List.rev cases)
-				],p)
-		)
 	| TSwitch (e,cases,eo) ->
 		let e = gen_expr ctx e in
 		let eo = (match eo with None -> None | Some e -> Some (gen_expr ctx e)) in
@@ -470,9 +423,9 @@ let gen_class ctx c =
 	let stpath = gen_type_path p c.cl_path in
 	let fnew = (match c.cl_constructor with
 	| Some f ->
-		(match follow f.cf_type with
-		| TFun (args,_) ->
-			let params = List.map (fun (n,_,_) -> n) args in
+		(match f.cf_expr with
+		| Some {eexpr = TFunction tf} ->
+			let params = List.map (fun (v,_) -> v.v_name) tf.tf_args in
 			gen_method ctx p f ["new",(EFunction (params,(EBlock [
 				(EVars ["@o",Some (call p (builtin p "new") [null p])],p);
 				(call p (builtin p "objsetproto") [ident p "@o"; clpath]);
@@ -686,7 +639,7 @@ let gen_name ctx acc t =
 		in
 		setname :: setconstrs :: meta @ acc
 	| TClassDecl c ->
-		if c.cl_extern then
+		if c.cl_extern || (match c.cl_kind with KTypeParameter _ -> true | _ -> false) then
 			acc
 		else
 			let p = pos ctx c.cl_pos in
@@ -710,9 +663,17 @@ let generate_libs_init = function
 			var @b = if( @s == "Windows" )
 				@env("HAXEPATH") + "\\lib\\"
 				else try $loader.loadprim("std@file_contents",1)(@env("HOME")+"/.haxelib") + "/"
-				catch e if( @s == "Linux" ) "/usr/lib/haxe/lib/" else "/usr/local/lib/haxe/lib/";
+				catch e
+					if( @s == "Linux" )
+						if( $loader(loadprim("std@sys_exists",1))("/usr/lib/haxe/lib") )
+							"/usr/lib/haxe/lib"
+						else
+							"/usr/share/haxe/lib/"
+					else
+						"/usr/local/lib/haxe/lib/";
+			if( try $loader.loadprim("std@sys_file_type",1)(".haxelib") == "dir" catch e false ) @b = $loader.loadprim("std@file_full_path",1)(".haxelib") + "/";
 			if( $loader.loadprim("std@sys_is64",0)() ) @s = @s + 64;
-			@s = @s + "/"
+			@b = @b + "/"
 		*)
 		let p = null_pos in
 		let es = ident p "@s" in
@@ -729,15 +690,18 @@ let generate_libs_init = function
 				"@b", Some (EIf (op "==" es (str p "Windows"),
 					op "+" (call p (ident p "@env") [str p "HAXEPATH"]) (str p "\\lib\\"),
 					Some (ETry (
-						op "+" (call p (loadp "file_contents" 1) [op "+" (call p (ident p "@env") [str p "HOME"]) (str p "./haxelib")]) (str p "/"),
+						op "+" (call p (loadp "file_contents" 1) [op "+" (call p (ident p "@env") [str p "HOME"]) (str p "/.haxelib")]) (str p "/"),
 						"e",
 						(EIf (op "==" es (str p "Linux"),
-							str p "/usr/lib/haxe/lib/",
+							(EIf (call p (loadp "sys_exists" 1) [ str p "/usr/lib/haxe/lib" ],
+								str p "/usr/lib/haxe/lib/",
+								Some (str p "/usr/share/haxe/lib/")),p),
 							Some (str p "/usr/local/lib/haxe/lib/")
 						),p)
 					),p)
 				),p);
 			],p);
+			(EIf ((ETry (op "==" (call p (loadp "sys_file_type" 1) [str p ".haxelib"]) (str p "dir"),"e",(EConst False,p)),p),op "=" (ident p "@b") (op "+" (call p (loadp "file_full_path" 1) [str p ".haxelib"]) (str p "/")), None),p);
 			(EIf (call p (loadp "sys_is64" 0) [],op "=" es (op "+" es (int p 64)),None),p);
 			op "=" es (op "+" es (str p "/"));
 		] in
@@ -747,7 +711,7 @@ let generate_libs_init = function
 			let dstr = str p dir in
 			(*
 				// for each lib dir
-				$loader.path = $array($loader.path,dir+@s);
+				$loader.path = $array($loader.path,@b+dir+@s);
 			*)
 			op "=" lpath (call p (builtin p "array") [op "+" (if full_path then dstr else op "+" (ident p "@b") dstr) (ident p "@s"); lpath])
 		) libs
@@ -763,6 +727,7 @@ let new_context com ver macros =
 		curclass = "$boot";
 		curmethod = "$init";
 		inits = [];
+		label_count = 0;
 	}
 
 let header() =
@@ -827,12 +792,14 @@ let generate com =
 	let use_nekoc = Common.defined com Define.UseNekoc in
 	if not use_nekoc then begin
 		try
+			mkdir_from_path com.file;
 			let ch = IO.output_channel (open_out_bin com.file) in
 			Nbytecode.write ch (Ncompile.compile ctx.version e);
 			IO.close_out ch;
 		with Ncompile.Error (msg,pos) ->
+			let pfile = Common.find_file com pos.psource in
 			let rec loop p =
-				let pp = { pfile = pos.psource; pmin = p; pmax = p; } in
+				let pp = { pfile = pfile; pmin = p; pmax = p; } in
 				if Lexer.get_error_line pp >= pos.pline then
 					pp
 				else

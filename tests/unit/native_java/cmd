@@ -1,0 +1,10 @@
+src/haxe/test/OverloadInterface1.java
+src/haxe/test/OverloadInterface2.java
+src/haxe/test/MyClass.java
+src/haxe/test/TEnum.java
+src/haxe/test/Base.java
+src/haxe/test/Generic1.java
+src/haxe/test/GenericHelper.java
+src/haxe/test/StaticAndInstanceClash.java
+src/haxe/UpperCasePackage/SomeClass.java
+src/haxe/UpperCasePackage/lowercase.java

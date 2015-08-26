@@ -134,7 +134,7 @@ let build_class com c file =
 		} in
 		(path.tpackage, [(ETypedef inf,pos)])
 	| _ ->
-  (* make flags *)
+	(* make flags *)
 	let flags = [HExtern] in
 	let flags = if c.hlc_interface then HInterface :: flags else flags in
 	let flags = (match c.hlc_super with
@@ -157,7 +157,7 @@ let build_class com c file =
 		if c.hlc_interface then HExtends (make_tpath i) else HImplements (make_tpath i)
 	) (Array.to_list c.hlc_implements) @ flags in
 	let flags = if c.hlc_sealed || Common.defined com Define.FlashStrict then flags else HImplements (make_tpath (HMPath ([],"Dynamic"))) :: flags in
-  (* make fields *)
+	(* make fields *)
 	let getters = Hashtbl.create 0 in
 	let setters = Hashtbl.create 0 in
 	let override = Hashtbl.create 0 in
@@ -243,7 +243,7 @@ let build_class com c file =
 							| HVInt i | HVUInt i ->
 								Some (Int (Int32.to_string i))
 							| HVFloat f ->
-								Some (Float (string_of_float f))
+								Some (Float (float_repres f))
 							) in
 							match v with
 							| None -> None
@@ -458,7 +458,7 @@ let remove_debug_infos as3 =
 
 let parse_swf com file =
 	let t = Common.timer "read swf" in
-	let is_swc = file_extension file = "swc" in
+	let is_swc = file_extension file = "swc" || file_extension file = "ane" in
 	let file = (try Common.find_file com file with Not_found -> failwith ((if is_swc then "SWC" else "SWF") ^ " Library not found : " ^ file)) in
 	let ch = if is_swc then begin
 		let zip = Zip.open_in file in
@@ -483,7 +483,7 @@ let parse_swf com file =
 	IO.close_in ch;
 	List.iter (fun t ->
 		match t.tdata with
-		| TActionScript3 (id,as3) when not com.debug && not com.display ->
+		| TActionScript3 (id,as3) when not com.debug && com.display = DMNone ->
 			t.tdata <- TActionScript3 (id,remove_debug_infos as3)
 		| _ -> ()
 	) tags;
@@ -525,25 +525,6 @@ let tag ?(ext=false) d = {
 	tdata = d;
 }
 
-let swf_ver = function
-	| 6. -> 6
-	| 7. -> 7
-	| 8. -> 8
-	| 9. -> 9
-	| 10. | 10.1 -> 10
-	| 10.2 -> 11
-	| 10.3 -> 12
-	| 11. -> 13
-	| 11.1 -> 14
-	| 11.2 -> 15
-	| 11.3 -> 16
-	| 11.4 -> 17
-	| 11.5 -> 18
-	| 11.6 -> 19
-	| 11.7 -> 20
-	| 11.8 -> 21
-	| v -> failwith ("Invalid SWF version " ^ string_of_float v)
-
 let convert_header com (w,h,fps,bg) =
 	let high = (max w h) * 20 in
 	let rec loop b =
@@ -551,7 +532,7 @@ let convert_header com (w,h,fps,bg) =
 	in
 	let bits = loop 0 in
 	{
-		h_version = swf_ver com.flash_version;
+		h_version = Common.flash_version_tag com.flash_version;
 		h_size = {
 			rect_nbits = bits + 1;
 			left = 0;
@@ -587,7 +568,8 @@ let build_dependencies t =
 			(match c.cl_kind with KTypeParameter _ -> () | _ -> add_path c.cl_path DKType);
 			List.iter (add_type_rec (t::l)) pl;
 		| TAbstract (a,pl) ->
-			add_path a.a_path DKType;
+			if Meta.has Meta.CoreType a.a_meta then
+				add_path a.a_path DKType;
 			List.iter (add_type_rec (t::l)) pl;
 		| TFun (pl,t2) ->
 			List.iter (fun (_,_,t2) -> add_type_rec (t::l) t2) pl;
@@ -622,13 +604,12 @@ let build_dependencies t =
 			add_type v.v_type;
 			add_expr e1;
 			add_expr e2;
-		| TVars vl ->
-			List.iter (fun (v,e) ->
+		| TVar (v,eo) ->
 				add_type v.v_type;
-				match e with
+			begin match eo with
 				| None -> ()
 				| Some e -> add_expr e
-			) vl
+			end
 		| _ ->
 			Type.iter add_expr e
 	and add_field f =
@@ -662,7 +643,7 @@ let build_dependencies t =
 			match follow t with
 			| TInst (c,_) -> List.iter add_inherit c.cl_implements
 			| _ -> ()
-		) c.cl_types;
+		) c.cl_params;
 		List.iter add_inherit c.cl_implements;
 	| TEnumDecl e when not e.e_extern ->
 		PMap.iter (fun _ f -> add_type f.ef_type) e.e_constrs;
@@ -702,7 +683,7 @@ let build_swc_catalog com types =
 	let x = node "swc" ["xmlns","http://www.adobe.com/flash/swccatalog/9"] [
 		node "versions" [] [
 			node "swc" ["version","1.2"] [];
-			node "haxe" ["version",Printf.sprintf "%d.%.2d" (com.version/100) (com.version mod 100)] [];
+			node "haxe" ["version",Printf.sprintf "%d.%.2d" (com.version/10000) (com.version mod 10000)] [];
 		];
 		node "features" [] [
 			node "feature-script-deps" [] [];
@@ -749,35 +730,6 @@ let remove_classes toremove lib hcl =
 			toremove := List.filter (fun p -> not (List.mem p classes)) !toremove;
 			fst lib, tags (snd lib)
 
-let build_swf8 com codeclip exports =
-	let code, clips = Genswf8.generate com in
-	let cid = ref 0 in
-	let clips = List.fold_left (fun acc m ->
-		let ename = Ast.s_type_path m in
-		if Hashtbl.mem exports ename then
-			acc
-		else begin
-			incr cid;
-			tag ~ext:true (TClip { c_id = !cid; c_frame_count = 1; c_tags = [] }) ::
-			tag ~ext:true (TExport [{ exp_id = !cid; exp_name = ename }]) ::
-			acc
-		end;
-	) [] clips in
-	let code = (match codeclip with
-		| None -> List.map tag code
-		| Some link ->
-			incr cid;
-			[
-				tag (TClip {
-					c_id = !cid;
-					c_frame_count = 1;
-					c_tags = List.map tag code @ [tag TShowFrame];
-				});
-				tag (TExport [{ exp_id = !cid; exp_name = link }]);
-			]
-	) in
-	clips @ code
-
 type file_format =
 	| BJPG
 	| BPNG
@@ -795,6 +747,8 @@ let detect_format data p =
 	| 'G', 'I', 'F' -> BGIF
 	| _ ->
 		error "Unknown file format" p
+
+open TTFData
 
 let build_swf9 com file swc =
 	let boot_name = if swc <> None || Common.defined com Define.HaxeBoot then "haxe" else "boot_" ^ (String.sub (Digest.to_hex (Digest.string (Filename.basename file))) 0 4) in
@@ -820,7 +774,7 @@ let build_swf9 com file swc =
 				hls_fields = [|f|];
 			}
 		) code in
-		[tag (TActionScript3 (None,As3hlparse.flatten inits))]
+		[tag (TActionScript3 ((if Common.defined com Define.SwfUseDoAbc then Some(1,boot_name) else None), As3hlparse.flatten inits))]
 	) in
 	let cid = ref 0 in
 	let classes = ref [{ f9_cid = None; f9_classname = boot_name }] in
@@ -844,13 +798,33 @@ let build_swf9 com file swc =
 				| (Meta.Font,(EConst (String file),p) :: args,_) :: l ->
 					let file = try Common.find_file com file with Not_found -> file in
 					let ch = try open_in_bin file with _ -> error "File not found" p in
-					let ttf = TTFParser.parse ch in
+					let ttf = try TTFParser.parse ch with e -> error ("Error while parsing font " ^ file ^ " : " ^ Printexc.to_string e) p in
 					close_in ch;
-					let range_str = match args with
-						| [EConst (String str),_] -> str
-						| _ -> ""
+					let get_string e = match fst e with
+						| EConst (String s) -> Some s
+						| _ -> raise Not_found
 					in
-					let ttf_swf = TTFSwfWriter.to_swf ttf range_str in
+					let ttf_config = {
+						ttfc_range_str = "";
+						ttfc_font_name = None;
+					} in
+					begin match args with
+						| (EConst (String str),_) :: _ -> ttf_config.ttfc_range_str <- str;
+						| _ -> ()
+					end;
+					begin match args with
+						| _ :: [e] ->
+							begin match fst e with
+								| EObjectDecl fl ->
+									begin try ttf_config.ttfc_font_name <- get_string (List.assoc "fontName" fl)
+									with Not_found -> () end
+								| _ ->
+									()
+							end
+						| _ ->
+							()
+					end;
+					let ttf_swf = TTFSwfWriter.to_swf ttf ttf_config in
 					let ch = IO.output_string () in
 					let b = IO.output_bits ch in
 					TTFSwfWriter.write_font2 ch b ttf_swf;
@@ -1030,10 +1004,10 @@ let build_swf9 com file swc =
 	res @ bmp @ code @ clips
 
 let merge com file priority (h1,tags1) (h2,tags2) =
-  (* prioritize header+bgcolor for first swf *)
-	let header = if priority then { h2 with h_version = max h2.h_version (swf_ver com.flash_version) } else h1 in
+	(* prioritize header+bgcolor for first swf *)
+	let header = if priority then { h2 with h_version = max h2.h_version (Common.flash_version_tag com.flash_version) } else h1 in
 	let tags1 = if priority then List.filter (function { tdata = TSetBgColor _ } -> false | _ -> true) tags1 else tags1 in
-  (* remove unused tags *)
+	(* remove unused tags *)
 	let use_stage = priority && Common.defined com Define.FlashUseStage in
 	let classes = ref [] in
 	let nframe = ref 0 in
@@ -1059,12 +1033,11 @@ let merge com file priority (h1,tags1) (h2,tags2) =
 			classes := !classes @ List.map (fun e -> { f9_cid = Some e.exp_id; f9_classname = e.exp_name }) el;
 			false
 		| TF9Classes el when !nframe = 0 ->
-			if com.flash_version < 9. then failwith "You can't use AS3 SWF with Flash8 target";
 			classes := !classes @ List.filter (fun e -> e.f9_cid <> None) el;
 			false
 		| _ -> true
 	) tags2 in
-  (* rebuild character ids *)
+(* rebuild character ids *)
 	let max_id = ref (-1) in
 	List.iter (SwfParser.scan (fun id -> if id > !max_id then max_id := id; id) (fun id -> id)) tags1;
 	incr max_id;
@@ -1076,7 +1049,7 @@ let merge com file priority (h1,tags1) (h2,tags2) =
 	in
 	List.iter loop tags2;
 	let classes = List.map (fun e -> match e.f9_cid with None -> e | Some id -> { e with f9_cid = Some (id + !max_id) }) !classes in
-  (* merge timelines *)
+	(* merge timelines *)
 	let rec loop l1 l2 =
 		match l1, l2 with
 		| ({ tdata = TSetBgColor _ } as t) :: l1, _
@@ -1105,11 +1078,9 @@ let merge com file priority (h1,tags1) (h2,tags2) =
 
 let generate com swf_header =
 	let t = Common.timer "generate swf" in
-	let isf9 = com.flash_version >= 9. in
 	let swc = if Common.defined com Define.Swc then Some (ref "") else None in
-	if swc <> None && not isf9 then failwith "SWC support is only available for Flash9+";
 	let file , codeclip = (try let f , c = ExtString.String.split com.file "@" in f, Some c with _ -> com.file , None) in
-  (* list exports *)
+	(* list exports *)
 	let exports = Hashtbl.create 0 in
 	let toremove = ref [] in
 	List.iter (fun (file,lib,_) ->
@@ -1140,8 +1111,8 @@ let generate com swf_header =
 			| _ -> ()
 		) tags;
 	) com.swf_libs;
-  (* build haxe swf *)
-	let tags = if isf9 then build_swf9 com file swc else build_swf8 com codeclip exports in
+	(* build haxe swf *)
+	let tags = build_swf9 com file swc in
 	let header, bg = (match swf_header with None -> default_header com | Some h -> convert_header com h) in
 	let bg = tag (TSetBgColor { cr = bg lsr 16; cg = (bg lsr 8) land 0xFF; cb = bg land 0xFF }) in
 	let swf_debug_password = try
@@ -1149,7 +1120,7 @@ let generate com swf_header =
 	with Not_found ->
 		""
 	in
-	let debug = (if isf9 && Common.defined com Define.Fdb then [tag (TEnableDebugger2 (0, swf_debug_password))] else []) in
+	let debug = (if Common.defined com Define.Fdb then [tag (TEnableDebugger2 (0, swf_debug_password))] else []) in
 	let meta_data =
 		try
 			let file = Common.defined_value com Define.SwfMetadata in
@@ -1162,18 +1133,13 @@ let generate com swf_header =
 	let fattr = (if com.flash_version < 8. then [] else
 		[tag (TFilesAttributes {
 			fa_network = Common.defined com Define.NetworkSandbox;
-			fa_as3 = isf9;
+			fa_as3 = true;
 			fa_metadata = meta_data <> [];
 			fa_gpu = com.flash_version > 9. && Common.defined com Define.SwfGpu;
 			fa_direct_blt = com.flash_version > 9. && Common.defined com Define.SwfDirectBlit;
 		})]
 	) in
 	let fattr = if Common.defined com Define.AdvancedTelemetry then fattr @ [tag (TUnknown (0x5D,"\x00\x00"))] else fattr in
-	let preframe, header =
-		if Common.defined com Define.SwfPreloaderFrame then
-			[tag TShowFrame], {h_version=header.h_version; h_size=header.h_size; h_frame_count=header.h_frame_count+1; h_fps=header.h_fps; h_compressed=header.h_compressed; }
-		else
-			[], header in
 	let swf_script_limits = try
 		let s = Common.defined_value com Define.SwfScriptTimeout in
 		let i = try int_of_string s with _ -> error "Argument to swf_script_timeout must be an integer" Ast.null_pos in
@@ -1181,16 +1147,26 @@ let generate com swf_header =
 	with Not_found ->
 		[]
 	in
-	let swf = header, fattr @ meta_data @ bg :: debug @ swf_script_limits @ preframe @ tags @ [tag TShowFrame] in
-  (* merge swf libraries *)
+	let swf = header, fattr @ meta_data @ bg :: debug @ swf_script_limits @ tags @ [tag TShowFrame] in
+	(* merge swf libraries *)
 	let priority = ref (swf_header = None) in
 	let swf = List.fold_left (fun swf (file,lib,cl) ->
 		let swf = merge com file !priority swf (remove_classes toremove lib cl) in
 		priority := false;
 		swf
 	) swf com.swf_libs in
+	let swf = match swf with
+	| header,tags when Common.defined com Define.SwfPreloaderFrame ->
+		let rec loop l =
+			match l with
+			| ({tdata = TFilesAttributes _ | TUnknown (0x5D,"\x00\x00") | TMetaData _ | TSetBgColor _ | TEnableDebugger2 _ | TScriptLimits _} as t) :: l -> t :: loop l
+			| t :: l -> tag TShowFrame :: t :: l
+			| [] -> []
+		in
+		{header with h_frame_count = header.h_frame_count + 1},loop tags
+	| _ -> swf in
 	t();
-  (* write swf/swc *)
+	(* write swf/swc *)
 	let t = Common.timer "write swf" in
 	let level = (try int_of_string (Common.defined_value com Define.SwfCompressLevel) with Not_found -> 9) in
 	SwfParser.init Extc.input_zip (Extc.output_zip ~level);

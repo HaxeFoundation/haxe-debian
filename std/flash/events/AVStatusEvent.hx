@@ -6,6 +6,8 @@ extern class AVStatusEvent extends Event {
 	var result(default,null) : flash.media.AVResult;
 	function new(?type : String, bubbles : Bool = false, cancelable : Bool = false, ?inNotificationType : String, inResult : Int = 0, ?inDescription : String) : Void;
 	static var AV_STATUS : String;
+	static var BACKGROUND_MANIFEST_ERROR : String;
+	static var BACKGROUND_MANIFEST_WARNING : String;
 	static var BUFFER_STATE : String;
 	static var DECODER_TYPE : String;
 	static var DIMENSION_CHANGE : String;
@@ -18,5 +20,6 @@ extern class AVStatusEvent extends Event {
 	static var SEEK_COMPLETE : String;
 	static var STEP_COMPLETE : String;
 	static var STREAM_SWITCH : String;
+	static var TRICKPLAY_ENDED : String;
 	static var WARNING : String;
 }

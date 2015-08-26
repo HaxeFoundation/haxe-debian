@@ -1,3 +1,25 @@
+(*
+ * Copyright (C)2005-2014 Haxe Foundation
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ *)
+
 open TTFData
 open Swf
 
@@ -162,11 +184,11 @@ let write_font2 ch b f2 =
 	Array.iter (fun g -> SwfParser.write_rect ch g.font_bounds;) f2.font_layout.font_glyphs_layout;
 	IO.write_ui16 ch 0 (* TODO: optional FontKerningTable *)
 
-let to_swf ttf range_str =
+let to_swf ttf config =
 	let ctx = {
 		ttf = ttf;
 	} in
-	let lut = TTFTools.build_lut ttf range_str in
+	let lut = TTFTools.build_lut ttf config.ttfc_range_str in
 	let glyfs = Hashtbl.fold (fun k v acc -> (k,ctx.ttf.ttf_glyfs.(v)) :: acc) lut [] in
 	let glyfs = List.stable_sort (fun a b -> compare (fst a) (fst b)) glyfs in
 	let glyfs = List.map (fun (k,g) -> write_glyph ctx k g) glyfs in
@@ -181,7 +203,7 @@ let to_swf ttf range_str =
 		font_is_italic = false;
 		font_is_bold = false;
 		font_language = LCNone;
-		font_name = ttf.ttf_font_name;
+		font_name = (match config.ttfc_font_name with Some s -> s | None -> ttf.ttf_font_name);
 		font_glyphs = glyfs;
 		font_layout = glyfs_font_layout;
 	}

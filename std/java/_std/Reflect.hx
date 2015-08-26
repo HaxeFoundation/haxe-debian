@@ -19,227 +19,117 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-import java.internal.Function;
-import java.Boot;
-/*
- * Copyright (c) 2005, The haXe Project Contributors
- * All rights reserved.
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *   - Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *   - Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE HAXE PROJECT CONTRIBUTORS "AS IS" AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE HAXE PROJECT CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
- * DAMAGE.
- */
 
-/**
-	The Reflect API is a way to manipulate values dynamicly through an
-	abstract interface in an untyped manner. Use with care.
-**/
+import java.internal.Function;
+import java.internal.HxObject;
+import java.internal.Runtime;
+import java.Boot;
+
 @:keep @:coreApi class Reflect {
 
-	/**
-		Tells if an object has a field set. This doesn't take into account the object prototype (class methods).
-	**/
-	@:functionCode('
-		if (o instanceof haxe.lang.IHxObject)
-		return ((haxe.lang.IHxObject) o).__hx_getField(field, false, true, false) != haxe.lang.Runtime.undefined;
-
-		return haxe.lang.Runtime.slowHasField(o, field);
-	')
 	public static function hasField( o : Dynamic, field : String ) : Bool
 	{
-		return false;
+		if (Std.is(o, IHxObject)) {
+			return untyped (o : IHxObject).__hx_getField(field, false, true, false) != Runtime.undefined;
+		}
+		return Runtime.slowHasField(o, field);
 	}
 
-	/**
-		Returns the field of an object, or null if [o] is not an object or doesn't have this field.
-	**/
-	@:functionCode('
-		if (o instanceof haxe.lang.IHxObject)
-			return ((haxe.lang.IHxObject) o).__hx_getField(field, false, false, false);
-
-		return haxe.lang.Runtime.slowGetField(o, field, false);
-	')
 	public static function field( o : Dynamic, field : String ) : Dynamic
 	{
-		return null;
+		if (Std.is(o, IHxObject)) {
+			return untyped (o : IHxObject).__hx_getField(field, false, false, false);
+		}
+		return Runtime.slowGetField(o, field, false);
 	}
 
-
-	/**
-		Set an object field value.
-	**/
-	@:functionCode('
-		if (o instanceof haxe.lang.IHxObject)
-			((haxe.lang.IHxObject) o).__hx_setField(field, value, false);
-		else
-			haxe.lang.Runtime.slowSetField(o, field, value);
-	')
 	public static function setField( o : Dynamic, field : String, value : Dynamic ) : Void
 	{
-
+		if (Std.is(o, IHxObject)) {
+			untyped (o : IHxObject).__hx_setField(field, value, false);
+		} else {
+			Runtime.slowSetField(o, field, value);
+		}
 	}
 
-	/**
-		Similar to field but also supports property (might be slower).
-	**/
-	@:functionCode('
-		if (o instanceof haxe.lang.IHxObject)
-			return ((haxe.lang.IHxObject) o).__hx_getField(field, false, false, true);
-
-		if (haxe.lang.Runtime.slowHasField(o, "get_" + field))
-			return haxe.lang.Runtime.slowCallField(o, "get_" + field, null);
-
-		return haxe.lang.Runtime.slowGetField(o, field, false);
-	')
 	public static function getProperty( o : Dynamic, field : String ) : Dynamic
 	{
-		return null;
+		if (Std.is(o, IHxObject)) {
+			return untyped (o : IHxObject).__hx_getField(field, false, false, true);
+		}
+		if (Runtime.slowHasField(o, "get_" + field)) {
+			return Runtime.slowCallField(o, "get_" + field, null);
+		}
+		return Runtime.slowGetField(o, field, false);
 	}
 
-	/**
-		Similar to setField but also supports property (might be slower).
-	**/
-	@:functionCode('
-		if (o instanceof haxe.lang.IHxObject)
-			((haxe.lang.IHxObject) o).__hx_setField(field, value, true);
-		else if (haxe.lang.Runtime.slowHasField(o, "set_" + field))
-			haxe.lang.Runtime.slowCallField(o, "set_" + field, new Array( new java.lang.Object[]{value} ));
-		else
-			haxe.lang.Runtime.slowSetField(o, field, value);
-	')
 	public static function setProperty( o : Dynamic, field : String, value : Dynamic ) : Void
 	{
-
-	}
-
-	/**
-		Call a method with the given object and arguments.
-	**/
-	@:functionCode('
-		return ((haxe.lang.Function) func).__hx_invokeDynamic(args);
-	')
-	public static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic
-	{
-		return null;
-	}
-
-	/**
-		Returns the list of fields of an object, excluding its prototype (class methods).
-	**/
-	@:functionCode('
-		if (o instanceof haxe.lang.IHxObject)
-		{
-			Array<String> ret = new Array<String>();
-				((haxe.lang.IHxObject) o).__hx_getFields(ret);
-			return ret;
-		} else if (o instanceof java.lang.Class) {
-			return Type.getClassFields( (java.lang.Class) o);
+		if (Std.is(o, IHxObject)) {
+			untyped (o : IHxObject).__hx_setField(field, value, true);
+		} else if (Runtime.slowHasField(o, "set_" + field)) {
+			Runtime.slowCallField(o, "set_" + field, [value]);
 		} else {
-			return new Array<String>();
+			Runtime.slowSetField(o, field, value);
 		}
-	')
+	}
+
+	public static function callMethod( o : Dynamic, func : haxe.Constraints.Function, args : Array<Dynamic> ) : Dynamic
+	{
+		return untyped (func : Function).__hx_invokeDynamic(args);
+	}
+
 	public static function fields( o : Dynamic ) : Array<String>
 	{
-		return null;
+		if (Std.is(o, IHxObject)) {
+			var ret:Array<String> = [];
+			untyped (o : IHxObject).__hx_getFields(ret);
+			return ret;
+		} else if (Std.is(o, java.lang.Class)) {
+			return Type.getClassFields(cast o);
+		} else {
+			return [];
+		}
 	}
 
-	/**
-		Tells if a value is a function or not.
-	**/
-	@:functionCode('
-		return f instanceof haxe.lang.Function;
-	')
 	public static function isFunction( f : Dynamic ) : Bool
 	{
-		return false;
+		return Std.is(f, Function);
 	}
 
-	/**
-		Generic comparison function, does not work for methods, see [compareMethods]
-	**/
-	@:functionCode('
-		return haxe.lang.Runtime.compare(a, b);
-	')
 	public static function compare<T>( a : T, b : T ) : Int
 	{
-		return 0;
+		return Runtime.compare(a, b);
 	}
 
-	/**
-		Compare two methods closures. Returns true if it's the same method of the same instance.
-	**/
-	@:functionCode('
-		if (f1 == f2)
-			return true;
-
-		if (f1 instanceof haxe.lang.Closure && f2 instanceof haxe.lang.Closure)
-		{
-			haxe.lang.Closure f1c = (haxe.lang.Closure) f1;
-			haxe.lang.Closure f2c = (haxe.lang.Closure) f2;
-
-			return haxe.lang.Runtime.refEq(f1c.obj, f2c.obj) && f1c.field.equals(f2c.field);
-		}
-
-
-		return false;
-	')
+	@:access(java.internal.Closure)
 	public static function compareMethods( f1 : Dynamic, f2 : Dynamic ) : Bool
 	{
+		if (f1 == f2) {
+			return true;
+		}
+		if (Std.is(f1, Closure) && Std.is(f2, Closure)) {
+			var f1c:Closure = cast f1;
+			var f2c:Closure = cast f2;
+			return Runtime.refEq(f1c.obj, f2c.obj) && f1c.field == f2c.field;
+		}
 		return false;
 	}
 
-	/**
-		Tells if a value is an object or not.
-
-	**/
-	@:functionCode('
-		return v != null && !(v instanceof haxe.lang.Enum || v instanceof haxe.lang.Function || v instanceof java.lang.Enum || v instanceof java.lang.Number || v instanceof java.lang.Boolean);
-	')
 	public static function isObject( v : Dynamic ) : Bool
 	{
-		return false;
+		return v != null && !(Std.is(v, HxEnum) || Std.is(v, Function) || Std.is(v, java.lang.Enum) || Std.is(v, java.lang.Number) || Std.is(v, java.lang.Boolean.BooleanClass));
 	}
 
-	@:functionCode('
-		return v != null && (v instanceof haxe.lang.Enum || v instanceof java.lang.Enum);
-	')
 	public static function isEnumValue( v : Dynamic ) : Bool {
-		return switch(Type.typeof(v)) {
-			case TEnum(_): true;
-			case _: false;
-		}
+		return v != null && (Std.is(v, HxEnum) || Std.is(v, java.lang.Enum));
 	}
 
-	/**
-		Delete an object field.
-	**/
-	@:functionCode('
-		return (o instanceof haxe.lang.DynamicObject && ((haxe.lang.DynamicObject) o).__hx_deleteField(field));
-	')
 	public static function deleteField( o : Dynamic, field : String ) : Bool
 	{
-		return false;
+		return (Std.is(o, DynamicObject) && (o : DynamicObject).__hx_deleteField(field));
 	}
 
-	/**
-		Make a copy of the fields of an object.
-	**/
 	public static function copy<T>( o : T ) : T
 	{
 		var o2 : Dynamic = {};
@@ -248,10 +138,6 @@ import java.Boot;
 		return cast o2;
 	}
 
-	/**
-		Transform a function taking an array of arguments into a function that can
-		be called with any number of arguments.
-	**/
 	@:overload(function( f : Array<Dynamic> -> Void ) : Dynamic {})
 	public static function makeVarArgs( f : Array<Dynamic> -> Dynamic ) : Dynamic
 	{

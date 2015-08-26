@@ -39,6 +39,8 @@ enum MatchRule {
 	MRBool;
 	MRFloat;
 	MRString;
+	MRDate;
+	MREnum( e : String );
 	MRDispatch;
 	MRSpod( c : String, lock : Bool );
 	MROpt( r : MatchRule );
@@ -59,7 +61,7 @@ enum DispatchError {
 	DETooManyValues;
 }
 
-private class Redirect {
+class Redirect {
 	public function new() {
 	}
 }
@@ -67,7 +69,7 @@ private class Redirect {
 class Dispatch {
 
 	public var parts : Array<String>;
-	public var params : haxe.ds.StringMap<String>;
+	public var params : Map<String,String>;
 	public var name : String;
 	public var cfg : DispatchConfig;
 	var subDispatch : Bool;
@@ -133,7 +135,7 @@ class Dispatch {
 		}
 	}
 
-	public function redirect( url : String, ?params : haxe.ds.StringMap<String> ) {
+	public function redirect( url : String, ?params : Map<String,String> ) {
 		parts = url.split("/");
 		if( parts[0] == "" ) parts.shift();
 		if( params != null ) this.params = params;
@@ -166,6 +168,26 @@ class Dispatch {
 			return v;
 		case MRBool:
 			return v != null && v != "0" && v != "false" && v != "null";
+		case MRDate:
+			if( v == null ) throw DEMissing;
+			try{
+				return Date.fromString(v);
+			} catch (e:Dynamic) {
+				throw DEInvalidValue;
+			}
+		case MREnum(e):
+			if( v == null ) throw DEMissing;
+			if( opt && v == "" ) return null;
+			if( v == "" ) throw DEMissing;
+			var en : Dynamic = Type.resolveEnum(e);
+			if( en == null ) throw "assert";
+			var ev:Dynamic;
+			if (v.charCodeAt(0) >= '0'.code && v.charCodeAt(0) <= '9'.code) {
+				ev = Type.createEnumIndex(en, Std.parseInt(v));
+			} else {
+				ev = Type.createEnum(en, v);
+			}
+			return ev;
 		case MRDispatch:
 			if( v != null )
 				parts.unshift(v);
@@ -244,6 +266,8 @@ class Dispatch {
 				return MRFloat;
 			case "String":
 				return MRString;
+			case "Date":
+				return MRDate;
 			case "haxe.web.Dispatch":
 				return MRDispatch;
 			default:
@@ -258,6 +282,9 @@ class Dispatch {
 						}
 						return MRSpod(i.toString(), lock);
 					}
+					else if ( name == "haxe.web.Dispatch" ) {
+						return MRDispatch;
+					}
 					csup = csup.t.get().superClass;
 				}
 				Context.error("Unsupported dispatch type '"+i.toString()+"'",p);
@@ -267,7 +294,7 @@ class Dispatch {
 			case "Bool":
 				return MRBool;
 			default:
-				Context.error("Unsupported dispatch type "+e.toString(),p);
+				return MREnum(e.toString());
 			}
 		case TAbstract(a,_):
 			switch( a.toString() ) {
@@ -292,7 +319,7 @@ class Dispatch {
 		case TAnonymous(a):
 			for( f in a.get().fields ) {
 				var r = getType(f.type, f.pos);
-				var opt = false;
+				var opt = f.meta.has(":optional");
 				switch( f.type ) {
 				case TType(t, _):
 					if( t.get().name == "Null" ) opt = true;
@@ -396,7 +423,7 @@ class Dispatch {
 		return null;
 	}
 
-	static var PARAMS = null;
+	static var PARAMS:Array<Dynamic> = null;
 
 	static function buildParams(_) {
 		var rules = [];
@@ -432,7 +459,7 @@ class Dispatch {
 		return makeConfig(obj);
 	}
 
-	public static macro function run( url : ExprOf<String>, params : ExprOf<haxe.ds.StringMap<String>>, obj : ExprOf<{}> ) : ExprOf<Void> {
+	public static macro function run( url : ExprOf<String>, params : ExprOf<Map<String,String>>, obj : ExprOf<{}> ) : ExprOf<Void> {
 		var p = Context.currentPos();
 		var cfg = makeConfig(obj);
 		return { expr : ECall({ expr : EField({ expr : ENew({ name : "Dispatch", pack : ["haxe","web"], params : [], sub : null },[url,params]), pos : p },"runtimeDispatch"), pos : p },[cfg]), pos : p };

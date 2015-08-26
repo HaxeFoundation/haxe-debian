@@ -21,26 +21,96 @@
  */
 package haxe.macro;
 
+/*
+    Warning: Some of these types correspond to compiler-internal data structures
+    and might change in minor Haxe releases in order to adapt to internal changes.
+*/
 typedef Ref<T> = {
 	public function get() : T;
 	public function toString() : String;
 }
 
 enum Type {
+	/**
+		Represents a monomorph.
+
+		@see http://haxe.org/manual/types-monomorph.html
+	**/
 	TMono( t : Ref<Null<Type>> );
+
+	/**
+		Represents an enum instance.
+
+		@see http://haxe.org/manual/types-enum-instance.html
+	**/
 	TEnum( t : Ref<EnumType>, params : Array<Type> );
+
+	/**
+		Represents a class instance.
+
+		@see http://haxe.org/manual/types-class-instance.html
+	**/
 	TInst( t : Ref<ClassType>, params : Array<Type> );
+
+	/**
+		Represents a typedef.
+
+		@see http://haxe.org/manual/type-system-typedef.html
+	**/
 	TType( t : Ref<DefType>, params : Array<Type> );
+
+	/**
+		Represents a function type.
+
+		@see http://haxe.org/manual/types-function.html
+	**/
 	TFun( args : Array<{ name : String, opt : Bool, t : Type }>, ret : Type );
+
+	/**
+		Represents an anonymous structure type.
+
+		@see http://haxe.org/manual/types-anonymous-structure.html
+	**/
 	TAnonymous( a : Ref<AnonType> );
+
+	/**
+		Represents Dynamic.
+
+		@see http://haxe.org/manual/types-dynamic.html
+	**/
 	TDynamic( t : Null<Type> );
+
+	/**
+		Used internally by the compiler to delay some typing.
+	**/
 	TLazy( f : Void -> Type );
+
+	/**
+		Represents an abstract type.
+
+		@see http://haxe.org/manual/types-abstract.html
+	**/
 	TAbstract( t : Ref<AbstractType>, params : Array<Type> );
 }
 
 typedef AnonType = {
 	var fields : Array<ClassField>;
-	//var status : AnonStatus;
+	var status : AnonStatus;
+}
+
+enum AnonStatus {
+	AClosed;
+	AOpened;
+	AConst;
+	AExtend( tl:Ref<Array<Type>> );
+	AClassStatics( t : Ref<ClassType> );
+	AEnumStatics( t : Ref<EnumType> );
+	AAbstractStatics( t : Ref<AbstractType> );
+}
+
+typedef TypeParameter = {
+	var name: String;
+	var t: Type;
 }
 
 typedef BaseType = {
@@ -50,7 +120,7 @@ typedef BaseType = {
 	var pos : Expr.Position;
 	var isPrivate : Bool;
 	var isExtern : Bool;
-	var params : Array<{ name : String, t : Type }>;
+	var params : Array<TypeParameter>;
 	var meta : MetaAccess;
 	var doc : Null<String>;
 	function exclude() : Void;
@@ -60,7 +130,7 @@ typedef ClassField = {
 	var name : String;
 	var type : Type;
 	var isPublic : Bool;
-	var params : Array<{ name : String, t : Type }>;
+	var params : Array<TypeParameter>;
 	var meta : MetaAccess;
 	var kind : FieldKind;
 	function expr() : Null<TypedExpr>;
@@ -77,6 +147,7 @@ enum ClassKind {
 	KGenericInstance(cl:Ref<ClassType>, params:Array<Type>);
 	KMacroType;
 	KAbstractImpl(a:Ref<AbstractType>);
+	KGenericBuild;
 }
 
 typedef ClassType = {> BaseType,
@@ -90,6 +161,7 @@ typedef ClassType = {> BaseType,
 	//var arrayAccess : Null<Type>;
 	var constructor : Null<Ref<ClassField>>;
 	var init : Null<TypedExpr>;
+	var overrides : Array<Ref<ClassField>>;
 }
 
 typedef EnumField = {
@@ -99,18 +171,17 @@ typedef EnumField = {
 	var meta : MetaAccess;
 	var index : Int;
 	var doc : Null<String>;
-	var params : Array<{ name : String, t : Type }>;
+	var params : Array<TypeParameter>;
 }
 
 typedef EnumType = {> BaseType,
-	var constructs : haxe.ds.StringMap<EnumField>;
+	var constructs : Map<String,EnumField>;
 	var names : Array<String>;
 }
 
 typedef DefType = {> BaseType,
 	var type : Type;
 }
-
 
 typedef AbstractType = {>BaseType,
 	var type : Type;
@@ -122,10 +193,60 @@ typedef AbstractType = {>BaseType,
 	var array : Array<ClassField>;
 }
 
+/**
+	MetaAccess is a wrapper for the `Metadata` array. It can be used to add
+	metadata to and remove metadata from its origin.
+**/
 typedef MetaAccess = {
+	/**
+		Return the wrapped `Metadata` array.
+
+		Modifying this array has no effect on the origin of `this` MetaAccess.
+		The `add` and `remove` methods can be used for that.
+	**/
 	function get() : Expr.Metadata;
+
+	/**
+		Extract metadata entries by given `name`.
+
+		If there's no metadata with such name, empty array is returned.
+
+		If `name` is null, compilation fails with an error.
+	**/
+	function extract( name : String ) : Array<Expr.MetadataEntry>;
+
+	/**
+		Adds the metadata specified by `name`, `params` and `pos` to the origin
+		of `this` MetaAccess.
+
+		Metadata names are not unique during compilation, so this method never
+		overwrites a previous metadata.
+
+		If a `Metadata` array is obtained through a call to `get`, a subsequent
+		call to `add` has no effect on that array.
+
+		If any argument is null, compilation fails with an error.
+	**/
 	function add( name : String, params : Array<Expr>, pos : Expr.Position ) : Void;
+
+	/**
+		Removes all `name` metadata entries from the origin of `this`
+		MetaAccess.
+
+		This method might clear several metadata entries of the same name.
+
+		If a `Metadata` array is obtained through a call to `get`, a subsequent
+		call to `remove` has no effect on that array.
+
+		If `name` is null, compilation fails with an error.
+	**/
 	function remove( name : String ) : Void;
+
+	/**
+		Tells if the origin of `this` MetaAccess has a `name` metadata entry.
+
+		If `name` is null, compilation fails with an error.
+	**/
 	function has( name : String ) : Bool;
 }
 
@@ -151,4 +272,78 @@ enum MethodKind {
 	MethMacro;
 }
 
-extern enum TypedExpr {}
+enum TConstant {
+	TInt(i:Int);
+	TFloat(s:String);
+	TString(s:String);
+	TBool(b:Bool);
+	TNull;
+	TThis;
+	TSuper;
+}
+
+typedef TVar = {
+	public var id(default, never):Int;
+	public var name(default, never):String;
+	public var t(default, never):Type;
+	public var capture(default, never):Bool;
+	public var extra(default,never):Null<{params: Array<TypeParameter>, expr: Null<TypedExpr>}>;
+}
+
+enum ModuleType {
+	TClassDecl(c:Ref<ClassType>);
+	TEnumDecl(e:Ref<EnumType>);
+	TTypeDecl(t:Ref<DefType>);
+	TAbstract(a:Ref<AbstractType>);
+}
+
+typedef TFunc = {
+	args: Array<{v:TVar, value:Null<TConstant>}>,
+	t: Type,
+	expr: TypedExpr
+}
+
+enum FieldAccess {
+	FInstance(c:Ref<ClassType>, params:Array<Type>, cf:Ref<ClassField>);
+	FStatic(c:Ref<ClassType>, cf:Ref<ClassField>);
+	FAnon(cf:Ref<ClassField>);
+	FDynamic(s:String);
+	FClosure(c:Null<{c:Ref<ClassType>, params:Array<Type>}>, cf:Ref<ClassField>);
+	FEnum(e:Ref<EnumType>, ef:EnumField);
+}
+
+enum TypedExprDef {
+	TConst(c:TConstant);
+	TLocal(v:TVar);
+	TArray(e1:TypedExpr, e2:TypedExpr);
+	TBinop(op:Expr.Binop, e1:TypedExpr, e2:TypedExpr);
+	TField(e:TypedExpr, fa:FieldAccess);
+	TTypeExpr(m:ModuleType);
+	TParenthesis(e:TypedExpr);
+	TObjectDecl(fields:Array<{name:String, expr:TypedExpr}>);
+	TArrayDecl(el:Array<TypedExpr>);
+	TCall(e:TypedExpr, el:Array<TypedExpr>);
+	TNew(c:Ref<ClassType>, params: Array<Type>, el:Array<TypedExpr>);
+	TUnop(op:Expr.Unop, postFix:Bool, e:TypedExpr);
+	TFunction(tfunc:TFunc);
+	TVar(v:TVar, expr:Null<TypedExpr>);
+	TBlock(el:Array<TypedExpr>);
+	TFor(v:TVar, e1:TypedExpr, e2:TypedExpr);
+	TIf(econd:TypedExpr, eif:TypedExpr, eelse:Null<TypedExpr>);
+	TWhile(econd:TypedExpr, e:TypedExpr, normalWhile:Bool);
+	TSwitch(e:TypedExpr, cases:Array<{values:Array<TypedExpr>, expr:TypedExpr}>, edef:Null<TypedExpr>);
+	TTry(e:TypedExpr, catches:Array<{v:TVar, expr:TypedExpr}>);
+	TReturn(e:Null<TypedExpr>);
+	TBreak;
+	TContinue;
+	TThrow(e:TypedExpr);
+	TCast(e:TypedExpr, m:Null<ModuleType>);
+	TMeta(m:Expr.MetadataEntry, e1:TypedExpr);
+	TEnumParameter(e1:TypedExpr, ef:EnumField, index:Int);
+}
+
+typedef TypedExpr = {
+	expr: TypedExprDef,
+	pos: Expr.Position,
+	t: Type
+}

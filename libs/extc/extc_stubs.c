@@ -201,53 +201,58 @@ CAMLprim value get_full_path( value f ) {
 #endif
 }
 
-#ifdef _WIN32
-static void copyAscii( char *to, const char *from, int len ) {
-	while( len-- > 0 ) {
-		unsigned char c = *from;
-		if( c < 128 )
-			*to = c;
-		to++;
-		from++;
-	}
-}
-#endif
-
 CAMLprim value get_real_path( value path ) {
 #ifdef _WIN32
-	value path2 = caml_copy_string(String_val(path));
-	char *cur = String_val(path2);
-	if( cur[0] == '\\' && cur[1] == '\\' ) {
-		cur = strchr(cur,'\\');
-		if( cur != NULL ) cur++;
-	} else if( cur[0] != 0 && cur[1] == ':' ) {
-		char c = cur[0];
-		if( c >= 'a' && c <= 'z' )
-			cur[0] = c - 'a' + 'A';
-		cur += 2;
-		if( cur[0] == '\\' )
-			cur++;
+	const char sep = '\\';
+	size_t len, i, last;
+	WIN32_FIND_DATA data;
+	HANDLE handle;
+	char out[MAX_PATH];
+
+	// this will ensure the full class path with proper casing
+	if( GetFullPathName(String_val(path),MAX_PATH,out,NULL) == 0 )
+		failwith("get_real_path");
+
+	len = strlen(out);
+	i = 0;
+
+	if (len >= 2 && out[1] == ':') {
+		// convert drive letter to uppercase
+		if (out[0] >= 'a' && out[0] <= 'z')
+			out[0] += 'A' - 'a';
+		if (len >= 3 && out[2] == sep)
+			i = 3;
+		else
+			i = 2;
 	}
-	while( cur ) {
-		char *next = strchr(cur,'\\');
-		SHFILEINFOA infos;
-		if( next != NULL )
-			*next = 0;
-		else if( *cur == 0 )
-			break;
-		if( SHGetFileInfoA( String_val(path2), 0, &infos, sizeof(infos), SHGFI_DISPLAYNAME ) != 0 ) {
-			// some special names might be expended to their localized name, so make sure we only
-			// change the casing and not the whole content
-			if( strcmpi(infos.szDisplayName,cur) == 0 )
-				copyAscii(cur,infos.szDisplayName,strlen(infos.szDisplayName)+1);
+
+	last = i;
+
+	while (i < len) {
+		// skip until separator
+		while (i < len && out[i] != sep)
+			i++;
+
+		// temporarily strip string to last found component
+		out[i] = 0;
+
+		// get actual file/dir name with proper case
+		if ((handle = FindFirstFile(out, &data)) != INVALID_HANDLE_VALUE) {
+			// replace the component with proper case
+			memcpy(out + last, data.cFileName, i - last);
+			FindClose(handle);
 		}
-		if( next != NULL ) {
-			*next = '\\';
-			cur = next + 1;
-		} else
-			cur = NULL;
+
+		// if we're not at the end, restore the path
+		if (i < len)
+			out[i] = sep;
+
+		// advance
+		i++;
+		last = i;
 	}
-	return path2;
+
+	return caml_copy_string(out);
 #else
 	return path;
 #endif

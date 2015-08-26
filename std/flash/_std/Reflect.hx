@@ -37,7 +37,7 @@
 	public static function getProperty( o : Dynamic, field : String ) : Dynamic untyped {
 		try {
 			return o["get_" + field]();
-		} catch( e : Dynamic ) {
+		} catch( e : Dynamic ) try {
 			return o[field];
 		} catch( e : Dynamic ) {
 			return null;
@@ -52,7 +52,7 @@
 		}
 	}
 
-	public inline static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic untyped {
+	public inline static function callMethod( o : Dynamic, func : haxe.Constraints.Function, args : Array<Dynamic> ) : Dynamic untyped {
 		return func.apply(o,args);
 	}
 
@@ -102,7 +102,7 @@
 		}
 		return (t == "string");
 	}
-	
+
 	public static function isEnumValue( v : Dynamic ) : Bool {
 		#if as3
 		return try Type.getEnum(v) != null catch ( e: Dynamic) false;

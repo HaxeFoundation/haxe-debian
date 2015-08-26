@@ -26,18 +26,26 @@ type pos = {
 	pmax : int;
 }
 
+module IntMap = Map.Make(struct type t = int let compare a b = a - b end)
+
 module Meta = struct
 	type strict_meta =
+		| Abi
 		| Abstract
 		| Access
+		| Accessor
 		| Allow
+		| Analyzer
 		| Annotation
 		| ArrayAccess
+		| Ast
 		| AutoBuild
 		| Bind
 		| Bitmap
+		| BridgeProperties
 		| Build
 		| BuildXml
+		| Callable
 		| Class
 		| ClassCode
 		| Commutative
@@ -45,54 +53,78 @@ module Meta = struct
 		| CoreApi
 		| CoreType
 		| CppFileCode
+		| CppInclude
 		| CppNamespaceCode
+		| CsNative
+		| Dce
 		| Debug
 		| Decl
 		| DefParam
+		| Delegate
 		| Depend
 		| Deprecated
+		| DirectlyUsed
 		| DynamicObject
 		| Enum
 		| EnumConstructorParam
+		| Event
+		| Exhaustive
 		| Expose
 		| Extern
 		| FakeEnum
 		| File
 		| Final
+		| FlatEnum
 		| Font
+		| Forward
 		| From
 		| FunctionCode
 		| FunctionTailCode
 		| Generic
+		| GenericBuild
+		| GenericInstance
 		| Getter
 		| Hack
+		| HasUntyped
 		| HaxeGeneric
 		| HeaderClassCode
 		| HeaderCode
+		| HeaderInclude
 		| HeaderNamespaceCode
 		| HxGen
 		| IfFeature
 		| Impl
+		| PythonImport
+		| ImplicitCast
 		| Include
 		| InitPackage
 		| Internal
 		| IsVar
+		| JavaCanonical
 		| JavaNative
+		| JsRequire
 		| Keep
 		| KeepInit
 		| KeepSub
+		| LibType
 		| Meta
 		| Macro
 		| MaybeUsed
+		| MergeBlock
 		| MultiType
 		| Native
+		| NativeChildren
 		| NativeGen
 		| NativeGeneric
+		| NativeProperty
 		| NoCompletion
 		| NoDebug
 		| NoDoc
+		| NoExpr
 		| NoImportGlobal
+		| NonVirtual
 		| NoPackageRestrict
+		| NoPrivateAccess
 		| NoStack
 		| NotNull
 		| NoUsing
@@ -101,34 +133,47 @@ module Meta = struct
 		| Optional
 		| Overload
 		| PrivateAccess
+		| Property
 		| Protected
 		| Public
 		| PublicFields
+		| QuotedField
 		| ReadOnly
 		| RealPath
 		| Remove
 		| Require
+		| RequiresAssign
+		(* | Resolve *)
 		| ReplaceReflection
 		| Rtti
 		| Runtime
 		| RuntimeValue
+		| SelfCall
 		| Setter
 		| SkipCtor
 		| SkipReflection
 		| Sound
+		| SourceFile
+		| StoredTypedExpr
+		| Strict
 		| Struct
+		| StructAccess
 		| SuppressWarnings
+		| This
 		| Throws
 		| To
 		| ToString
 		| Transient
 		| ValueUsed
 		| Volatile
+		| Unbound
 		| UnifyMinDynamic
 		| Unreflective
 		| Unsafe
 		| Usage
 		| Used
+		| Value
+		| Void
 		| Last
 		(* do not put any custom metadata after Last *)
 		| Dollar of string
@@ -136,6 +181,9 @@ module Meta = struct
 
 	let has m ml = List.exists (fun (m2,_,_) -> m = m2) ml
 	let get m ml = List.find (fun (m2,_,_) -> m = m2) ml
+
+	let to_string_ref = ref (fun _ -> assert false)
+	let to_string (m : strict_meta) : string = !to_string_ref m
 end
 
 type keyword =
@@ -270,7 +318,7 @@ and complex_type =
 	| CTFunction of complex_type list * complex_type
 	| CTAnonymous of class_field list
 	| CTParent of complex_type
-	| CTExtend of type_path * class_field list
+	| CTExtend of type_path list * class_field list
 	| CTOptional of complex_type
 
 and func = {
@@ -401,6 +449,8 @@ type type_decl = type_def * pos
 
 type package = string list * type_decl list
 
+exception Error of string * pos
+
 let is_lower_ident i =
 	let rec loop p =
 		match String.unsafe_get i p with
@@ -412,8 +462,8 @@ let is_lower_ident i =
 
 let pos = snd
 
-let is_postfix (e,_) = function
-	| Increment | Decrement -> (match e with EConst _ | EField _ | EArray _ -> true | _ -> false)
+let rec is_postfix (e,_) op = match op with
+	| Increment | Decrement -> true
 	| Not | Neg | NegBits -> false
 
 let is_prefix = function
@@ -446,7 +496,7 @@ let parse_path s =
 	| [] -> failwith "Invalid empty path"
 	| x :: l -> List.rev l, x
 
-let s_escape s =
+let s_escape ?(hex=true) s =
 	let b = Buffer.create (String.length s) in
 	for i = 0 to (String.length s) - 1 do
 		match s.[i] with
@@ -455,6 +505,7 @@ let s_escape s =
 		| '\r' -> Buffer.add_string b "\\r"
 		| '"' -> Buffer.add_string b "\\\""
 		| '\\' -> Buffer.add_string b "\\\\"
+		| c when int_of_char c < 32 && hex -> Buffer.add_string b (Printf.sprintf "\\x%.2X" (int_of_char c))
 		| c -> Buffer.add_char b c
 	done;
 	Buffer.contents b
@@ -598,6 +649,23 @@ let unescape s =
 					let c = (try char_of_int (int_of_string ("0x" ^ String.sub s (i+1) 2)) with _ -> raise Exit) in
 					Buffer.add_char b c;
 					inext := !inext + 2;
+				| 'u' ->
+					let (u, a) =
+						try
+							(int_of_string ("0x" ^ String.sub s (i+1) 4), 4)
+						with _ -> try
+							assert (s.[i+1] = '{');
+							let l = String.index_from s (i+3) '}' - (i+2) in
+							let u = int_of_string ("0x" ^ String.sub s (i+2) l) in
+							assert (u <= 0x10FFFF);
+							(u, l+2)
+						with _ ->
+							raise Exit
+					in
+					let ub = UTF8.Buf.create 0 in
+					UTF8.Buf.add_char ub (UChar.uchar_of_int u);
+					Buffer.add_string b (UTF8.Buf.contents ub);
+					inext := !inext + a;
 				| _ ->
 					raise Exit);
 				loop false !inext;
@@ -630,7 +698,7 @@ let map_expr loop (e,p) =
 		| CTFunction (cl,c) -> CTFunction (List.map ctype cl, ctype c)
 		| CTAnonymous fl -> CTAnonymous (List.map cfield fl)
 		| CTParent t -> CTParent (ctype t)
-		| CTExtend (t,fl) -> CTExtend (tpath t, List.map cfield fl)
+		| CTExtend (tl,fl) -> CTExtend (List.map tpath tl, List.map cfield fl)
 		| CTOptional t -> CTOptional (ctype t)
 	and tparamdecl t =
 		{ tp_name = t.tp_name; tp_constraints = List.map ctype t.tp_constraints; tp_params = List.map tparamdecl t.tp_params }
@@ -676,3 +744,29 @@ let map_expr loop (e,p) =
 	| EMeta (m,e) -> EMeta(m, loop e)
 	) in
 	(e,p)
+
+let rec s_expr (e,_) =
+	match e with
+	| EConst c -> s_constant c
+	| EParenthesis e -> "(" ^ (s_expr e) ^ ")"
+	| EArrayDecl el -> "[" ^ (String.concat "," (List.map s_expr el)) ^ "]"
+	| EObjectDecl fl -> "{" ^ (String.concat "," (List.map (fun (n,e) -> n ^ ":" ^ (s_expr e)) fl)) ^ "}"
+	| EBinop (op,e1,e2) -> s_expr e1 ^ s_binop op ^ s_expr e2
+	| ECall (e,el) -> s_expr e ^ "(" ^ (String.concat ", " (List.map s_expr el)) ^ ")"
+	| EField (e,f) -> s_expr e ^ "." ^ f
+	| _ -> "'???'"
+
+let get_value_meta meta =
+	try
+		begin match Meta.get Meta.Value meta with
+			| (_,[EObjectDecl values,_],_) -> List.fold_left (fun acc (s,e) -> PMap.add s e acc) PMap.empty values
+			| _ -> raise Not_found
+		end
+	with Not_found ->
+		PMap.empty
+
+let rec string_list_of_expr_path_raise (e,p) =
+	match e with
+	| EConst (Ident i) -> [i]
+	| EField (e,f) -> f :: string_list_of_expr_path_raise e
+	| _ -> raise Exit

@@ -20,7 +20,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-extern class String implements java.lang.CharSequence {
+@:coreApi extern class String implements java.lang.CharSequence {
 
 	var length(default,null) : Int;
 
@@ -52,6 +52,7 @@ extern class String implements java.lang.CharSequence {
 
 	private function codePointAt( idx : Int ) : Int;
 
+	@:overload(function() : haxe.io.BytesData { })
 	private function getBytes(encoding:String) : haxe.io.BytesData;
 
 	static function fromCharCode( code : Int ) : String;

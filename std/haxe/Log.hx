@@ -28,9 +28,9 @@ package haxe;
 class Log {
 
 	/**
-		Outputs [v] in a platform-dependent way.
+		Outputs `v` in a platform-dependent way.
 
-		The second parameter [infos] is injected by the compiler and contains
+		The second parameter `infos` is injected by the compiler and contains
 		information about the position where the trace() call was made.
 
 		This method can be rebound to a custom function:
@@ -48,7 +48,7 @@ class Log {
 				var pstr = infos == null ? "(null)" : infos.fileName + ":" + infos.lineNumber;
 				var str = flash.Boot.__string_rec(v, "");
 				if( infos != null && infos.customParams != null ) for( v in infos.customParams ) str += "," + flash.Boot.__string_rec(v, "");
-				untyped #if flash9 __global__["trace"] #else __trace__ #end(pstr+": "+str);
+				untyped __global__["trace"](pstr+": "+str);
 			#else
 				untyped flash.Boot.__trace(v,infos);
 			#end
@@ -68,7 +68,7 @@ class Log {
 				untyped __call__('_hx_trace', v + extra, infos);
 			}
 			else
-				untyped __call__('_hx_trace', v, infos);		
+				untyped __call__('_hx_trace', v, infos);
 		#elseif cpp
 			if (infos!=null && infos.customParams!=null) {
 				var extra:String = "";
@@ -90,10 +90,21 @@ class Log {
 				str = v;
 			}
 			#if cs
-			untyped __cs__("System.Console.WriteLine(str)");
+			cs.system.Console.WriteLine(str);
 			#elseif java
 			untyped __java__("java.lang.System.out.println(str)");
 			#end
+		#elseif (python)
+			var str:String = null;
+			if (infos != null) {
+				str = infos.fileName + ":" + Std.string(infos.lineNumber) + ": " + v;
+				if (infos.customParams != null) {
+					str += "," + infos.customParams.join(",");
+				}
+			} else {
+				str = v;
+			}
+			python.Lib.println(str);
 		#end
 	}
 
@@ -112,7 +123,7 @@ class Log {
 
 	#if flash
 	/**
-		Sets the color of the trace output to [rgb].
+		Sets the color of the trace output to `rgb`.
 	**/
 	public static dynamic function setColor( rgb : Int ) {
 		untyped flash.Boot.__set_trace_color(rgb);

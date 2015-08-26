@@ -45,9 +45,9 @@ private typedef ExprToken = {
 /**
 	Template provides a basic templating mechanism to replace values in a source
 	String, and to have some basic logic.
-	
+
 	A complete documentation of the supported syntax is available at:
-	http://haxe.org/doc/cross/template
+	<a href="http://haxe.org/manual/std-template.html">http://haxe.org/manual/std-template.html</a>
 **/
 class Template {
 
@@ -70,14 +70,14 @@ class Template {
 	var buf : StringBuf;
 
 	/**
-		Creates a new Template instance from [str].
-		
-		[str] is parsed into tokens, which are stored for internal use. This
+		Creates a new Template instance from `str`.
+
+		`str` is parsed into tokens, which are stored for internal use. This
 		means that multiple execute() operations on a single Template instance
 		are more efficient than one execute() operations on multiple Template
 		instances.
-		
-		If [str] is null, the result is unspecified.
+
+		If `str` is null, the result is unspecified.
 	**/
 	public function new( str : String ) {
 		var tokens = parseTokens(str);
@@ -87,19 +87,19 @@ class Template {
 	}
 
 	/**
-		Executes [this] Template, taking into account [context] for
-		replacements and [macros] for callback functions.
-		
-		If [context] has a field 'name', its value replaces all occurrences of
+		Executes `this` Template, taking into account `context` for
+		replacements and `macros` for callback functions.
+
+		If `context` has a field 'name', its value replaces all occurrences of
 		::name:: in the Template. Otherwise Template.globals is checked instead,
 		If 'name' is not a field of that either, ::name:: is replaced with null.
-		
-		If [macros] has a field 'name', all occurrences of $$name(args) are
+
+		If `macros` has a field 'name', all occurrences of $$name(args) are
 		replaced with the result of calling that field. The first argument is
-		always the the resolve() method, followed by the given arguments.
-		If [macros] has no such field, the result is unspecified.
-		
-		If [context] is null, the result is unspecified. If [macros] is null,
+		always the resolve() method, followed by the given arguments.
+		If `macros` has no such field, the result is unspecified.
+
+		If `context` is null, the result is unspecified. If `macros` is null,
 		no macros are used.
 	**/
 	public function execute( context : Dynamic, ?macros : Dynamic ):String {
@@ -139,17 +139,27 @@ class Template {
 			// macro parse
 			var parp = p.pos + p.len;
 			var npar = 1;
-			while( npar > 0 ) {
+			var params = [];
+			var part = "";
+			while( true ) {
 				var c = data.charCodeAt(parp);
-				if( c == 40 )
-					npar++;
-				else if( c == 41 )
-					npar--;
-				else if( c == null )
-					throw "Unclosed macro parenthesis";
 				parp++;
+				if( c == 40 ) {
+					npar++;
+				} else if( c == 41 ) {
+					npar--;
+					if (npar <= 0) break;
+				} else if( c == null ){
+					throw "Unclosed macro parenthesis";
+				}
+				if ( c == 44 && npar == 1) {
+					params.push(part);
+					part = "";
+				} else {
+					part += String.fromCharCode(c);
+				}
 			}
-			var params = data.substr(p.pos+p.len,parp - (p.pos+p.len) - 1).split(",");
+			params.push(part);
 			tokens.add({ p : splitter.matched(2), s : false, l : params });
 			data = data.substr(parp,data.length - parp);
 		}
@@ -237,7 +247,7 @@ class Template {
 		}
 		if( data.length != 0 )
 			l.add({ p : data, s : true });
-		var e;
+		var e:Void->Dynamic;
 		try {
 			e = makeExpr(l);
 			if( !l.isEmpty() )
@@ -325,7 +335,7 @@ class Template {
 			default: throw "Unknown operation "+p.p;
 			}
 		case "!":
-			var e = makeExpr(l);
+			var e : Void->Dynamic = makeExpr(l);
 			return function() {
 				var v : Dynamic = e();
 				return (v == null || v == false);

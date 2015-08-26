@@ -34,8 +34,8 @@ class FileSystem {
 		return untyped __call__("file_exists", path);
 	}
 
-	public static inline function rename( path : String, newpath : String ) : Void {
-		untyped __call__("rename", path, newpath);
+	public static inline function rename( path : String, newPath : String ) : Void {
+		untyped __call__("rename", path, newPath);
 	}
 
 	public static function stat( path : String ) : FileStat {
@@ -55,12 +55,17 @@ class FileSystem {
 		};
 	}
 
-	public static inline function fullPath( relpath : String ) : String {
-		var p = untyped __call__("realpath", relpath);
+	public static inline function fullPath( relPath : String ) : String {
+		var p = untyped __call__("realpath", relPath);
 		if (untyped __physeq__(p, false))
 			return null;
 		else
 			return p;
+	}
+
+	public static function absolutePath ( relPath : String ) : String {
+		if (haxe.io.Path.isAbsolute(relPath)) return relPath;
+		return haxe.io.Path.join([Sys.getCwd(), relPath]);
 	}
 
 	static function kind( path : String ) : FileKind {
@@ -78,8 +83,12 @@ class FileSystem {
 
 	public static inline function createDirectory( path : String ) : Void {
 		var path = haxe.io.Path.addTrailingSlash(path);
-		var parts = [while ((path = haxe.io.Path.directory(path)) != "") path];
-		parts.reverse();
+		var _p = null;
+		var parts = [];
+		while (path != (_p = haxe.io.Path.directory(path))) {
+			parts.unshift(path);
+			path = _p;
+		}
 		for (part in parts) {
 			if (part.charCodeAt(part.length - 1) != ":".code && !exists(part))
 				untyped __call__("@mkdir", part, 493); // php default is 0777, neko is 0755
