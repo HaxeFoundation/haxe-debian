@@ -1,3 +1,0 @@
-version=3
-opts="dversionmangle=s/\+dfsg//,uversionmangle=s/-/~/g,repacksuffix=+dfsg"\
- https://github.com/HaxeFoundation/haxe/tags .*/(\d\S*)\.tar\.gz

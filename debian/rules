@@ -1,29 +1,30 @@
 #!/usr/bin/make -f
-# debian/rules for haXe.
+# debian/rules for Haxe.
 
 %:
 	dh $@
 
 override_dh_auto_configure:
 
+override_dh_auto_build:
+	# Check to see if ocamlopt exists. If not, bytecompile everything.
+	command -v ocamlopt && dh_auto_build || dh_auto_build -- BYTECODE=1
+	# Compile haxelib to neko
+	dh_auto_build -- tools
+
 override_dh_auto_install:
 
 override_dh_install:
 	mkdir -p $(CURDIR)/debian/haxe/etc/bash_completion.d
 	cp debian/bash_completion $(CURDIR)/debian/haxe/etc/bash_completion.d/haxe
-	mkdir -p $(CURDIR)/debian/haxe/usr/bin
-	mkdir -p $(CURDIR)/debian/haxe/usr/lib
-	cp std/tools/haxelib/haxelib.sh $(CURDIR)/debian/haxe/usr/bin/haxelib
-	cp std/tools/haxedoc/haxedoc.sh $(CURDIR)/debian/haxe/usr/bin/haxedoc
 	dh_install
-	rm -f $(CURDIR)/debian/haxe/usr/share/haxe/std/tools/haxelib/haxelib.sh
-	rm -f $(CURDIR)/debian/haxe/usr/share/haxe/std/tools/haxedoc/haxedoc.sh
+
+override_dh_strip:
+	# haxelib is the neko vm appended with neko bytecode. It should not be stripped
+	dh_strip --exclude=haxelib
 
 override_dh_clean:
-	find $(CURDIR) -name '*.cmx' |xargs rm -f
-	find $(CURDIR) -name '*.cmo' |xargs rm -f
-	find $(CURDIR) -name '*.cma' |xargs rm -f
 	dh_clean
-
-get-orig-source:
-	uscan --verbose --rename --compression xz --force-download
+	# https://github.com/HaxeFoundation/ocamllibs/pull/17
+	rm -f $(CURDIR)/libs/extc/process.o
+	rm -f $(CURDIR)/libs/objsize/objsize.a

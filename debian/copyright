@@ -13,14 +13,6 @@ Copyright: 2004-2008, Nicolas Cannasse
  2015, Gabriele Giacone <1o5g4r8o@gmail.com>
 License: GPL-2+
 
-Files: debian/haxe-mode.el
-Copyright: 2006-2009, Jens Peter Secher
-License: GPL-3+
-
-Files: doc/*
-Copyright: 2004-2008, Nicolas Cannasse
-License: GPL-2+
-
 Files: libs/*
 Copyright: 2004-2008, Nicolas Cannasse
 License: GPL-2+
