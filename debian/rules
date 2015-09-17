@@ -25,6 +25,11 @@ override_dh_install:
 	cp debian/bash_completion $(CURDIR)/debian/haxe/etc/bash_completion.d/haxe
 	dh_install
 
+override_dh_fixperms:
+	dh_fixperms
+	# https://github.com/HaxeFoundation/haxe/commit/7ecbc2baaef0e2f653f43b01071ffff0050ec5d3
+	cd $(CURDIR)/debian/haxe/usr/share/haxe/ && chmod a-x std/js/Boot.hx std/js/_std/Type.hx std/php/_std/haxe/ds/StringMap.hx
+
 override_dh_strip:
 	# haxelib is the neko vm appended with neko bytecode. It should not be stripped
 	dh_strip --exclude=haxelib
