@@ -23,7 +23,7 @@ Depends: libjs-jquery,
          ${misc:Depends},
          ${ocaml:Depends},
          ${shlibs:Depends}
-Description: A multi-target universal programming language
+Description: multi-target universal programming language
  Haxe is an open source toolkit based on a modern,
  high level, strictly typed programming language, a cross-compiler,
  a complete cross-platform standard library and ways to access each

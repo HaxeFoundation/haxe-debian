@@ -127,15 +127,6 @@ License: GPL-2+
  On Debian systems, the complete text of version 2 of the GNU General
  Public License can be found in '/usr/share/common-licenses/GPL-2'.
 
-License: GPL-3+
- This program is free software; you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation; version 3 dated June, 2007, or (at
- your option) any later version.
- .
- On Debian systems, the complete text of version 3 of the GNU General
- Public License can be found in '/usr/share/common-licenses/GPL-3'.
-
 License: LGPL-2.1+
  This program is free software; you can redistribute it and/or modify it
  under the terms of the GNU Lesser General Public License as published by the
@@ -143,7 +134,7 @@ License: LGPL-2.1+
  your option) any later version.
  .
  On Debian systems, the complete text of version 2.1 of the GNU Lesser
- Public License can be found in `/usr/share/common-licenses/LGPL-2.1'.
+ General Public License can be found in `/usr/share/common-licenses/LGPL-2.1'.
 
 License: Zlib
  The zlib License
