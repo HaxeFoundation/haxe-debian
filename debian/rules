@@ -4,6 +4,12 @@
 %:
 	dh $@
 
+PKD   = $(abspath $(dir $(MAKEFILE_LIST)))
+PKG   = haxe
+UVER  = $(shell dpkg-parsechangelog -l$(PKD)/changelog | perl -ne 'print $$1 if m{^Version:\s+(?:\d+:)?(\d.*)(?:\-\d+.*)};')
+DTYPE = +dfsg
+VER  ?= $(subst $(DTYPE),,$(UVER))
+
 override_dh_auto_configure:
 
 override_dh_auto_build:
@@ -28,3 +34,12 @@ override_dh_clean:
 	# https://github.com/HaxeFoundation/ocamllibs/pull/17
 	rm -f $(CURDIR)/libs/extc/process.o
 	rm -f $(CURDIR)/libs/objsize/objsize.a
+
+get-orig-source:
+	# create tar manually from git, in order to get submodules and remove js source files
+	git clone --branch $(VER) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
+	cd orig-source && \
+		rm std/js/*.js && git commit -am "removed js source files for debian" && \
+		curl -s https://raw.githubusercontent.com/Kentzo/git-archive-all/master/git-archive-all | \
+		python - ../../$(PKG)_$(VER)$(DTYPE).orig.tar.gz
+	rm -rf orig-source

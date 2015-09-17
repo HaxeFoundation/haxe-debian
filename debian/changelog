@@ -8,7 +8,8 @@ haxe (1:3.2.0+dfsg-1) unstable; urgency=low
   * Remove outdated and discontinued emacs haxe mode.
   * Clean up copyright.
     + Remove entries of removed files.
-  * Remove d/watch and get-orig-source target because the archive at Github is missing submodules.
+  * Update d/watch and get-orig-source target
+    + Create tar manually to include git submodules.
 
  -- Andy Li <andy@onthewings.net>  Wed, 26 Aug 2015 15:01:06 +0800
 
