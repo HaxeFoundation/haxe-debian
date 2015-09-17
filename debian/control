@@ -10,7 +10,8 @@ Build-Depends: camlp4 (>= 3.11),
                ocaml,
                ocaml-best-compilers | ocaml-native-compilers,
                ocaml-findlib,
-               zlib1g-dev
+               zlib1g-dev,
+               bash-completion
 Vcs-Git: https://github.com/HaxeFoundation/haxe-debian.git
 Vcs-Browser: https://github.com/HaxeFoundation/haxe-debian
 Homepage: http://haxe.org
