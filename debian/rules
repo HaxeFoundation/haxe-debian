@@ -40,6 +40,5 @@ get-orig-source:
 	git clone --branch $(VER) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
 	cd orig-source && \
 		rm std/js/*.js && git commit -am "removed js source files for debian" && \
-		curl -s https://raw.githubusercontent.com/Kentzo/git-archive-all/master/git-archive-all | \
-		python - ../../$(PKG)_$(VER)$(DTYPE).orig.tar.gz
+		python $(CURDIR)/debian/git-archive-all ../../$(PKG)_$(VER)$(DTYPE).orig.tar.gz
 	rm -rf orig-source
