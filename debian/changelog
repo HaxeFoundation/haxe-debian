@@ -1,3 +1,10 @@
+haxe (1:3.2.0+dfsg-1~ubuntu12.04.1~ppa2) precise; urgency=low
+
+  * Backport to precise.
+    + Removed -D embed_js support for swfobject.
+
+ -- Andy Li <andy@onthewings.net>  Sat, 03 Oct 2015 07:02:05 +0800
+
 haxe (1:3.2.0+dfsg-1) unstable; urgency=low
 
   * Adopt package (Closes: #799151).
