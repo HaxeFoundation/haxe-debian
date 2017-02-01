@@ -1,3 +1,13 @@
+haxe (1:3.4.0) unstable; urgency=low
+
+  * New upstream version.
+    + Depends on PCRE.
+    + There is no bundled jQuery source file, thus, remove +dfsg tag.
+    + Remove upstream applied patch.
+  * Update d/watch and get-orig-source target (no +dfsg).
+
+ -- Andy Li <andy@onthewings.net>  Wed, 01 Feb 2017 17:25:01 +0800
+
 haxe (1:3.2.1+dfsg-1) unstable; urgency=low
 
   * New upstream version.
