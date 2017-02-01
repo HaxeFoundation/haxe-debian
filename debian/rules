@@ -6,7 +6,7 @@
 
 PKD   = $(abspath $(dir $(MAKEFILE_LIST)))
 PKG   = haxe
-VER  = $(shell dpkg-parsechangelog -l$(PKD)/changelog | perl -ne 'print $$1 if m{^Version:\s+(?:\d+:)?(\d.*)};')
+VER  = $(shell dpkg-parsechangelog -l$(PKD)/changelog | perl -ne 'print $$1 if m{^Version:\s+(?:\d+:)?(\d.*)(?:\-\d+.*)};')
 
 override_dh_auto_configure:
 
