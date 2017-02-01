@@ -13,9 +13,9 @@ class InlineCtor {
 }
 
 @:analyzer(no_local_dce)
-@:analyzer(no_check_has_effect)
+@:analyzer(no_user_var_fusion)
 class Test {
-	@:js('3;')
+	@:js('')
 	static function testNoOpRemoval() {
 		1;
 		2;
@@ -33,8 +33,9 @@ class Test {
 	}
 
 	@:js('
+		var c_y;
 		var c_x = 12;
-		var c_y = "foo";
+		c_y = "foo";
 		var x = 12;
 		c_x = 13;
 		x = 13;
@@ -50,10 +51,12 @@ class Test {
 
 	@:js('
 		var a = 0;
+		var c_y;
+		var c_x;
 		a = 1;
 		a = 2;
-		var c_x = 12;
-		var c_y = "foo";
+		c_x = 12;
+		c_y = "foo";
 		a = 12;
 	')
 	static function testInlineCtor2() {
@@ -68,11 +71,14 @@ class Test {
 
 	@:js('
 		var a = 0;
+		var b_y;
+		var b_x;
+		var c_y;
 		var c_x = 1;
-		var c_y = "c";
+		c_y = "c";
 		a = 1;
-		var b_x = 2;
-		var b_y = "b";
+		b_x = 2;
+		b_y = "b";
 		b_x = 1;
 	')
 	static function testInlineCtor3() {
@@ -86,8 +92,10 @@ class Test {
 	}
 
 	@:js('
-		var x_foo = 1;
-		var x_bar = 2;
+		var x_foo;
+		var x_bar;
+		x_foo = 1;
+		x_bar = 2;
 		var y = 1;
 		var z = 2;
 	')
@@ -100,7 +108,7 @@ class Test {
 		var z = x.bar;
 	}
 
-	@:js('var x = { \'oh-my\' : "god"};')
+	@:js('var x = { "oh-my" : "god"};')
 	static function testStructureInlineInvalidField() {
         var x = {
             "oh-my": "god"
@@ -119,24 +127,24 @@ class Test {
 
 	@:js('
 		var a = [1,2];
-		a[-1];
+		var b = a[-1];
 	')
 	static function testArrayInlineCancelNegative() {
 		var a = [1, 2];
-		a[-1];
+		var b = a[-1];
 	}
 
 	@:js('
 		var a = [1,2];
-		a[2];
+		var b = a[2];
 	')
 	static function testArrayInlineCancelExceeds() {
 		var a = [1, 2];
-		a[2];
+		var b = a[2];
 	}
 
 	@:js('
-		var s = "" + "a";
+		var s = "a";
 	')
 	static function testAbstractOverStringBinop() {
 		var s = "" + A;
@@ -146,7 +154,6 @@ class Test {
 		var a = true;
 		var b = 0;
 		b = 1;
-		b;
 	')
 	static function testSwitch1() {
 		var a = true;
@@ -155,14 +162,12 @@ class Test {
 			case true: b = 1;
 			case false: b = 2;
 		}
-		b; // TODO: this should become 1
 	}
 
 	@:js('
 		var a = true;
 		var b = 0;
 		a = true;
-		a;
 	')
 	static function testSwitch2() {
 		var a = true;

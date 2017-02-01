@@ -1,3 +1,0 @@
--cp src
--neko bin/haxelib.n
--main tools.haxelib.Main

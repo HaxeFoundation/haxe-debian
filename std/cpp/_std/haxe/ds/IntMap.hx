@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2017 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -43,11 +43,12 @@ package haxe.ds;
   inline void set(int key, const ::cpp::Pointer<V> &value) {__int_hash_set(h,key,(Dynamic)value ); }
 
   template<typename VALUE>
-  inline Void set(Dynamic &key, const VALUE &value) { set( (int)key, value ); return null(); }
+  inline void set(Dynamic &key, const VALUE &value) { set( (int)key, value ); }
 ")
 @:coreApi class IntMap<T> implements haxe.Constraints.IMap<Int,T> {
 
-	@:ifFeature("haxe.ds.IntMap.*") private var h : Dynamic;
+	@:ifFeature("haxe.ds.IntMap.*")
+	private var h : Dynamic;
 
 	public function new() : Void { }
 

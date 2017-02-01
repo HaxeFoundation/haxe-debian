@@ -43,22 +43,22 @@ class TestGeneric extends Test {
 	function testBasic() {
 		var mg = new MyGeneric<Int>(12);
 		eq(mg.t, 12);
-		t(Std.is(mg.t, Int));
+		t((mg.t is Int));
 
 		var mg = new MyGeneric<String>("12");
 		eq(mg.t,"12");
-		t(Std.is(mg.t, String));
+		t((mg.t is String));
 	}
 
 	function testExtends() {
 		// basic class
-		//t(unit.TestType.typeError(new MyGeneric2<String>()));
+		//t(unit.HelperMacros.typeError(new MyGeneric2<String>()));
 
 		// not a class
-		//t(unit.TestType.typeError(new MyGeneric2<Int>()));
+		//t(unit.HelperMacros.typeError(new MyGeneric2<Int>()));
 
 		// no constructor
-		//t(unit.TestType.typeError(new MyGeneric2<MyRandomEmptyClass>()));
+		//t(unit.HelperMacros.typeError(new MyGeneric2<MyRandomEmptyClass>()));
 
 		var mg = new MyGeneric2<MyRandomClass>("foo");
 		eq("foo", mg.s);

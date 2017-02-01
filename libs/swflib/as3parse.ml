@@ -14,7 +14,7 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
  *)
 open As3
 
@@ -451,7 +451,7 @@ let read_field ctx ch =
 	let has_meta = kind land 0x40 <> 0 in
 	let slot = read_int ch in
 	let kind = (match kind land 0xF with
-		| 0x00 | 0x06 ->
+		| 0x00 | 0x06 as kind ->
 			let t = index_opt ctx.as3_names (read_int ch) in
 			let value = read_value ctx ch false in
 			A3FVar {

@@ -20,13 +20,15 @@ class Main {
 	macro static public function compileProjects():ExprOf<Result> {
 		var count = 0;
 		var failures = 0;
+		var filter = haxe.macro.Context.definedValue("MISC_TEST_FILTER");
+		var filterRegex = filter == null ? ~/.*/ : new EReg(filter, "");
 		function browse(dirPath) {
 			var dir = FileSystem.readDirectory(dirPath);
 			for (file in dir) {
 				var path = Path.join([dirPath, file]);
 				if (FileSystem.isDirectory(path)) {
 					browse(path);
-				} else if (file.endsWith(".hxml") && !file.endsWith("-each.hxml")) {
+				} else if (file.endsWith(".hxml") && !file.endsWith("-each.hxml") && filterRegex.match(path)) {
 					var old = Sys.getCwd();
 					Sys.setCwd(dirPath);
 					Sys.println('Running haxe $path');
@@ -61,12 +63,14 @@ class Main {
 		return new haxe.Template(s).execute(context, macros);
 	}
 
-	static function normPath(resolve, p:String):String {
+	static function normPath(resolve, p:String, properCase = false):String {
 		if (Sys.systemName() == "Windows")
 		{
-			// on windows, haxe returns lowercase paths with backslashes
+			// on windows, haxe returns lowercase paths with backslashes, drive letter uppercased
+			p = p.substr(0, 1).toUpperCase() + p.substr(1);
 			p = p.replace("/", "\\");
-			p = p.toLowerCase();
+			if (!properCase)
+				p = p.toLowerCase();
 		}
 		return p;
 	}
@@ -105,7 +109,7 @@ class Main {
 				result = false;
 			}
 		}
-
+		proc.close();
 		return result;
 
 	}

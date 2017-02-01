@@ -14,12 +14,12 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
  *)
 
 type process
 
-external run : string -> string array -> process = "process_run"
+external run : string -> string array option -> process = "process_run"
 external read_stdout : process -> string -> int -> int -> int = "process_stdout_read"
 external read_stderr : process -> string -> int -> int -> int = "process_stderr_read"
 external write_stdin : process -> string -> int -> int -> int = "process_stdin_write"

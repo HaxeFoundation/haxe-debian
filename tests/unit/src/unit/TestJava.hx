@@ -17,16 +17,16 @@ class TestJava extends Test
 {
   function testException()
   {
-    var native = new NativeClass();
-    var hx:NativeClass = new HxClass();
+	var native = new NativeClass();
+	var hx:NativeClass = new HxClass();
 
-    exc(function() try native.excTest() catch (e:Dynamic) throw e);
-    var dyn:Dynamic = native;
-    exc(dyn.excTest);
+	exc(function() try native.excTest() catch (e:Dynamic) throw e);
+	var dyn:Dynamic = native;
+	exc(dyn.excTest);
 
-    try
-      hx.excTest()
-    catch(e:Dynamic) throw e; //shouldn't throw any exception
+	try
+	  hx.excTest()
+	catch(e:Dynamic) throw e; //shouldn't throw any exception
   }
 
 	public function testIssue2964()
@@ -290,7 +290,7 @@ class TestJava extends Test
 	function testMiscJavaLib()
 	{
 		//setting inline should be an error
-		t(TestType.typeError(Base.inlineNumber = 4));
+		t(HelperMacros.typeError(Base.inlineNumber = 4));
 	}
 
 	//TODO:
@@ -354,7 +354,7 @@ private class TestMyClass extends haxe.test.MyClass
   @:throws("java.lang.Throwable")
   public function excTest():Void
   {
-    throw new java.lang.Throwable("test", null);
+	throw new java.lang.Throwable("test", null);
   }
 }
 
