@@ -23,7 +23,7 @@ override_dh_strip:
 	dh_strip --exclude=haxelib
 
 get-orig-source:
-	# create tar manually from git, in order to get submodules and remove js source files
+	# create tar manually from git, in order to get submodules
 	git clone --branch $(VER) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
 	cd orig-source && \
 		python $(CURDIR)/debian/git-archive-all ../../$(PKG)_$(VER)$(DTYPE).orig.tar.gz
