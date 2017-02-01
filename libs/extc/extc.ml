@@ -14,7 +14,7 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
  *)
 
 type zstream
@@ -73,6 +73,8 @@ external dlcallback : int -> value = "sys_dlcallback"
 external dlcaml_callback : int -> value = "sys_dlcaml_callback"
 external dlint32 : int32 -> value = "sys_dlint32"
 external getch : bool -> int = "sys_getch"
+
+external filetime : string -> float = "sys_filetime"
 
 (* support for backward compatibility *)
 let zlib_deflate_init lvl = zlib_deflate_init2 lvl 15

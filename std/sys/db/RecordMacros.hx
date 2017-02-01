@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2017 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -36,6 +36,7 @@ private typedef SqlFunction = {
 	var sql : String;
 }
 
+@:deprecated("This class will be removed soon, please install the record-macros library")
 class RecordMacros {
 
 	static var GLOBAL = null;
@@ -363,7 +364,7 @@ class RecordMacros {
 			};
 			var isId = switch( fi.t ) {
 			case DId, DUId, DBigId: true;
-			default: fi.name == "id";
+			default: i.key == null && fi.name == "id";
 			}
 			if( isId ) {
 				switch(fi.t)
@@ -488,7 +489,7 @@ class RecordMacros {
 		return { expr : EBinop(OpAdd, sql, makeString(s,sql.pos)), pos : sql.pos };
 	}
 
-	function sqlQuoteValue( v : Expr, t : RecordType ) {
+	function sqlQuoteValue( v : Expr, t : RecordType, isNull : Bool ) {
 		switch( v.expr ) {
 		case EConst(c):
 			switch( c ) {
@@ -498,18 +499,18 @@ class RecordMacros {
 			case CIdent(n):
 				switch( n ) {
 				case "null": return { expr : EConst(CString("NULL")), pos : v.pos };
-				case "true": return { expr : EConst(CInt("TRUE")), pos : v.pos };
-				case "false": return { expr : EConst(CInt("FALSE")), pos : v.pos };
+				case "true": return { expr : EConst(CString("TRUE")), pos : v.pos };
+				case "false": return { expr : EConst(CString("FALSE")), pos : v.pos };
 				}
 			default:
 			}
 		default:
 		}
-		return { expr : ECall( { expr : EField(manager, "quoteAny"), pos : v.pos }, [ensureType(v,t)]), pos : v.pos }
+		return { expr : ECall( { expr : EField(manager, "quoteAny"), pos : v.pos }, [ensureType(v,t,isNull)]), pos : v.pos }
 	}
 
-	inline function sqlAddValue( sql : Expr, v : Expr, t : RecordType ) {
-		return { expr : EBinop(OpAdd, sql, sqlQuoteValue(v,t)), pos : sql.pos };
+	inline function sqlAddValue( sql : Expr, v : Expr, t : RecordType, isNull : Bool ) {
+		return { expr : EBinop(OpAdd, sql, sqlQuoteValue(v,t, isNull)), pos : sql.pos };
 	}
 
 	function unifyClass( t : RecordType ) {
@@ -639,8 +640,12 @@ class RecordMacros {
 							var epath = e.split('.');
 							var ename = epath.pop();
 							var etype = TPath({ name:ename, pack:epath });
-							var expr = macro std.Type.enumIndex( @:pos(e2.pos) ( $e2 : $etype ) ); //make sure we have the correct type
-							return { sql: makeOp(eq?" = ":" != ", r1.sql, expr, pos), t : DBool, n : r1.n };
+							if (r1.n) {
+								return { sql: macro $manager.nullCompare(${r1.sql}, { var tmp = @:pos(e2.pos) (${e2} : $etype); tmp == null ? null : (std.Type.enumIndex(tmp) + ''); }, ${eq ? macro true : macro false}), t : DBool, n: true };
+							} else {
+								var expr = macro { @:pos(e2.pos) var tmp : $etype = $e2; (tmp == null ? null : (std.Type.enumIndex(tmp) + '')); };
+								return { sql: makeOp(eq?" = ":" != ", r1.sql, expr, pos), t : DBool, n : r1.n };
+							}
 						}
 					default:
 					}
@@ -673,7 +678,7 @@ class RecordMacros {
 		var t = typeof(cond);
 		isNull = false;
 		var d = try makeType(t) catch( e : String ) try makeType(follow(t)) catch( e : String ) error("Unsupported type " + Std.string(t), cond.pos);
-		return { sql : sqlQuoteValue(cond, d), t : d, n : isNull };
+		return { sql : sqlQuoteValue(cond, d, isNull), t : d, n : isNull };
 	}
 
 	function getField( f : { field : String, expr : Expr } ) {
@@ -691,7 +696,7 @@ class RecordMacros {
 					var m = getManager(typeof(mpath),p);
 					var getid = { expr : ECall( { expr : EField(mpath, "unsafeGetId"), pos : p }, [f.expr]), pos : p };
 					f.field = r.key;
-					f.expr = ensureType(getid, m.inf.hfields.get(m.inf.key[0]).t);
+					f.expr = ensureType(getid, m.inf.hfields.get(m.inf.key[0]).t, r.isNull);
 					return inf.hfields.get(r.key);
 				}
 			error("No database field '" + f.field+"'", f.expr.pos);
@@ -714,7 +719,7 @@ class RecordMacros {
 				else
 					sql = sqlAddString(sql, " AND ");
 				sql = sqlAddString(sql, quoteField(fi.name) + (fi.isNull ? " <=> " : " = "));
-				sql = sqlAddValue(sql, f.expr, fi.t);
+				sql = sqlAddValue(sql, f.expr, fi.t, fi.isNull);
 				if( fields.exists(fi.name) )
 					error("Duplicate field " + fi.name, p);
 				else
@@ -807,7 +812,7 @@ class RecordMacros {
 			switch( c ) {
 			case CInt(s): return { sql : makeString(s, p), t : DInt, n : false };
 			case CFloat(s): return { sql : makeString(s, p), t : DFloat, n : false };
-			case CString(s): return { sql : sqlQuoteValue(cond, DText), t : DString(s.length), n : false };
+			case CString(s): return { sql : sqlQuoteValue(cond, DText, false), t : DString(s.length), n : false };
 			case CRegexp(_): error("Unsupported", p);
 			case CIdent(n):
 				if( n.charCodeAt(0) == "$".code ) {
@@ -911,8 +916,12 @@ class RecordMacros {
 		return null;
 	}
 
-	function ensureType( e : Expr, rt : RecordType ) {
-		return { expr : ECheckType(e, convertType(rt)), pos : e.pos };
+	function ensureType( e : Expr, rt : RecordType, isNull : Bool ) {
+		var t = convertType(rt);
+		if (isNull) {
+			t = macro : Null<$t>;
+		}
+		return { expr : ECheckType(e, t), pos : e.pos };
 	}
 
 	function checkKeys( econd : Expr ) {
@@ -928,14 +937,14 @@ class RecordMacros {
 					else
 						error("Field " + f.field + " is not part of table key (" + inf.key.join(",") + ")", p);
 				}
-				f.expr = ensureType(f.expr, fi.t);
+				f.expr = ensureType(f.expr, fi.t, fi.isNull);
 			}
 			return econd;
 		default:
 			if( inf.key.length > 1 )
 				error("You can't use a single value on a table with multiple keys (" + inf.key.join(",") + ")", p);
 			var fi = inf.hfields.get(inf.key[0]);
-			return ensureType(econd, fi.t);
+			return ensureType(econd, fi.t, fi.isNull);
 		}
 	}
 

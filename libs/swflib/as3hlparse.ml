@@ -14,7 +14,7 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
  *)
 open As3
 open As3hl
@@ -383,7 +383,7 @@ let rec parse_name names ctx = function
 	| A3MRuntimeNameLate -> HMRuntimeNameLate
 	| A3MMultiNameLate ns -> HMMultiNameLate ctx.nsets.(idx ns)
 	| A3MAttrib multi -> HMAttrib (parse_name names ctx multi)
-	| A3MParams (id,pl) -> HMParams (parse_name names ctx names.(idx id),List.map (fun id -> parse_name names ctx names.(idx id)) pl)
+	| A3MParams (id,pl) -> HMParams (parse_name names ctx names.(idx id),List.map (fun id -> if idx id = -1 then HMAny else parse_name names ctx names.(idx id)) pl)
 
 let parse_try_catch ctx t =
 	{

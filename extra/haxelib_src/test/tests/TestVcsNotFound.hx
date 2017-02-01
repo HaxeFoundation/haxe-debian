@@ -1,15 +1,15 @@
 package tests;
 
 import sys.FileSystem;
-import tools.haxelib.Vcs;
-import haxe.unit.TestCase;
+import haxe.io.*;
 
+import haxelib.client.Vcs;
 
-class TestVcsNotFound extends TestCase
+class TestVcsNotFound extends TestBase
 {
 	//----------- properties, fields ------------//
 
-	static inline var REPO_ROOT = "testing/libraries";
+	static inline var REPO_ROOT = "test/libraries";
 	static inline var REPO_DIR = "vcs-no";
 	static var CWD:String = null;
 
@@ -25,10 +25,12 @@ class TestVcsNotFound extends TestCase
 
 	override public function setup():Void
 	{
-		Sys.setCwd(CWD + "/" + REPO_ROOT);
+		Sys.setCwd(Path.join([CWD, REPO_ROOT]));
 
-		if(!FileSystem.exists(REPO_DIR))
-			FileSystem.createDirectory(REPO_DIR);
+		if(FileSystem.exists(REPO_DIR)) {
+			deleteDirectory(REPO_DIR);
+		}
+		FileSystem.createDirectory(REPO_DIR);
 
 		Sys.setCwd(REPO_DIR);
 	}
@@ -37,6 +39,8 @@ class TestVcsNotFound extends TestCase
 	{
 		// restore original CWD & PATH:
 		Sys.setCwd(CWD);
+
+		deleteDirectory(Path.join([CWD, REPO_ROOT, REPO_DIR]));
 	}
 
 	//----------------- tests -------------------//
@@ -61,9 +65,8 @@ class TestVcsNotFound extends TestCase
 			vcs.clone(vcs.directory, "https://bitbucket.org/fzzr/hx.signal");
 			assertFalse(true);
 		}
-		catch(error:Dynamic)
+		catch(error:VcsError)
 		{
-			assertTrue(Reflect.isEnumValue(error));
 			switch(error)
 			{
 				case VcsError.CantCloneRepo(_, repo, stderr): assertTrue(true);
@@ -80,9 +83,8 @@ class TestVcsNotFound extends TestCase
 			vcs.clone(vcs.directory, "https://github.com/fzzr-/hx.signal.git");
 			assertFalse(true);
 		}
-		catch(error:Dynamic)
+		catch(error:VcsError)
 		{
-			assertTrue(Reflect.isEnumValue(error));
 			switch(error)
 			{
 				case VcsError.CantCloneRepo(_, repo, stderr): assertTrue(true);
@@ -96,12 +98,12 @@ class TestVcsNotFound extends TestCase
 
 	inline function getHg():Vcs
 	{
-		return new WrongHg();
+		return new WrongHg({quiet: true});
 	}
 
 	inline function getGit():Vcs
 	{
-		return new WrongGit();
+		return new WrongGit({quiet: true});
 	}
 }
 
@@ -109,9 +111,9 @@ class TestVcsNotFound extends TestCase
 
 class WrongHg extends Mercurial
 {
-	public function new()
+	public function new(settings:Settings)
 	{
-		super();
+		super(settings);
 		this.directory = "no-hg";
 		this.executable = "no-hg";
 		this.name = "Mercurial-not-found";
@@ -141,9 +143,9 @@ class WrongHg extends Mercurial
 
 class WrongGit extends Git
 {
-	public function new()
+	public function new(settings:Settings)
 	{
-		super();
+		super(settings);
 		this.directory = "no-git";
 		this.executable = "no-git";
 		this.name = "Git-not-found";

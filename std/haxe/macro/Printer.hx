@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2017 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,6 +26,10 @@ import haxe.macro.Expr;
 using Lambda;
 using StringTools;
 
+/**
+	This class provides some utility methods to convert elements from the
+	macro context to a human-readable String representation.
+*/
 class Printer {
 	var tabs:String;
 	var tabString:String;
@@ -106,7 +110,12 @@ class Printer {
 	// TODO: check if this can cause loops
 	public function printComplexType(ct:ComplexType) return switch(ct) {
 		case TPath(tp): printTypePath(tp);
-		case TFunction(args, ret): (args.length>0 ? args.map(printComplexType).join(" -> ") : "Void") + " -> " + printComplexType(ret);
+		case TFunction(args, ret):
+			function printArg(ct) return switch ct {
+				case TFunction(_): "(" + printComplexType(ct) + ")";
+				default: printComplexType(ct);
+			};
+			(args.length>0 ? args.map(printArg).join(" -> ") :"Void") + " -> " + printComplexType(ret);
 		case TAnonymous(fields): "{ " + [for (f in fields) printField(f) + "; "].join("") + "}";
 		case TParent(ct): "(" + printComplexType(ct) + ")";
 		case TOptional(ct): "?" + printComplexType(ct);
@@ -244,7 +253,7 @@ class Printer {
 			(printPackage && t.pack.length > 0 && t.pack[0] != "" ? "package " + t.pack.join(".") + ";\n" : "") +
 			(t.meta != null && t.meta.length > 0 ? t.meta.map(printMetadata).join(" ") + " " : "") + (t.isExtern ? "extern " : "") + switch (t.kind) {
 				case TDEnum:
-					"enum " + t.name + (t.params.length > 0 ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "") + " {\n"
+					"enum " + t.name + ((t.params != null && t.params.length > 0) ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "") + " {\n"
 					+ [for (field in t.fields)
 						tabs + (field.doc != null && field.doc != "" ? "/**\n" + tabs + tabString + StringTools.replace(field.doc, "\n", "\n" + tabs + tabString) + "\n" + tabs + "**/\n" + tabs : "")
 						+ (field.meta != null && field.meta.length > 0 ? field.meta.map(printMetadata).join(" ") + " " : "")
@@ -256,7 +265,7 @@ class Printer {
 					].join("\n")
 					+ "\n}";
 				case TDStructure:
-					"typedef " + t.name + (t.params.length > 0 ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "") + " = {\n"
+					"typedef " + t.name + ((t.params != null && t.params.length > 0) ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "") + " = {\n"
 					+ [for (f in t.fields) {
 						tabs + printField(f) + ";";
 					}].join("\n")
@@ -267,18 +276,11 @@ class Printer {
 					+ (interfaces != null ? (isInterface ? [for (tp in interfaces) " extends " + printTypePath(tp)] : [for (tp in interfaces) " implements " + printTypePath(tp)]).join("") : "")
 					+ " {\n"
 					+ [for (f in t.fields) {
-						var fstr = printField(f);
-						tabs + fstr + switch(f.kind) {
-							case FVar(_, _), FProp(_, _, _, _): ";";
-							case FFun({expr:null}): ";";
-							case FFun({expr:{expr:EBlock(_)}}): "";
-							case FFun(_): ";";
-							case _: "";
-						};
+						tabs + printFieldWithDelimiter(f);
 					}].join("\n")
 					+ "\n}";
 				case TDAlias(ct):
-					"typedef " + t.name + (t.params.length > 0 ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "") + " = "
+					"typedef " + t.name + ((t.params != null && t.params.length > 0) ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "") + " = "
 					+ (switch(ct) {
 						case TExtend(tpl, fields): printExtension(tpl, fields);
 						case TAnonymous(fields): printStructure(fields);
@@ -287,24 +289,30 @@ class Printer {
 					+ ";";
 				case TDAbstract(tthis, from, to):
 					"abstract " + t.name
-					+ (t.params.length > 0 ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "")
+					+ ((t.params != null && t.params.length > 0) ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "")
 					+ (tthis == null ? "" : "(" + printComplexType(tthis) + ")")
 					+ (from == null ? "" : [for (f in from) " from " + printComplexType(f)].join(""))
 					+ (to == null ? "" : [for (t in to) " to " + printComplexType(t)].join(""))
 					+ " {\n"
 					+ [for (f in t.fields) {
-						var fstr = printField(f);
-						tabs + fstr + switch(f.kind) {
-							case FVar(_, _), FProp(_, _, _, _): ";";
-							case FFun(func) if (func.expr == null): ";";
-							case _: "";
-						};
+						tabs + printFieldWithDelimiter(f);
 					}].join("\n")
 					+ "\n}";
 			}
 
 		tabs = old;
 		return str;
+	}
+
+	function printFieldWithDelimiter(f:Field):String
+	{
+		return printField(f) + switch(f.kind) {
+			case FVar(_, _), FProp(_, _, _, _): ";";
+			case FFun({expr:null}): ";";
+			case FFun({expr:{expr:EBlock(_)}}): "";
+			case FFun(_): ";";
+			case _: "";
+		};
 	}
 
 	function opt<T>(v:T, f:T->String, prefix = "") return v == null ? "" : (prefix + f(v));

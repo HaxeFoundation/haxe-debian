@@ -1,14 +1,14 @@
 package unit.issues;
 
 private abstract MyInt(Int) from Int {
-    public function work() return this;
+	public function work() return this;
 }
 
 private class Foo<T:MyInt> {
 	public var result:Int;
-    public function new(val : T) {
-        result = val.work();
-    }
+	public function new(val : T) {
+		result = val.work();
+	}
 }
 
 class Issue2343 extends unit.Test {
@@ -17,6 +17,6 @@ class Issue2343 extends unit.Test {
 		eq(1, foo.result);
 
 		// we cannot actually test this because it is delayed
-		//t(unit.TestType.typeError(var foo2 = new Foo<String>("1")));
+		//t(unit.HelperMacros.typeError(var foo2 = new Foo<String>("1")));
 	}
 }

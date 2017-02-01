@@ -1,17 +1,18 @@
 package tests;
 
-import sys.io.File;
+import sys.io.*;
 import sys.FileSystem;
-import tools.haxelib.Vcs;
+import haxe.io.*;
 import haxe.unit.TestCase;
-import tools.haxelib.Main.Cli;
-import tools.haxelib.Main.Answer;
 
-class TestVcs extends TestCase
+import haxelib.client.Cli;
+import haxelib.client.Vcs;
+
+class TestVcs extends TestBase
 {
 	//----------- properties, fields ------------//
 
-	static inline var REPO_ROOT = "testing/libraries";
+	static inline var REPO_ROOT = "test/libraries";
 	static inline var REPO_DIR = "vcs";
 	static var CWD:String = null;
 
@@ -40,10 +41,12 @@ class TestVcs extends TestCase
 
 	override public function setup():Void
 	{
-		Sys.setCwd(CWD + "/" + REPO_ROOT);
+		Sys.setCwd(Path.join([CWD, REPO_ROOT]));
 
-		if(!FileSystem.exists(REPO_DIR))
-			FileSystem.createDirectory(REPO_DIR);
+		if(FileSystem.exists(REPO_DIR)) {
+			deleteDirectory(REPO_DIR);
+		}
+		FileSystem.createDirectory(REPO_DIR);
 
 		Sys.setCwd(REPO_DIR);
 	}
@@ -52,6 +55,8 @@ class TestVcs extends TestCase
 	{
 		// restore original CWD:
 		Sys.setCwd(CWD);
+
+		deleteDirectory(Path.join([CWD, REPO_ROOT, REPO_DIR]));
 	}
 
 	//----------------- tests -------------------//
@@ -59,8 +64,8 @@ class TestVcs extends TestCase
 
 	public function testGetVcs():Void
 	{
-		assertTrue(Vcs.get(id) != null);
-		assertTrue(Vcs.get(id).name == vcsName);
+		assertTrue(Vcs.get(id, {quiet: true}) != null);
+		assertTrue(Vcs.get(id, {quiet: true}).name == vcsName);
 	}
 
 	public function testAvailable():Void
@@ -75,7 +80,7 @@ class TestVcs extends TestCase
 		var vcs = getVcs();
 		testCloneSimple();
 
-		assertEquals(vcs, Vcs.get(id));
+		assertEquals(vcs, Vcs.get(id, {quiet: true}));
 	}
 
 	public function testCloneSimple():Void
@@ -187,7 +192,7 @@ class TestVcs extends TestCase
 		File.saveContent("file", "new file \"file\" with content");
 
 		//Hack: set the default answer:
-		new Cli().defaultAnswer = Answer.Yes;
+		Cli.defaultAnswer = true;
 
 		// update to HEAD:
 		// in this case `libName` can get any value:
@@ -217,7 +222,7 @@ class TestVcs extends TestCase
 		File.saveContent("file", "new file \"file\" with content");
 
 		//Hack: set the default answer:
-		new Cli().defaultAnswer = Answer.No;
+		Cli.defaultAnswer = false;
 
 		// update to HEAD:
 		// in this case `libName` can get any value:
@@ -236,6 +241,6 @@ class TestVcs extends TestCase
 
 	inline function getVcs():Vcs
 	{
-		return Vcs.get(id);
+		return Vcs.get(id, {quiet: true});
 	}
 }

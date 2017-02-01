@@ -19,6 +19,12 @@
 
 --next
 
+-D php7
+-php all_php7
+-xml php7.xml
+
+--next
+
 -php all_php
 -xml php.xml
 
@@ -43,6 +49,10 @@
 --next
 -python all_python
 -xml python.xml
+
+--next
+-hl all_hl
+-xml hl.xml
 
 --next
 
