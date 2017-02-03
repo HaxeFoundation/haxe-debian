@@ -2,7 +2,7 @@ Source: haxe
 Section: devel
 Priority: optional
 Maintainer: Andy Li <andy@onthewings.net>
-Standards-Version: 3.9.6
+Standards-Version: 3.9.8
 Build-Depends: camlp4 (>= 3.11),
                debhelper (>= 9),
                libxml-light-ocaml-dev,
@@ -19,8 +19,7 @@ Homepage: http://haxe.org
 
 Package: haxe
 Architecture: any
-Depends: libjs-jquery,
-         neko (>= 2.0.0),
+Depends: neko (>= 2.0.0),
          ${misc:Depends},
          ${ocaml:Depends},
          ${shlibs:Depends}

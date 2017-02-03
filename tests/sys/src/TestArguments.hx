@@ -3,17 +3,71 @@
 	It will write the result to "temp/TestArguments.txt" (for debugging).
 */
 class TestArguments extends haxe.unit.TestCase {
-	static public var expectedArgs(get, null):Array<String>;
-	static function get_expectedArgs() {
-		return expectedArgs != null ? expectedArgs : expectedArgs = [
-			for (arg in new haxe.xml.Fast(Xml.parse(haxe.Resource.getString("args.xml"))).node.args.nodes.arg)
-			arg.innerData
+	// We may compare and update the test cases of other popular langs/libs: https://gist.github.com/andyli/d55ae9ea1327bbbf749d
+	static public var expectedArgs(default, never):Array<String> = [
+		"foo",
+		"12",
+
+		// symbols
+		"&",
+		"&&",
+		"|",
+		"||",
+		".",
+		",",
+		"<",
+		">",
+		"<<",
+		">>",
+		":",
+		";",
+		"(",
+		")",
+		"( )",
+
+		// backslashes
+		"\\",
+		"\\\\",
+		"\\\\\\",
+
+		// single quote
+		"'",
+		// kind of an escaped single quote
+		"\\'",
+
+		// double quote
+		'"',
+		// kind of an escaped double quote
+		'\\"',
+
+		// space
+		" ",
+		// kind of an escaped space
+		"\\ ",
+
+		// empty string
+		"",
+
+		// complex stuff
+		"a b  %PATH% $HOME c\\&<>[\\\"]#{}|%$\\\"\"",
+	].concat(switch (Sys.systemName()) {
+		case "Windows":
+		[];
+		case _:
+		[
+			// linebreak
+			"\n",
+
+			// Chinese, Japanese
+			"中文，にほんご",
 		];
-	}
+	});
 
 	static public var bin:String =
 	#if neko
 		"bin/neko/TestArguments.n";
+	#elseif hl
+		"bin/hl/TestArguments.hl";
 	#elseif cpp
 		#if debug
 			"bin/cpp/TestArguments-debug";
@@ -34,8 +88,12 @@ class TestArguments extends haxe.unit.TestCase {
 		#end
 	#elseif python
 		"bin/python/TestArguments.py";
+	#elseif php7
+		"bin/php7/TestArguments/index.php";
 	#elseif php
 		"bin/php/TestArguments/index.php";
+	#elseif lua
+		"bin/lua/TestArguments.lua";
 	#else
 		null;
 	#end
@@ -44,7 +102,6 @@ class TestArguments extends haxe.unit.TestCase {
 
 	function testArgs() {
 		var args = Sys.args();
-		// trace(args);
 		for (i in 0...expectedArgs.length) {
 			assertEquals(expectedArgs[i], args[i]);
 		}

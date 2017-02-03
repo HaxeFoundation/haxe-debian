@@ -1,9 +1,21 @@
-haxe (1:3.2.1+dfsg-1~ubuntu12.04.1~ppa1) precise; urgency=low
+haxe (1:3.4.0-1~ubuntu12.04.1~ppa1) precise; urgency=low
 
   * Backport to precise.
-    + Removed -D embed_js support for swfobject.
 
- -- Andy Li <andy@onthewings.net>  Wed, 14 Oct 2015 11:28:08 +0800
+ -- Andy Li <andy@onthewings.net>  Fri, 03 Feb 2015 13:48:00 +0800
+
+haxe (1:3.4.0-1) unstable; urgency=low
+
+  * New upstream version.
+    + Depends on PCRE.
+    + There is no bundled jQuery source file, thus, remove +dfsg tag.
+    + Remove dependencies of libjs-jquery and libjs-swfobject.
+    + Remove upstream applied patch.
+    + Update d/copyright.
+  * Update d/watch and get-orig-source target (no +dfsg).
+  * Bump Standards-Version to 3.9.8 (no changes).
+
+ -- Andy Li <andy@onthewings.net>  Thu, 02 Feb 2017 09:27:56 +0800
 
 haxe (1:3.2.1+dfsg-1) unstable; urgency=low
 

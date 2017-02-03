@@ -1,11 +1,19 @@
 version: "{build}"
 
-install:
-    - cinst 7zip.commandline -y
-    - cinst haxe -y
+services:
+  - mysql
 
-build_script:
-    - haxe test.hxml
+install:
+  - npm -g install bower
+  - cinst haxe -y
+  - cinst nssm -y
+  - RefreshEnv
+  - haxelib setup haxelib_repo
+  - haxelib install all --always
+  - haxelib install tora
+  - haxelib list
+
+build: off
 
 test_script:
-    - neko bin/test.n
+  - haxe ci.hxml

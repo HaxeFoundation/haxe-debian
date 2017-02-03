@@ -1,4 +1,4 @@
-CFLAGS = -I zlib
+ALL_CFLAGS = $(CFLAGS)
 LIBS = -I ../extlib
 OCAMLOPT=ocamlopt
 OCAMLC=ocamlc
@@ -17,13 +17,13 @@ extc.cmxa: extc.ml process.ml extc_stubs.o process_stubs.o
 	$(OCAMLOPT) -a -o extc.cmxa $(LIBS) extc.ml process.ml
 
 extc_stubs.o: extc_stubs.c
-	$(OCAMLC) $(CFLAGS) extc_stubs.c
+	$(OCAMLC) $(ALL_CFLAGS) extc_stubs.c
 
 process_stubs.o: process_stubs.c
-	$(OCAMLC) $(CFLAGS) process_stubs.c
+	$(OCAMLC) $(ALL_CFLAGS) process_stubs.c
 	
 clean:
-	rm -f extc.cma extc.cmi extc.cmx extc.cmxa extc.o extc.obj extc.lib extc_stubs.obj extc_stubs.o process.cmx process.obj process.cmi process_stubs.obj process_stubs.o
+	rm -f extc.cma extc.cmi extc.cmx extc.cmxa extc.o extc.obj extc.lib extc_stubs.obj extc_stubs.o process.cmx process.obj process.cmi process.o process_stubs.obj process_stubs.o
 	rm -f extc.a libextc.a libextc.lib extc.cmo process.cmo
 
 test: native

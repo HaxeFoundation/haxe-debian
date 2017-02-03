@@ -6,9 +6,7 @@
 
 PKD   = $(abspath $(dir $(MAKEFILE_LIST)))
 PKG   = haxe
-UVER  = $(shell dpkg-parsechangelog -l$(PKD)/changelog | perl -ne 'print $$1 if m{^Version:\s+(?:\d+:)?(\d.*)(?:\-\d+.*)};')
-DTYPE = +dfsg
-VER  ?= $(subst $(DTYPE),,$(UVER))
+VER  = $(shell dpkg-parsechangelog -l$(PKD)/changelog | perl -ne 'print $$1 if m{^Version:\s+(?:\d+:)?(\d.*)(?:\-\d+.*)};')
 
 override_dh_auto_configure:
 
@@ -25,9 +23,8 @@ override_dh_strip:
 	dh_strip --exclude=haxelib
 
 get-orig-source:
-	# create tar manually from git, in order to get submodules and remove js source files
+	# create tar manually from git, in order to get submodules
 	git clone --branch $(VER) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
 	cd orig-source && \
-		rm std/js/*.js && git commit -am "removed js source files for debian" && \
 		python $(CURDIR)/debian/git-archive-all ../../$(PKG)_$(VER)$(DTYPE).orig.tar.gz
 	rm -rf orig-source

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2014 Haxe Foundation
+ * Copyright (C)2005-2017 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,8 +20,11 @@
  * DEALINGS IN THE SOFTWARE.
  */
 package haxe.io;
+
+#if !nodejs
 import js.html.compat.Uint8Array;
 import js.html.compat.DataView;
+#end
 
 @:coreApi
 class Bytes {
@@ -50,7 +53,7 @@ class Bytes {
 
 	public function blit( pos : Int, src : Bytes, srcpos : Int, len : Int ) : Void {
 		if( pos < 0 || srcpos < 0 || len < 0 || pos + len > length || srcpos + len > src.length ) throw Error.OutsideBounds;
-		if( srcpos == 0 && len == src.length )
+		if( srcpos == 0 && len == src.b.byteLength )
 			b.set(src.b,pos);
 		else
 			b.set(src.b.subarray(srcpos,srcpos+len),pos);
@@ -187,7 +190,7 @@ class Bytes {
 		return untyped b.bufferValue;
 	}
 
-	public static function alloc( length : Int ) : Bytes {
+	public static inline function alloc( length : Int ) : Bytes {
 		return new Bytes(new BytesData(length));
 	}
 

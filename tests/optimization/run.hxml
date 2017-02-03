@@ -1,5 +1,6 @@
 -cp src
--D analyzer
+-D analyzer-optimize
+-D analyzer-user-var-fusion
 --each
 
 -main TestAnalyzer
@@ -7,6 +8,7 @@
 
 --next
 -main TestNullChecker
+-D analyzer-check-null
 --interp
 
 --next
@@ -14,5 +16,5 @@
 --macro Macro.register('Test')
 --macro Macro.register('TestJs')
 --macro Macro.register('TestLocalDce')
-#--macro Macro.register('issues')
+--macro Macro.register('issues')
 -dce std

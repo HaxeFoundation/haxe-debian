@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2017 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,9 +29,9 @@
 	- `Date.fromTime()` with a given timestamp or
 	- `Date.fromString()` by parsing from a String.
 
-	There is some extra functions available in the `DateTools` class.
+	There are some extra functions available in the `DateTools` class.
 
-	In the context of haxe dates, a timestamp is defined as the number of
+	In the context of Haxe dates, a timestamp is defined as the number of
 	milliseconds elapsed since 1st January 1970.
 **/
 extern class Date
@@ -51,8 +51,8 @@ extern class Date
 	function new(year : Int, month : Int, day : Int, hour : Int, min : Int, sec : Int ) : Void;
 
 	/**
-		Returns the timestamp of the date. It might only have a per-second
-		precision depending on the platforms.
+		Returns the timestamp (in milliseconds) of the date. It might
+		only have a per-second precision depending on the platforms.
 	**/
 	function getTime() : Float;
 
@@ -87,7 +87,7 @@ extern class Date
 	function getDate() : Int;
 
 	/**
-		Returns the day of the week of `this` Date (0-6 range).
+		Returns the day of the week of `this` Date (0-6 range) where `0` is Sunday.
 	**/
 	function getDay() : Int;
 

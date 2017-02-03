@@ -14,7 +14,7 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
  *)
 
 type jpath = (string list) * string
@@ -129,7 +129,7 @@ type jannotation = {
 }
 
 and jannotation_value =
-  | ValConst of jconstant (* B, C, D, E, F, I, J, S, Z, s *)
+  | ValConst of jsignature * jconstant (* B, C, D, E, F, I, J, S, Z, s *)
   | ValEnum of jsignature * string (* e *)
   | ValClass of jsignature (* c *) (* V -> Void *)
   | ValAnnotation of jannotation (* @ *)
