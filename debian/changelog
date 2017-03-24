@@ -1,8 +1,15 @@
-haxe (1:3.4.0-1~ubuntu12.04.1~ppa1) precise; urgency=low
+haxe (1:3.4.2-1~ubuntu12.04.1~ppa1) precise; urgency=low
 
   * Backport to precise.
 
- -- Andy Li <andy@onthewings.net>  Fri, 03 Feb 2015 13:48:00 +0800
+ -- Andy Li <andy@onthewings.net>  Fri, 24 Mar 2017 11:20:00 +0800
+
+haxe (1:3.4.2-1) unstable; urgency=low
+
+  * New upstream version.
+  * Fix d/watch.
+
+ -- Andy Li <andy@onthewings.net>  Thu, 23 Mar 2017 10:39:18 +0800
 
 haxe (1:3.4.0-1) unstable; urgency=low
 
