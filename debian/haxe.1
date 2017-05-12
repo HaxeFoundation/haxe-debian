@@ -1,15 +1,15 @@
-.TH HAXE 1 "Feb 06, 2011" ""
+.TH HAXE 1 "May 12, 2017" ""
 .SH NAME
-haxe \- compile haXe programs to SWF, Neko, JavaScript, PHP, or C++.
+haxe \- compile Haxe programs to SWF, Neko, JavaScript, PHP, C++, Java, C#, Python, Lua, or HashLink.
 .SH SYNOPSIS
-\fBhaxe\fR \fB-main\fR \fIclass\fR [\fB-swf9\fR|\fB-swf\fR|\fB-js\fR|\fB-neko\fR|\fB-php\fR|\fB-cpp\fR|\fB-as3\fR] \fIoutput\fR [options...]
+\fBhaxe\fR \fB-main\fR \fIclass\fR [\fB-swf9\fR|\fB-swf\fR|\fB-js\fR|\fB-neko\fR|\fB-php\fR|\fB-cpp\fR|\fB-as3\fR|\fB-cs\fR|\fB-java\fR|\fB-python\fR|\fB-hl\fR|\fB-lua\fR] \fIoutput\fR [options...]
 .SH DESCRIPTION
 .B haxe
-is a command-line compiler which compiles haXe programs into Flash SWF,
-JavaScript, ActionScript, PHP, C++, or Neko bytecode.
+is a command-line compiler which compiles Haxe programs into Flash SWF,
+JavaScript, ActionScript, PHP, C++, Java, C#, Python, Lua, Neko bytecode, or HashLink bytecode.
 .PP
-haXe programs are similar to JavaScript, but have a full-featured type
-system with generics.
+Haxe programs are syntactically similar to JavaScript, but have a full-featured static type
+system with generics, compile-time macros, generalized algebraic datatypes, and more.
 .SH OPTIONS
 .TP
 .BI "\-cp " path
@@ -17,6 +17,9 @@ Add a directory to find source files.
 .TP
 .BI "\-js " file
 Compile code to JavaScript file.
+.TP
+.BI "\-lua " file
+Compile code to Lua file.
 .TP
 .BI "\-swf " file
 Compile code to Flash SWF file.
@@ -33,6 +36,21 @@ Generate PHP code into target directory.
 .BI "\-cpp " file
 Generate C++ code into target directory.
 .TP
+.BI "\-cppia " file
+Generate code to Cppia file.
+.TP
+.BI "\-cs " directory
+Generate C# code into target directory.
+.TP
+.BI "\-java " directory
+Generate Java code into target directory.
+.TP
+.BI "\-python " file
+Generate Python code as target file.
+.TP
+.BI "\-hl " file
+Compile HL code as target file.
+.TP
 .BI "\-xml " file
 Generate XML types description.
 .TP
@@ -42,7 +60,7 @@ Select startup class.
 .BI "\-lib " library[:version]
 Use a haxelib library.
 .TP
-.BI "\-D " var
+.BI "\-D " var[=value]
 Define a conditional compilation flag.
 .TP
 .B "\-v"
@@ -51,88 +69,23 @@ Turn on verbose mode.
 .B "\-debug"
 Add debug information to the compiled code.
 .TP
-.BI "\-swf\-version " version
-Change the SWF version (6 to 10).
-.TP
-.BI "\-swf\-header " header
-Define SWF header (width:height:fps:color).
-.TP
-.BI "\-swf\-lib " file
-Add the SWF library to the compiled SWF.
-.TP
-.BI "\-x " file
-Shorthand for compiling and executing a neko file.
-.TP
-.BI "\-resource " file[@name]
-Add a named resource file.
-.TP
-.B "\-prompt"
-Prompt on error.
-.TP
-.B "\-cmd"
-Run the specified command after successful compilation.
-.TP
-.B "\-\-flash\-strict"
-More type strict flash API.
-.TP
-.B "\-\-no\-traces"
-Do not compile trace calls in the program.
-.TP
-.B "\-\-flash\-use\-stage"
-Place objects found on the stage of the SWF lib.
-.TP
-.B "\-\-neko\-source"
-Keep generated neko source.
-.TP
-.BI "\-\-gen\-hx\-classes " file
-Generate hx headers from SWF9 file.
-.TP
-.B "\-\-next"
-Separate several haxe compilations.
-.TP
-.B "\-\-display"
-Display code tips.
-.TP
-.B "\-\-no\-output"
-Compiles but does not generate any file.
-.TP
-.B "\-\-times"
-Measure compilation times.
-.TP
-.B "\-\-no-inline"
-Disable inlining.
-.TP
-.B "\-\-no-opt"
-Disable code optimizations.
-.TP
-.BI "\-\-php-front " file
-Select the name for the php front file.
-.TP
-.BI "\-\-php-lib " file
-select the name for the php lib folder.
-.TP
-.BI "\-\-js\-namespace " namespace
-Create a namespace where root types are defined.
-.TP
-.BI "\-\-remap " package:target
-Remap a package to another one.
-.TP
-.B "\-\-interp"
-Interpret the program using internal macro system.
-.TP
-.B "\-\-macro"
-Call the given macro before typing anything else.
-.TP
-.B "\-\-dead-code-elimination"
-Remove unused methods.
-.TP
 .B "\-help"
-Display this list of options.
+Show extended help information.
 .TP
 .B "\-\-help"
-Display this list of options.
+Show extended help information.
+.TP
+.B "\-\-help\-defines"
+Print help for all compiler specific defines.
+.TP
+.B "\-\-help\-metas"
+Print help for all compiler metadatas.
+.TP
+.B "<dot-path>"
+Compile the module specified by dot-path.
 .SH AUTHOR
-haXe is written by Nicolas Cannasse for Motion-Twin.
+Neko is currently maintained by the Haxe Foundation.
+It was originally written by Nicolas Cannasse for Motion-Twin.
 .SH SEE ALSO
 .BR "haxelib" (1).
-.IR "http://haxe.org" .
+.IR "https://haxe.org/" .
