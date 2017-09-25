@@ -382,13 +382,14 @@ let need_parenthesis_for_binop current parent =
 *)
 let needs_dereferencing for_assignment expr =
 	let rec is_create target_expr =
-		match target_expr.eexpr with
+		match (reveal_expr target_expr).eexpr with
 			| TParenthesis e -> is_create e
 			| TCast (e, _) -> is_create e
 			| TNew _ -> for_assignment
 			| TArrayDecl _ -> for_assignment
 			| TObjectDecl _ -> for_assignment
 			| TConst TNull -> true
+			| TIf _ -> true
 			(* some of `php.Syntax` methods *)
 			| TCall ({ eexpr = TField (_, FStatic ({ cl_path = syntax_type_path }, { cf_name = name })) }, _) ->
 				(match name with
@@ -397,7 +398,7 @@ let needs_dereferencing for_assignment expr =
 				)
 			| _ -> false
 	in
-	match expr.eexpr with
+	match (reveal_expr expr).eexpr with
 		| TField (target_expr, _) -> is_create target_expr
 		| TArray (target_expr, _) -> is_create target_expr
 		| _ -> false
@@ -600,6 +601,13 @@ let is_var_with_nonconstant_expr (field:tclass_field) =
 				| Some _ -> true
 			)
 		| Method _ -> false
+(**
+	Check if specified field is an `inline var` field.
+*)
+let is_inline_var (field:tclass_field) =
+	match field.cf_kind with
+		| Var { v_read = AccInline; v_write = AccNever } -> true
+		| _ -> false
 
 (**
 	@return New TBlock expression which is composed of setting default values for optional arguments and function body.
@@ -758,17 +766,6 @@ let has_rtti_meta ctx mtype =
 		| Some _ -> true
 
 (**
-	Check if this var accesses and meta combination should generate a variable
-*)
-let is_real_var field =
-	if Meta.has IsVar field.cf_meta then
-		true
-	else
-		match field.cf_kind with
-			| Var { v_read = read; v_write = write } -> read = AccNormal || write = AccNormal
-			| _ -> false
-
-(**
 	Check if user-defined field has the same name as one of php magic methods, but with not compatible signature.
 *)
 let field_needs_rename field =
@@ -904,10 +901,14 @@ class class_wrapper (cls) =
 						let needs = ref false in
 						PMap.iter
 							(fun _ field ->
-								(* Check static vars with non-constant expressions *)
-								if not !needs then needs := is_var_with_nonconstant_expr field;
-								(* Check static dynamic functions *)
-								if not !needs then needs := is_dynamic_method field
+								(* Skip `inline var` fields *)
+								if not (is_inline_var field) then begin
+									if not !needs then needs := is_var_with_nonconstant_expr field;
+									(* Check static vars with non-constant expressions *)
+									if not !needs then needs := is_var_with_nonconstant_expr field;
+									(* Check static dynamic functions *)
+									if not !needs then needs := is_dynamic_method field
+								end
 							)
 							cls.cl_statics;
 						!needs
@@ -1574,7 +1575,7 @@ class code_writer (ctx:Common.context) hx_type_path php_name =
 				| TBinop (operation, expr1, expr2) -> self#write_expr_binop operation expr1 expr2
 				| TField (fexpr, access) when is_php_global expr -> self#write_expr_php_global expr
 				| TField (fexpr, access) when is_php_class_const expr -> self#write_expr_php_class_const expr
-				| TField (fexpr, access) when needs_dereferencing false expr -> self#write_expr (self#dereference expr)
+				| TField (fexpr, access) when needs_dereferencing (self#is_in_write_context) expr -> self#write_expr (self#dereference expr)
 				| TField (fexpr, access) -> self#write_expr_field fexpr access
 				| TTypeExpr mtype -> self#write_expr_type mtype
 				| TParenthesis expr ->
@@ -2179,72 +2180,76 @@ class code_writer (ctx:Common.context) hx_type_path php_name =
 				| Postfix ->
 					self#write_expr expr;
 					write_unop operation
+		method private write_expr_for_field_access expr access_str field_str =
+			let access_str = ref access_str in
+			(match (reveal_expr expr).eexpr with
+				| TNew _
+				| TArrayDecl _
+				| TObjectDecl _ -> self#write_expr (parenthesis expr)
+				| TConst TSuper ->
+					self#write "parent";
+					access_str := "::"
+				| _ -> self#write_expr expr
+			);
+			self#write (!access_str ^ field_str)
 		(**
 			Writes TField to output buffer
 		*)
 		method write_expr_field expr access =
-			let write_access access_str field_str =
-				let access_str = ref access_str in
-				let expr_without_casts = reveal_expr expr in
-				(match expr_without_casts.eexpr with
-					| TNew _
-					| TArrayDecl _
-					| TObjectDecl _ -> self#write_expr (parenthesis expr)
-					| TConst TSuper ->
-						self#write "parent";
-						access_str := "::"
-					| _ -> self#write_expr expr
-				);
-				self#write (!access_str ^ field_str)
-			in
 			match access with
 				| FInstance ({ cl_path = [], "String"}, _, { cf_name = "length"; cf_kind = Var _ }) ->
 					self#write "strlen(";
 					self#write_expr expr;
 					self#write ")"
-				| FInstance (_, _, field) -> write_access "->" (field_name field)
+				| FInstance (_, _, field) -> self#write_expr_for_field_access expr "->" (field_name field)
 				| FStatic (_, ({ cf_kind = Var _ } as field)) ->
 					(match (reveal_expr expr).eexpr with
-						| TTypeExpr _ -> write_access "::" ("$" ^ (field_name field))
-						| _ -> write_access "->" (field_name field)
+						| TTypeExpr _ -> self#write_expr_for_field_access expr "::" ("$" ^ (field_name field))
+						| _ -> self#write_expr_for_field_access expr "->" (field_name field)
 					)
 				| FStatic (_, ({ cf_kind = Method MethDynamic } as field)) ->
 					(match self#parent_expr with
 						| Some { eexpr = TCall ({ eexpr = TField (e, a) }, _) } when a == access ->
 							self#write "(";
-							write_access "::" ("$" ^ (field_name field));
+							self#write_expr_for_field_access expr "::" ("$" ^ (field_name field));
 							self#write ")"
 						| _ ->
-							write_access "::" ("$" ^ (field_name field))
+							self#write_expr_for_field_access expr "::" ("$" ^ (field_name field))
 					)
 				| FStatic (_, ({ cf_kind = Method _ } as field)) -> self#write_expr_field_static expr field
 				| FAnon field ->
 					let written_as_probable_string = self#write_expr_field_if_string expr (field_name field) in
-					if not written_as_probable_string then write_access "->" (field_name field)
-				| FDynamic field_name ->
-					let written_as_probable_string = self#write_expr_field_if_string expr field_name in
-					if not written_as_probable_string then write_access "->" field_name
+					if not written_as_probable_string then self#write_expr_for_field_access expr "->" (field_name field)
+				| FDynamic field_name -> self#write_expr_field_dynamic expr field_name
 				| FClosure (tcls, field) -> self#write_expr_field_closure tcls field expr
 				| FEnum (_, field) ->
-					if is_enum_constructor_with_args field then
-						if not self#parent_expr_is_call then
-							begin
-								self#write (self#use boot_type_path ^ "::closure(");
-								self#write_expr expr;
-								(match (reveal_expr expr).eexpr with
-									| TTypeExpr _ -> self#write "::class"
-									| _ -> self#write "->phpClassName"
-								);
-								self#write (", '" ^ field.ef_name ^ "')")
-							end
-						else
-							write_access "::" field.ef_name
-					else
-						begin
-							write_access "::" field.ef_name;
-							self#write "()"
-						end
-
+					self#write_expr_field_enum expr field
+		(**
+			Generate EField for enum constructor.
+		*)
+		method write_expr_field_enum expr field =
+			let write_field () =
+				self#write_expr expr;
+				let access_operator =
+					match (reveal_expr expr).eexpr with
+						| TTypeExpr _ -> "::"
+						| _ -> "->"
+				in
+				self#write (access_operator ^ field.ef_name)
+			in
+			if is_enum_constructor_with_args field then
+				match self#parent_expr with
+					(* Invoking this enum field *)
+					| Some { eexpr = TCall ({ eexpr = TField (target_expr, FEnum (_, target_field)) }, _) } when target_expr == expr && target_field == field ->
+						write_field ()
+					(* Passing this enum field somewhere *)
+					| _ ->
+						self#write_static_method_closure expr field.ef_name
+			else
+				begin
+					write_field ();
+					self#write "()"
+				end
 		(**
 			Writes field access on Dynamic expression to output buffer
 		*)
@@ -2296,14 +2301,24 @@ class code_writer (ctx:Common.context) hx_type_path php_name =
 					write_expr ();
 					self#write (operator ^ (field_name field))
 				| _ ->
-					let (args, return_type) = get_function_signature field  in
-					self#write "function(";
-					write_args self#write (self#write_arg true) args;
-					self#write ") { return ";
-					write_expr ();
-					self#write (operator ^ (field_name field) ^ "(");
-					write_args self#write (self#write_arg false) args;
-					self#write "); }"
+					self#write_static_method_closure expr field.cf_name
+		(**
+			Generates a closure of a static method. `expr` should contain a `HxClass` instance or a string name of a class.
+		*)
+		method write_static_method_closure expr field_name =
+			let expr = reveal_expr expr in
+			self#write ("new " ^ (self#use hxclosure_type_path) ^ "(");
+			(match (reveal_expr expr).eexpr with
+				| TTypeExpr (TClassDecl { cl_path = ([], "String") }) ->
+					self#write ((self#use hxstring_type_path) ^ "::class")
+				| TTypeExpr _ ->
+					self#write_expr expr;
+					self#write "::class"
+				| _ ->
+					self#write_expr expr;
+					self#write "->phpClassName"
+			);
+			self#write (", '" ^ field_name ^ "')")
 		(**
 			Writes FClosure field access to output buffer
 		*)
@@ -2744,6 +2759,29 @@ class code_writer (ctx:Common.context) hx_type_path php_name =
 						| Some const ->
 							self#write " = ";
 							self#write_expr_const const
+		(**
+			Write an access to a field of dynamic value
+		*)
+		method private write_expr_field_dynamic expr field_name =
+			let write_direct_access () =
+				let written_as_probable_string = self#write_expr_field_if_string expr field_name in
+				if not written_as_probable_string then self#write_expr_for_field_access expr "->" field_name
+			in
+			let write_wrapped_access () =
+				self#write ((self#use boot_type_path) ^ "::dynamicField(");
+				self#write_expr expr;
+				self#write (", '" ^ field_name ^ "')");
+			in
+			let check_and_write checked_expr =
+				match (reveal_expr checked_expr).eexpr with
+					| TField (target, _) when target == expr -> write_direct_access()
+					| _ -> write_wrapped_access()
+			in
+			match self#parent_expr with
+				| Some { eexpr = TCall (callee, _) } -> check_and_write callee
+				| Some { eexpr = TUnop (op, _, target) } when is_modifying_unop op -> check_and_write target
+				| Some { eexpr = TBinop (op, left, _) } when is_assignment_binop op -> check_and_write left
+				| _ -> write_wrapped_access()
 	end
 
 (**
@@ -3218,7 +3256,22 @@ class class_builder ctx (cls:tclass) =
 					match iface with
 						| (i, params) -> writer#use_t (TInst (i, params))
 				in
-				let interfaces = List.map use_interface cls.cl_implements in
+				(* Do not add interfaces which are implemented through other interfaces inheritance *)
+				let unique = List.filter
+					(fun (iface, _) ->
+						not (List.exists
+							(fun (probably_descendant, _) ->
+								if probably_descendant == iface then
+									false
+								else
+									is_parent iface probably_descendant
+							)
+							cls.cl_implements
+						)
+					)
+					cls.cl_implements
+				in
+				let interfaces = List.map use_interface unique in
 				writer#write (String.concat ", " interfaces);
 			end;
 		(**
@@ -3378,9 +3431,12 @@ class class_builder ctx (cls:tclass) =
 					writer#write ("self::$" ^ (field_name field) ^ " = ");
 					writer#write_expr expr
 				in
-				(* Do not generate fields for RTTI meta, because this generator uses another way to store it *)
+				(*
+					Do not generate fields for RTTI meta, because this generator uses another way to store it.
+					Also skip initialization for `inline var` fields as those are generated as PHP class constants.
+				*)
 				let is_auto_meta_var = field.cf_name = "__meta__" && (has_rtti_meta ctx wrapper#get_module_type) in
-				if (is_var_with_nonconstant_expr field) && (not is_auto_meta_var) then begin
+				if (is_var_with_nonconstant_expr field) && (not is_auto_meta_var) && (not (is_inline_var field)) then begin
 					(match field.cf_expr with
 						| None -> ()
 						(* There can be not-inlined blocks when compiling with `-debug` *)
@@ -3408,7 +3464,7 @@ class class_builder ctx (cls:tclass) =
 		method private write_field is_static field =
 			match field.cf_kind with
 				| Var { v_read = AccInline; v_write = AccNever } -> self#write_const field
-				| Var _ when is_real_var field ->
+				| Var _ when not (is_extern_field field) ->
 					(* Do not generate fields for RTTI meta, because this generator uses another way to store it *)
 					let is_auto_meta_var = is_static && field.cf_name = "__meta__" && (has_rtti_meta ctx wrapper#get_module_type) in
 					if not is_auto_meta_var then self#write_var field is_static;
@@ -3440,13 +3496,15 @@ class class_builder ctx (cls:tclass) =
 			Writes "inline var" to output buffer as constant
 		*)
 		method private write_const field =
-			writer#indent 1;
-			self#write_doc (DocVar (writer#use_t field.cf_type, field.cf_doc));
-			writer#write_indentation;
-			writer#write ("const " ^ (field_name field) ^ " = ");
 			match field.cf_expr with
 				| None -> fail writer#pos (try assert false with Assert_failure mlpos -> mlpos)
+				(* Do not generate a PHP constant of `inline var` field if expression is not compatible with PHP const *)
+				| Some expr when not (is_constant expr) -> ()
 				| Some expr ->
+					writer#indent 1;
+					self#write_doc (DocVar (writer#use_t field.cf_type, field.cf_doc));
+					writer#write_indentation;
+					writer#write ("const " ^ (field_name field) ^ " = ");
 					writer#write_expr expr;
 					writer#write ";\n"
 		(**

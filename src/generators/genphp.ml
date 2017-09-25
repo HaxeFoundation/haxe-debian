@@ -568,6 +568,14 @@ and gen_call ctx e el =
 			concat ctx "," (gen_value ctx) params;
 			spr ctx ")";
 		);
+	| TField ({ eexpr = TTypeExpr _ }, FStatic (_, {cf_type = TDynamic _; cf_kind = Var _})) , params ->
+		spr ctx "call_user_func(";
+		ctx.is_call <- true;
+		gen_value ctx e;
+		ctx.is_call <- false;
+		spr ctx ", ";
+		concat ctx ", " (gen_value ctx) el;
+		spr ctx ")";
 	| TLocal { v_name = "__set__" }, { eexpr = TConst (TString code) } :: el ->
 		print ctx "$%s" code;
 		genargs el;
@@ -803,7 +811,12 @@ and gen_member_access ctx isvar e s =
 	| TAnon a ->
 		(match !(a.a_status) with
 		| EnumStatics _ ->
-			print ctx "::%s%s" (if isvar then "$" else "") (s_ident s)
+			let (isvar, access_operator) =
+				match e.eexpr with
+					| TField _ -> (false, "->")
+					| _ -> (isvar, "::")
+			in
+			print ctx "%s%s" (access_operator ^ (if isvar then "$" else "")) (s_ident s)
 		| Statics sta ->
 			let (sep, no_dollar) = if Meta.has Meta.PhpGlobal sta.cl_meta then
 					("", false)
@@ -820,7 +833,7 @@ and gen_member_access ctx isvar e s =
 	| _ -> print ctx "->%s" (if isvar then s_ident_field s else s_ident s)
 
 and gen_field_access ctx isvar e s =
-	match e.eexpr with
+	match (reveal_expr e).eexpr with
 	| TTypeExpr t ->
 		let isglobal = match t with
 		| TClassDecl(c) -> Meta.has Meta.PhpGlobal c.cl_meta && c.cl_extern
@@ -2066,7 +2079,22 @@ let generate_class ctx c =
 	| Some (csup,_) ->
 		requires_constructor := false;
 		print ctx "extends %s " (s_path ctx csup.cl_path csup.cl_extern c.cl_pos));
-	let implements = ExtList.List.unique ~cmp:(fun a b -> (fst a).cl_path = (fst b).cl_path) c.cl_implements in
+	(* Do not add interfaces which are implemented through other interfaces inheritance *)
+	let unique = List.filter
+		(fun (iface, _) ->
+			not (List.exists
+				(fun (probably_descendant, _) ->
+					if probably_descendant == iface then
+						false
+					else
+						is_parent iface probably_descendant
+				)
+				c.cl_implements
+			)
+		)
+		c.cl_implements
+	in
+	let implements = ExtList.List.unique ~cmp:(fun a b -> (fst a).cl_path = (fst b).cl_path) unique in
 	(match implements with
 	| [] -> ()
 	| l ->

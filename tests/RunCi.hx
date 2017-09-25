@@ -68,6 +68,8 @@ class RunCi {
 		throw Fail;
 	}
 
+	static var S3_HXBUILDS_ADDR(default, null) = 's3://hxbuilds/builds/haxe';
+
 	/**
 		Run a command using `Sys.command()`.
 		If the command exits with non-zero code, exit the whole script with the same code.
@@ -182,8 +184,8 @@ class RunCi {
 					"libcurl3:i386", "libglib2.0-0:i386", "libx11-6:i386", "libxext6:i386",
 					"libxt6:i386", "libxcursor1:i386", "libnss3:i386", "libgtk2.0-0:i386"
 				]);
-				runCommand("wget", ["-nv", "http://fpdownload.macromedia.com/pub/flashplayer/updaters/11/flashplayer_11_sa_debug.i386.tar.gz"], true);
-				runCommand("tar", ["-xf", "flashplayer_11_sa_debug.i386.tar.gz", "-C", Sys.getEnv("HOME")]);
+				runCommand("wget", ["-nv", "http://fpdownload.macromedia.com/pub/flashplayer/updaters/25/flash_player_sa_linux_debug.x86_64.tar.gz"], true);
+				runCommand("tar", ["-xf", "flash_player_sa_linux_debug.x86_64.tar.gz", "-C", Sys.getEnv("HOME")]);
 				File.saveContent(mmcfgPath, "ErrorReportingEnable=1\nTraceOutputFileEnable=1");
 				runCommand(Sys.getEnv("HOME") + "/flashplayerdebugger", ["-v"]);
 			case "Mac":
@@ -461,23 +463,39 @@ class RunCi {
 
 	static function getLuaDependencies(){
 		switch (systemName){
-			case "Linux": requireAptPackages(["libpcre3-dev"]);
+			case "Linux":
+				requireAptPackages(["libpcre3-dev"]);
+				runCommand("pip", ["install", "--user", "hererocks"]);
 			case "Mac": {
+				if (commandSucceed("python3", ["-V"]))
+					infoMsg('python3 has already been installed.');
+				else
+					runCommand("brew", ["install", "python3"], true);
+
 			  runCommand("brew", ["install", "pcre"], false, true);
-			  runCommand("brew", ["install", "python"], false, true);
+				runCommand("pip3", ["install", "hererocks"]);
 			}
 		}
-		runCommand("pip", ["install", "hererocks"]);
 	}
 
 	static function installLuaVersionDependencies(lv:String){
 	  if (lv == "-l5.1"){
+			if (!commandSucceed("luarocks", ["show", "luabit"])) {
 	    runCommand("luarocks", ["install", "luabitop", "1.0.2-3", "--server=https://luarocks.org/dev"]);
 	  }
+		}
+		if (!commandSucceed("luarocks", ["show", "lrexlib-pcre"])) {
 	  runCommand("luarocks", ["install", "lrexlib-pcre", "2.8.0-1", "--server=https://luarocks.org/dev"]);
+		}
+		if (!commandSucceed("luarocks", ["show", "luv"])) {
 	  runCommand("luarocks", ["install", "luv", "1.9.1-0", "--server=https://luarocks.org/dev"]);
+		}
+		if (!commandSucceed("luarocks", ["show", "luasocket"])) {
 	  runCommand("luarocks", ["install", "luasocket", "3.0rc1-2", "--server=https://luarocks.org/dev"]);
+		}
+		if (!commandSucceed("luarocks", ["show", "environ"])) {
 	  runCommand("luarocks", ["install", "environ", "0.1.0-1", "--server=https://luarocks.org/dev"]);
+	}
 	}
 
 	static function getCsDependencies() {
@@ -628,7 +646,7 @@ class RunCi {
 			}
 			// make time in the UTC time zone
 			var time = Date.fromTime(Std.parseFloat(gitTime) * 1000 - tzd);
-			DateTools.format(time, "%FT%TZ");
+			DateTools.format(time, "%Y-%m-%dT%H:%M:%SZ");
 		}
 	}
 	static var haxeVer(default, never) = {
@@ -654,19 +672,39 @@ class RunCi {
 		ver.join(".");
 	}
 
+	static function isDeployNightlies () {
+		return Sys.getEnv("DEPLOY_NIGHTLIES") != null;
+	}
+
 	static function deploy():Void {
-		if (
-			Sys.getEnv("DEPLOY") != null
-		) {
+		changeDirectory(repoDir);
+
+		var doDocs = isDeployApiDocsRequired();
+		var doNightlies = isDeployNightlies(),
+				doInstaller = doNightlies && shouldDeployInstaller();
+
+		if (doDocs || doNightlies) {
 			changeDirectory(repoDir);
-
-			// generate doc
-			runCommand("make", ["-s", "install_dox"]);
-			runCommand("make", ["-s", "package_doc"]);
-
-			// deployBintray();
-			deployApiDoc();
-			deployPPA();
+			if (doDocs) {
+				if (systemName != 'Windows') {
+					// generate doc
+					runCommand("make", ["-s", "install_dox"]);
+					runCommand("make", ["-s", "package_doc"]);
+					// deployBintray();
+					deployApiDoc();
+					// disable deployment to ppa:haxe/snapshots for now
+					// because there is no debian sedlex package...
+					// deployPPA();
+				}
+			}
+			if (doNightlies) {
+				if (doInstaller && !doDocs && systemName != 'Windows') {
+					// generate doc
+					runCommand("make", ["-s", "install_dox"]);
+					runCommand("make", ["-s", "package_doc"]);
+				}
+				deployNightlies(doInstaller);
+			}
 		}
 	}
 
@@ -699,6 +737,23 @@ class RunCi {
 		}
 	}
 
+	static function shouldDeployInstaller() {
+		if (systemName == 'Linux') {
+			return false;
+		}
+		if (gitInfo.branch == 'three_four_three') {
+			return true;
+		}
+		var rev = Sys.getEnv('ADD_REVISION');
+		return rev != null && rev != "0";
+	}
+
+	static function isDeployApiDocsRequired () {
+		return gitInfo.branch == "development" &&
+			Sys.getEnv("DEPLOY_API_DOCS") != null &&
+			Sys.getEnv("deploy_key_decrypt") != null;
+	}
+
 	/**
 		Deploy doc to api.haxe.org.
 	*/
@@ -715,6 +770,118 @@ class RunCi {
 
 			runCommand("make", ["-s", "deploy_doc"]);
 		}
+	}
+
+	/**
+		Deploy source package to hxbuilds s3
+	*/
+	static function deployNightlies(doInstaller:Bool):Void {
+		var gitTime = commandResult("git", ["show", "-s", "--format=%ct", "HEAD"]).stdout;
+		var tzd = {
+			var z = Date.fromTime(0);
+			z.getHours() * 60 * 60 * 1000 + z.getMinutes() * 60 * 1000;
+		};
+		var time = Date.fromTime(Std.parseFloat(gitTime) * 1000 - tzd);
+		if (
+			(gitInfo.branch == "development" ||
+			gitInfo.branch == "master" ||
+			gitInfo.branch == "three_four_three" ||
+			gitInfo.branch == "nightly-travis") &&
+			Sys.getEnv("HXBUILDS_AWS_ACCESS_KEY_ID") != null &&
+			Sys.getEnv("HXBUILDS_AWS_SECRET_ACCESS_KEY") != null &&
+			Sys.getEnv("TRAVIS_PULL_REQUEST") != "true"
+		) {
+			if (ci == TravisCI) {
+				runCommand("make", ["-s", "package_unix"]);
+				if (doInstaller) {
+					getLatestNeko();
+					runCommand("make", ["-s", 'package_installer_mac']);
+				}
+				if (systemName == 'Linux') {
+					// source
+					for (file in sys.FileSystem.readDirectory('out')) {
+						if (file.startsWith('haxe') && file.endsWith('_src.tar.gz')) {
+							submitToS3("source", 'out/$file');
+							break;
+						}
+					}
+				}
+				for (file in sys.FileSystem.readDirectory('out')) {
+					if (file.startsWith('haxe')) {
+						if (file.endsWith('_bin.tar.gz')) {
+							var name = systemName == "Linux" ? 'linux64' : 'mac';
+							submitToS3(name, 'out/$file');
+						} else if (file.endsWith('_installer.tar.gz')) {
+							submitToS3('mac-installer', 'out/$file');
+						}
+					}
+				}
+			} else {
+				if (doInstaller) {
+					getLatestNeko();
+					var cygRoot = Sys.getEnv("CYG_ROOT");
+					if (cygRoot != null) {
+						runCommand('$cygRoot/bin/bash', ['-lc', "cd \"$OLDPWD\" && make -s -f Makefile.win package_installer_win"]);
+					} else {
+						runCommand("make", ['-f', 'Makefile.win', "-s", 'package_installer_win']);
+					}
+				}
+				for (file in sys.FileSystem.readDirectory('out')) {
+					if (file.startsWith('haxe')) {
+						if (file.endsWith('_bin.zip')) {
+							submitToS3('windows', 'out/$file');
+						} else if (file.endsWith('_installer.zip')) {
+							submitToS3('windows-installer', 'out/$file');
+						}
+					}
+				}
+			}
+		} else {
+			trace('Not deploying nightlies');
+		}
+	}
+
+	static function getLatestNeko() {
+		if (!FileSystem.exists('installer')) {
+			FileSystem.createDirectory('installer');
+		}
+		var src = 'http://nekovm.org/media/neko-2.1.0-';
+		var suffix = systemName == 'Windows' ? 'win.zip' : 'osx64.tar.gz';
+		src += suffix;
+		runCommand("wget", [src, '-O', 'installer/neko-$suffix'], true);
+	}
+
+	static function createNsiInstaller() {
+		if (!FileSystem.exists('installer')) {
+			FileSystem.createDirectory('installer');
+		}
+		getLatestNeko();
+	}
+
+	static function fileExtension(file:String) {
+		file = haxe.io.Path.withoutDirectory(file);
+		var idx = file.indexOf('.');
+		if (idx < 0) {
+			return '';
+		} else {
+			return file.substr(idx);
+		}
+	}
+
+	static function submitToS3(kind:String, sourceFile:String) {
+		var date = DateTools.format(Date.now(), '%Y-%m-%d');
+		var ext = fileExtension(sourceFile);
+		var fileName = 'haxe_${date}_${gitInfo.branch}_${gitInfo.commit.substr(0,7)}${ext}';
+
+		var changeLatest = gitInfo.branch == "development";
+		Sys.putEnv('AWS_ACCESS_KEY_ID', Sys.getEnv('HXBUILDS_AWS_ACCESS_KEY_ID'));
+		Sys.putEnv('AWS_SECRET_ACCESS_KEY', Sys.getEnv('HXBUILDS_AWS_SECRET_ACCESS_KEY'));
+		runCommand('aws s3 cp --region us-east-1 "$sourceFile" "$S3_HXBUILDS_ADDR/$kind/$fileName"');
+		if (changeLatest) {
+			runCommand('aws s3 cp --region us-east-1 "$sourceFile" "$S3_HXBUILDS_ADDR/$kind/haxe_latest$ext"');
+		}
+		Indexer.index('$S3_HXBUILDS_ADDR/$kind/');
+		runCommand('aws s3 cp --region us-east-1 index.html "$S3_HXBUILDS_ADDR/$kind/index.html"');
 	}
 
 	/**
@@ -1046,7 +1213,7 @@ class RunCi {
 							infoMsg('mxmlc has already been installed.');
 						} else {
 							var apacheMirror = Json.parse(Http.requestUrl("http://www.apache.org/dyn/closer.lua?as_json=1")).preferred;
-							var flexVersion = "4.15.0";
+							var flexVersion = "4.16.0";
 							runCommand("wget", ['${apacheMirror}/flex/${flexVersion}/binaries/apache-flex-sdk-${flexVersion}-bin.tar.gz'], true);
 							runCommand("tar", ["-xf", 'apache-flex-sdk-${flexVersion}-bin.tar.gz', "-C", Sys.getEnv("HOME")]);
 							var flexsdkPath = Sys.getEnv("HOME") + '/apache-flex-sdk-${flexVersion}-bin';
