@@ -688,10 +688,10 @@ class RunCi {
 			if (doDocs) {
 				if (systemName != 'Windows') {
 					// generate doc
-					runCommand("make", ["-s", "install_dox"]);
-					runCommand("make", ["-s", "package_doc"]);
+					// runCommand("make", ["-s", "install_dox"]);
+					// runCommand("make", ["-s", "package_doc"]);
 					// deployBintray();
-					deployApiDoc();
+					// deployApiDoc();
 					// disable deployment to ppa:haxe/snapshots for now
 					// because there is no debian sedlex package...
 					// deployPPA();
@@ -700,10 +700,10 @@ class RunCi {
 			if (doNightlies) {
 				if (doInstaller && !doDocs && systemName != 'Windows') {
 					// generate doc
-					runCommand("make", ["-s", "install_dox"]);
-					runCommand("make", ["-s", "package_doc"]);
+					// runCommand("make", ["-s", "install_dox"]);
+					// runCommand("make", ["-s", "package_doc"]);
 				}
-				deployNightlies(doInstaller);
+				deployNightlies();
 			}
 		}
 	}
@@ -738,14 +738,7 @@ class RunCi {
 	}
 
 	static function shouldDeployInstaller() {
-		if (systemName == 'Linux') {
-			return false;
-		}
-		if (gitInfo.branch == 'three_four_three') {
-			return true;
-		}
-		var rev = Sys.getEnv('ADD_REVISION');
-		return rev != null && rev != "0";
+		return true;
 	}
 
 	static function isDeployApiDocsRequired () {
@@ -775,7 +768,7 @@ class RunCi {
 	/**
 		Deploy source package to hxbuilds s3
 	*/
-	static function deployNightlies(doInstaller:Bool):Void {
+	static function deployNightlies():Void {
 		var gitTime = commandResult("git", ["show", "-s", "--format=%ct", "HEAD"]).stdout;
 		var tzd = {
 			var z = Date.fromTime(0);
@@ -785,77 +778,59 @@ class RunCi {
 		if (
 			(gitInfo.branch == "development" ||
 			gitInfo.branch == "master" ||
-			gitInfo.branch == "three_four_three" ||
+			~/^[0-9]\.[0-9]_bugfix$/.match(gitInfo.branch) ||
 			gitInfo.branch == "nightly-travis") &&
 			Sys.getEnv("HXBUILDS_AWS_ACCESS_KEY_ID") != null &&
 			Sys.getEnv("HXBUILDS_AWS_SECRET_ACCESS_KEY") != null &&
 			Sys.getEnv("TRAVIS_PULL_REQUEST") != "true"
 		) {
-			if (ci == TravisCI) {
-				runCommand("make", ["-s", "package_unix"]);
-				if (doInstaller) {
-					getLatestNeko();
-					runCommand("make", ["-s", 'package_installer_mac']);
-				}
-				if (systemName == 'Linux') {
-					// source
+			switch (ci) {
+				case null:
+					trace('Not deploying nightlies (not in CI)');
+				case TravisCI:
+					if (systemName == 'Linux') {
+						// source
+						for (file in sys.FileSystem.readDirectory('out')) {
+							if (file.startsWith('haxe') && file.endsWith('_src.tar.gz')) {
+								submitToS3("source", 'out/$file');
+								break;
+							}
+						}
+					}
 					for (file in sys.FileSystem.readDirectory('out')) {
-						if (file.startsWith('haxe') && file.endsWith('_src.tar.gz')) {
-							submitToS3("source", 'out/$file');
-							break;
+						if (file.startsWith('haxe')) {
+							if (file.endsWith('_bin.tar.gz')) {
+								var name = systemName == "Linux" ? 'linux64' : 'mac';
+								submitToS3(name, 'out/$file');
+							} else if (file.endsWith('_installer.tar.gz')) {
+								submitToS3('mac-installer', 'out/$file');
+							}
 						}
 					}
-				}
-				for (file in sys.FileSystem.readDirectory('out')) {
-					if (file.startsWith('haxe')) {
-						if (file.endsWith('_bin.tar.gz')) {
-							var name = systemName == "Linux" ? 'linux64' : 'mac';
-							submitToS3(name, 'out/$file');
-						} else if (file.endsWith('_installer.tar.gz')) {
-							submitToS3('mac-installer', 'out/$file');
+				case AppVeyor:
+					var kind = switch (Sys.getEnv("ARCH")) {
+						case null:
+							throw "ARCH is not set";
+						case "32":
+							"windows";
+						case "64":
+							"windows64";
+						case _:
+							throw "unknown ARCH";
+					}
+					for (file in sys.FileSystem.readDirectory('out')) {
+						if (file.startsWith('haxe')) {
+							if (file.endsWith('_bin.zip')) {
+								submitToS3(kind, 'out/$file');
+							} else if (file.endsWith('_installer.zip')) {
+								submitToS3('${kind}-installer', 'out/$file');
+							}
 						}
 					}
-				}
-			} else {
-				if (doInstaller) {
-					getLatestNeko();
-					var cygRoot = Sys.getEnv("CYG_ROOT");
-					if (cygRoot != null) {
-						runCommand('$cygRoot/bin/bash', ['-lc', "cd \"$OLDPWD\" && make -s -f Makefile.win package_installer_win"]);
-					} else {
-						runCommand("make", ['-f', 'Makefile.win', "-s", 'package_installer_win']);
-					}
-				}
-				for (file in sys.FileSystem.readDirectory('out')) {
-					if (file.startsWith('haxe')) {
-						if (file.endsWith('_bin.zip')) {
-							submitToS3('windows', 'out/$file');
-						} else if (file.endsWith('_installer.zip')) {
-							submitToS3('windows-installer', 'out/$file');
-						}
-					}
-				}
 			}
 		} else {
 			trace('Not deploying nightlies');
 		}
-	}
-
-	static function getLatestNeko() {
-		if (!FileSystem.exists('installer')) {
-			FileSystem.createDirectory('installer');
-		}
-		var src = 'http://nekovm.org/media/neko-2.1.0-';
-		var suffix = systemName == 'Windows' ? 'win.zip' : 'osx64.tar.gz';
-		src += suffix;
-		runCommand("wget", [src, '-O', 'installer/neko-$suffix'], true);
-	}
-
-	static function createNsiInstaller() {
-		if (!FileSystem.exists('installer')) {
-			FileSystem.createDirectory('installer');
-		}
-		getLatestNeko();
 	}
 
 	static function fileExtension(file:String) {
@@ -1056,9 +1031,10 @@ class RunCi {
 								runCommand("haxe", ["compile-cpp.hxml", "-D", "HXCPP_M64"].concat(args));
 								runCpp("bin/cpp/TestMain-debug", []);
 
-								runCommand("haxe", ["compile-cppia-host.hxml"]);
-								runCommand("haxe", ["compile-cppia.hxml"]);
-								runCpp("bin/cppia/Host-debug", ["bin/unit.cppia"]);
+								// https://github.com/HaxeFoundation/hxcpp/issues/646
+								// runCommand("haxe", ["compile-cppia-host.hxml"]);
+								// runCommand("haxe", ["compile-cppia.hxml"]);
+								// runCpp("bin/cppia/Host-debug", ["bin/unit.cppia"]);
 						}
 
 						changeDirectory(sysDir);
