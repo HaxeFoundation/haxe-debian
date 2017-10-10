@@ -1,2 +1,0 @@
-haxe: hardening-no-fortify-functions usr/bin/haxelib
-haxe: hardening-no-relro usr/bin/haxe

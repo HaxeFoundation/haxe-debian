@@ -143,6 +143,24 @@ class Boot {
 	}
 
 	/**
+		Returns a list of currently loaded haxe-generated classes.
+	**/
+	public static function getRegisteredClasses():Array<Class<Dynamic>> {
+		var result = [];
+		Syntax.foreach(aliases, function(phpName, haxeName) {
+			result.push(cast getClass(phpName));
+		});
+		return result;
+	}
+
+	/**
+		Returns a list of phpName=>haxeName for currently loaded haxe-generated classes.
+	**/
+	public static function getRegisteredAliases():NativeAssocArray<String> {
+		return aliases;
+	}
+
+	/**
 		Get Class<T> instance for PHP fully qualified class name (E.g. '\some\pack\MyClass')
 		It's always the same instance for the same `phpClassName`
 	**/
@@ -254,6 +272,13 @@ class Boot {
 	}
 
 	/**
+		Unsafe cast to HxClass
+	**/
+	public static inline function castClass(cls:Class<Dynamic>) : HxClass {
+		return cast cls;
+	}
+
+	/**
 		Returns `Class<T>` for `HxClosure`
 	**/
 	public static inline function closureHxClass() : HxClass {
@@ -341,7 +366,7 @@ class Boot {
 				return value.__toString();
 			}
 			if (Std.is(value, StdClass)) {
-				if (value.toString.isset() && value.toString.is_callable()) {
+				if (Global.isset(Syntax.getField(value, 'toString')) && value.toString.is_callable()) {
 					return value.toString();
 				}
 				var result = new NativeIndexedArray<String>();
@@ -496,6 +521,19 @@ class Boot {
 	static public inline function ensureLoaded(phpClassName:String ) : Bool {
 		return Global.class_exists(phpClassName) || Global.interface_exists(phpClassName);
 	}
+
+	/**
+		Get `field` of a dynamic `value` in a safe manner (avoid exceptions on trying to get a method)
+	**/
+	static public function dynamicField( value:Dynamic, field:String ) : Dynamic {
+		if(Global.method_exists(value, field)) {
+			return closure(value, field);
+		}
+		if(Global.is_string(value)) {
+			value = @:privateAccess new HxDynamicStr(value);
+		}
+		return Syntax.getField(value, field);
+	}
 }
 
 
@@ -517,7 +555,7 @@ private class HxClass {
 	**/
 	@:phpMagic
 	function __call( method:String, args:NativeArray ) : Dynamic {
-		var callback = phpClassName + '::' + method;
+		var callback = (phpClassName == 'String' ? (cast HxString:HxClass).phpClassName : phpClassName) + '::' + method;
 		return Global.call_user_func_array(callback, args);
 	}
 
@@ -526,7 +564,9 @@ private class HxClass {
 	**/
 	@:phpMagic
 	function __get( property:String ) : Dynamic {
-		if (Boot.hasGetter(phpClassName, property)) {
+		if (Global.defined('$phpClassName::$property')) {
+			return Global.constant('$phpClassName::$property');
+		} else if (Boot.hasGetter(phpClassName, property)) {
 			return Syntax.staticCall(phpClassName, 'get_$property');
 		} else {
 			return Syntax.getStaticField(phpClassName, property);

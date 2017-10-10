@@ -1,8 +1,27 @@
-haxe (1:3.4.2-1~ubuntu12.04.1~ppa1) precise; urgency=low
+haxe (1:3.4.4-1~ubuntu12.04.1~ppa1) precise; urgency=low
 
   * Backport to precise.
 
- -- Andy Li <andy@onthewings.net>  Fri, 24 Mar 2017 11:20:00 +0800
+ -- Andy Li <andy@onthewings.net>  Tue, 10 Oct 2017 17:06:21 +0800
+
+haxe (1:3.4.4-1) unstable; urgency=medium
+
+  * New upstream version.
+    + Fix flash target broken when compiled with OCaml 4.05.
+  * Bump Standards-Version to 4.1.1 (no changes).
+  * Update d/rules to use /usr/share/dpkg/pkg-info.mk to get source version.
+  * Update d/watch to use the GitHub latest release page to avoid getting
+    pre-release version.
+
+ -- Andy Li <andy@onthewings.net>  Mon, 09 Oct 2017 09:50:21 +0800
+
+haxe (1:3.4.3-1) unstable; urgency=low
+
+  * New upstream version.
+  * Remove hardening-* lintian overrides.
+  * Bump Standards-Version to 4.1.0 (no changes).
+
+ -- Andy Li <andy@onthewings.net>  Mon, 25 Sep 2017 13:38:07 +0800
 
 haxe (1:3.4.2-1) unstable; urgency=low
 

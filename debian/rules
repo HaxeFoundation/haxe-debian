@@ -1,12 +1,10 @@
 #!/usr/bin/make -f
 # debian/rules for Haxe.
 
+include /usr/share/dpkg/pkg-info.mk
+
 %:
 	dh $@ --with bash-completion
-
-PKD   = $(abspath $(dir $(MAKEFILE_LIST)))
-PKG   = haxe
-VER  = $(shell dpkg-parsechangelog -l$(PKD)/changelog | perl -ne 'print $$1 if m{^Version:\s+(?:\d+:)?(\d.*)(?:\-\d+.*)};')
 
 override_dh_auto_configure:
 
@@ -24,7 +22,7 @@ override_dh_strip:
 
 get-orig-source:
 	# create tar manually from git, in order to get submodules
-	git clone --branch $(VER) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
+	git clone --branch $(DEB_VERSION_UPSTREAM) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
 	cd orig-source && \
-		python $(CURDIR)/debian/git-archive-all ../../$(PKG)_$(VER)$(DTYPE).orig.tar.gz
+		python $(CURDIR)/debian/git-archive-all ../../haxe_$(DEB_VERSION_UPSTREAM).orig.tar.gz
 	rm -rf orig-source
