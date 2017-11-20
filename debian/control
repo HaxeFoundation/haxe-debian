@@ -3,13 +3,13 @@ Section: devel
 Priority: optional
 Maintainer: Andy Li <andy@onthewings.net>
 Standards-Version: 4.1.1
-Build-Depends: camlp4 (>= 3.11),
-               debhelper (>= 9),
+Build-Depends: debhelper (>= 9),
+               dh-ocaml,
+               ocaml-nox,
+               ocaml-findlib,
+               camlp4 (>= 3.11),
                libxml-light-ocaml-dev,
                neko (>= 2.0.0~),
-               ocaml,
-               ocaml-best-compilers | ocaml-native-compilers,
-               ocaml-findlib,
                zlib1g-dev,
                libpcre3-dev,
                bash-completion

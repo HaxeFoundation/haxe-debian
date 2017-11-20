@@ -1,16 +1,21 @@
 #!/usr/bin/make -f
 # debian/rules for Haxe.
 
+include /usr/share/ocaml/ocamlvars.mk
 include /usr/share/dpkg/pkg-info.mk
 
+# bytecompile everything if ocamlopt doesn't exists
+ifneq ($(OCAML_HAVE_OCAMLOPT),yes)
+	BYTECODE = "BYTECODE=1"
+endif
+
 %:
-	dh $@ --with bash-completion
+	dh $@ --with ocaml,bash-completion
 
 override_dh_auto_configure:
 
 override_dh_auto_build:
-	# Check to see if ocamlopt exists. If not, bytecompile everything.
-	command -v ocamlopt && dh_auto_build || dh_auto_build -- BYTECODE=1
+	dh_auto_build -- $(BYTECODE)
 	# Compile haxelib to neko
 	dh_auto_build -- tools
 
@@ -19,6 +24,9 @@ override_dh_auto_install:
 override_dh_strip:
 	# haxelib is the neko vm appended with neko bytecode. It should not be stripped
 	dh_strip --exclude=haxelib
+
+override_dh_missing:
+	dh_missing --fail-missing
 
 get-orig-source:
 	# create tar manually from git, in order to get submodules
