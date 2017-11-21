@@ -1,2 +1,2 @@
-Tests: interp
+Tests: interp, haxelib
 Depends: @

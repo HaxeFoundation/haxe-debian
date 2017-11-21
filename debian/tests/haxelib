@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+testdir=$(mktemp -d)
+trap "rm -rf ${testdir}" 0 INT QUIT ABRT PIPE TERM
+cd ${testdir}
+
+haxelib newrepo
+
+echo "haxelib newrepo: OK"
+
+haxelib config | grep -q "$(pwd)"
+
+echo "haxelib config: OK"
