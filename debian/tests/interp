@@ -1,0 +1,19 @@
+#!/bin/sh
+
+set -e
+
+testdir=$(mktemp -d)
+trap "rm -rf ${testdir}" 0 INT QUIT ABRT PIPE TERM
+cd ${testdir}
+
+cat <<EOF > Test.hx
+class Test {
+    static function main():Void {
+        Sys.println("Hello, World!");
+    }
+}
+EOF
+
+haxe -main Test --interp | grep -q "Hello, World!"
+
+echo "run: OK"
