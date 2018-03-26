@@ -8,7 +8,8 @@ using StringTools;
 using IntegrationTests;
 
 class IntegrationTests extends TestBase {
-	var haxelibBin:String = Path.join([Sys.getCwd(), "run.n"]);
+	static var projectRoot:String = Sys.getCwd();
+	var haxelibBin:String = Path.join([projectRoot, "run.n"]);
 	public var server(default, null):String = switch (Sys.getEnv("HAXELIB_SERVER")) {
 		case null:
 			"localhost";
@@ -26,9 +27,12 @@ class IntegrationTests extends TestBase {
 
 	static var originalRepo(default, never) = {
 		var p = new Process("haxelib", ["config"]);
-		var repo = Path.normalize(p.stdout.readLine());
+		var originalRepo = Path.normalize(p.stdout.readLine());
 		p.close();
-		repo;
+		if (repo == originalRepo) {
+			throw "haxelib repo is the same as test repo: " + repo;
+		}
+		originalRepo;
 	};
 	static public var repo(default, never) = "repo_integration_tests";
 	static public var bar(default, never) = {
@@ -52,7 +56,10 @@ class IntegrationTests extends TestBase {
 			clientVer = {
 				var r = haxelib(["version"]).result();
 				if (r.code == 0)
-					SemVer.ofString(r.out.trim());
+					SemVer.ofString(switch(r.out.trim()) {
+						case _.split(" ") => [v] | [v, _]: v;
+						case v: v;
+					});
 				else if (r.out.indexOf("3.1.0-rc.4") >= 0)
 					SemVer.ofString("3.1.0-rc.4");
 				else
@@ -124,10 +131,15 @@ class IntegrationTests extends TestBase {
 		resetDB();
 
 		deleteDirectory(repo);
+		FileSystem.createDirectory(repo);
 		haxelibSetup(repo);
+
+		Sys.setCwd(Path.join([projectRoot, "test"]));
 	}
 
 	override function tearDown():Void {
+		Sys.setCwd(projectRoot);
+
 		haxelibSetup(originalRepo);
 		deleteDirectory(repo);
 
