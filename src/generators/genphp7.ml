@@ -140,7 +140,7 @@ let is_keyword str =
 		| "print" | "private" | "protected" | "public" | "require" | "require_once" | "return" | "static" | "switch"
 		| "throw" | "trait" | "try" | "unset" | "use" | "var" | "while" | "xor" | "yield" | "__class__" | "__dir__"
 		| "__file__" | "__function__" | "__line__" | "__method__" | "__trait__" | "__namespace__" | "int" | "float"
-		| "bool" | "string" | "true" | "false" | "null" | "parent" | "void" | "iterable"
+		| "bool" | "string" | "true" | "false" | "null" | "parent" | "void" | "iterable" | "object"
 			-> true
 		| _ -> false
 
@@ -361,7 +361,7 @@ let parenthesis expr = {eexpr = TParenthesis expr; etype = expr.etype; epos = ex
 	Check if `current` binary should be surrounded with parenthesis
 *)
 let need_parenthesis_for_binop current parent =
-	if current = parent then
+	if current = parent && current != OpNotEq && current != OpEq then
 		false
 	else
 		match (current, parent) with
@@ -1308,7 +1308,10 @@ class code_writer (ctx:Common.context) hx_type_path php_name =
 							match !alias_source with
 								| [] ->  failwith ("Failed to find already used type: " ^ get_full_type_name type_path)
 								| name :: rest ->
-									alias_source := rest;
+									alias_source := (match rest with
+										| [] -> [name]
+										| _ -> rest
+									);
 									String.capitalize name
 						and added = ref false
 						and alias = ref (get_type_name type_path) in

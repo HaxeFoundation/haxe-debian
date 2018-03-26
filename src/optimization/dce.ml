@@ -67,12 +67,22 @@ let keep_whole_enum dce en =
 	Meta.has Meta.Keep en.e_meta
 	|| not (dce.full || is_std_file dce en.e_module.m_extra.m_file || has_meta Meta.Dce en.e_meta)
 
-(* check if a field is kept *)
-let keep_field dce cf =
+(*
+	Check if a field is kept.
+	`keep_field` is checked to determine the DCE entry points, i.e. all fields that have `@:keep` or kept for other reasons.
+	And then it is used at the end to check which fields can be filtered from their classes.
+*)
+let rec keep_field dce cf c =
 	Meta.has Meta.Keep cf.cf_meta
 	|| Meta.has Meta.Used cf.cf_meta
 	|| cf.cf_name = "__init__"
 	|| is_extern_field cf
+	|| (
+		cf.cf_name = "new"
+		&& match c.cl_super with (* parent class kept constructor *)
+			| Some ({ cl_constructor = Some ctor } as csup, _) -> keep_field dce ctor csup
+			| _ -> false
+	)
 
 (* marking *)
 
@@ -117,7 +127,11 @@ and mark_field dce c cf stat =
 			| None -> add cf
 			| Some (c,_) -> mark_field dce c cf stat
 		end else
-			add cf
+			add cf;
+		if not stat && is_physical_field cf then
+			match c.cl_constructor with
+				| None -> ()
+				| Some ctor -> mark_field dce c ctor false
 	end
 
 let rec update_marked_class_fields dce c =
@@ -206,33 +220,26 @@ let mark_mt dce mt = match mt with
 
 (* find all dependent fields by checking implementing/subclassing types *)
 let rec mark_dependent_fields dce csup n stat =
-	let dependent = try
-		Hashtbl.find dce.dependent_types csup.cl_path
-	with Not_found ->
-		let cl = List.filter (fun mt -> match mt with TClassDecl c -> is_parent csup c | _ -> false) dce.com.types in
-		Hashtbl.add dce.dependent_types csup.cl_path cl;
-		cl
+	let rec loop c =
+		(try
+			let cf = PMap.find n (if stat then c.cl_statics else c.cl_fields) in
+			(* if it's clear that the class is kept, the field has to be kept as well. This is also true for
+				extern interfaces because we cannot remove fields from them *)
+			if Meta.has Meta.Used c.cl_meta || (csup.cl_interface && csup.cl_extern) then mark_field dce c cf stat
+			(* otherwise it might be kept if the class is kept later, so mark it as :?used *)
+			else if not (Meta.has Meta.MaybeUsed cf.cf_meta) then begin
+				cf.cf_meta <- (Meta.MaybeUsed,[],cf.cf_pos) :: cf.cf_meta;
+				dce.marked_maybe_fields <- cf :: dce.marked_maybe_fields;
+			end
+		with Not_found ->
+			(* if the field is not present on current class, it might come from a base class *)
+			(match c.cl_super with None -> () | Some (csup,_) -> loop csup))
 	in
-	List.iter (fun mt -> match mt with
-		| TClassDecl c when is_parent csup c ->
-			let rec loop c =
-				(try
-					let cf = PMap.find n (if stat then c.cl_statics else c.cl_fields) in
-					(* if it's clear that the class is kept, the field has to be kept as well. This is also true for
-					   extern interfaces because we cannot remove fields from them *)
-					if Meta.has Meta.Used c.cl_meta || (csup.cl_interface && csup.cl_extern) then mark_field dce c cf stat
-					(* otherwise it might be kept if the class is kept later, so mark it as :?used *)
-					else if not (Meta.has Meta.MaybeUsed cf.cf_meta) then begin
-						cf.cf_meta <- (Meta.MaybeUsed,[],cf.cf_pos) :: cf.cf_meta;
-						dce.marked_maybe_fields <- cf :: dce.marked_maybe_fields;
-					end
-				with Not_found ->
-					(* if the field is not present on current class, it might come from a base class *)
-					(match c.cl_super with None -> () | Some (csup,_) -> loop csup))
-			in
-			loop c
-		| _ -> ()
-	) dependent
+	let rec loop_inheritance c =
+		loop c;
+		Hashtbl.iter (fun _ d -> loop_inheritance d) c.cl_descendants;
+	in
+	loop_inheritance csup
 
 (* expr and field evaluation *)
 
@@ -662,7 +669,7 @@ let run com main full =
 		| TClassDecl c ->
 			let keep_class = keep_whole_class dce c && (not c.cl_extern || c.cl_interface) in
 			let loop stat cf =
-				if keep_class || keep_field dce cf then mark_field dce c cf stat
+				if keep_class || keep_field dce cf c then mark_field dce c cf stat
 			in
 			List.iter (loop true) c.cl_ordered_statics;
 			List.iter (loop false) c.cl_ordered_fields;
@@ -747,7 +754,7 @@ let run com main full =
 			(* add :keep so subsequent filter calls do not process class fields again *)
 			c.cl_meta <- (Meta.Keep,[],c.cl_pos) :: c.cl_meta;
  			c.cl_ordered_statics <- List.filter (fun cf ->
-				let b = keep_field dce cf in
+				let b = keep_field dce cf c in
 				if not b then begin
 					if dce.debug then print_endline ("[DCE] Removed field " ^ (s_type_path c.cl_path) ^ "." ^ (cf.cf_name));
 					check_property cf true;
@@ -756,7 +763,7 @@ let run com main full =
 				b
 			) c.cl_ordered_statics;
 			c.cl_ordered_fields <- List.filter (fun cf ->
-				let b = keep_field dce cf in
+				let b = keep_field dce cf c in
 				if not b then begin
 					if dce.debug then print_endline ("[DCE] Removed field " ^ (s_type_path c.cl_path) ^ "." ^ (cf.cf_name));
 					check_property cf false;
@@ -764,7 +771,7 @@ let run com main full =
 				end;
 				b
 			) c.cl_ordered_fields;
-			(match c.cl_constructor with Some cf when not (keep_field dce cf) -> c.cl_constructor <- None | _ -> ());
+			(match c.cl_constructor with Some cf when not (keep_field dce cf c) -> c.cl_constructor <- None | _ -> ());
 			let inef cf = not (is_extern_field cf) in
 			let has_non_extern_fields = List.exists inef c.cl_ordered_fields || List.exists inef c.cl_ordered_statics in
 			(* we keep a class if it was used or has a used field *)

@@ -23,6 +23,7 @@ package haxelib.client;
 
 import haxe.crypto.Md5;
 import haxe.*;
+import haxe.ds.*;
 import haxe.io.BytesOutput;
 import haxe.io.Path;
 import haxe.zip.*;
@@ -134,7 +135,8 @@ class ProgressIn extends haxe.io.Input {
 class Main {
 	static inline var HAXELIB_LIBNAME = "haxelib";
 
-	static var VERSION = SemVer.ofString('3.3.0');
+	static var VERSION:SemVer = SemVer.ofString(getHaxelibVersion());
+	static var VERSION_LONG:String = getHaxelibVersionLong();
 	static var REPNAME = "lib";
 	static var REPODIR = ".haxelib";
 	static var SERVER = {
@@ -154,6 +156,44 @@ class Main {
 	var isHaxelibRun : Bool;
 	var alreadyUpdatedVcsDependencies:Map<String,String> = new Map<String,String>();
 
+	macro static function rethrow(e) {
+		return if (haxe.macro.Context.defined("neko"))
+			macro neko.Lib.rethrow(e);
+		else
+			macro throw e;
+	}
+
+	macro static function getHaxelibVersion() {
+		var haxelibJson:Infos = Json.parse(File.getContent("haxelib.json"));
+		return macro $v{haxelibJson.version};
+	}
+
+	macro static function getHaxelibVersionLong() {
+		var version:String = VERSION;
+		var p;
+		try {
+			//get commit sha
+			p = new sys.io.Process("git", ["rev-parse", "HEAD"]);
+			var sha = p.stdout.readAll().toString().trim();
+			p.close();
+
+			//check to see if there is changes, staged or not
+			p = new sys.io.Process("git", ["status", "--porcelain"]);
+			var changes = p.stdout.readAll().toString().trim();
+			p.close();
+
+			version += switch(changes) {
+				case "":
+					' ($sha)';
+				case _:
+					' ($sha - dirty)';
+			}
+			return macro $v{version};
+		} catch(e:Dynamic) {
+			if (p != null) p.close();
+			return macro $v{version};
+		}
+	}
 
 	function new() {
 		args = Sys.args();
@@ -238,7 +278,7 @@ class Main {
 	}
 
 	function version() {
-		print(VERSION);
+		print(VERSION_LONG);
 	}
 
 	function usage() {
@@ -252,7 +292,7 @@ class Main {
 			else cats[i].push(c);
 		}
 
-		print("Haxe Library Manager " + VERSION + " - (c)2006-2016 Haxe Foundation");
+		print('Haxe Library Manager $VERSION - (c)2006-2017 Haxe Foundation');
 		print("  Usage: haxelib [command] [options]");
 
 		for (cat in cats) {
@@ -324,7 +364,7 @@ class Main {
 							print("Directory " + dir + " unavailable");
 							Sys.exit(1);
 						}
-						neko.Lib.rethrow(e);
+						rethrow(e);
 					}
 				case "-notimeout":
 					haxe.remoting.HttpConnection.TIMEOUT = 0;
@@ -420,7 +460,7 @@ class Main {
 						Sys.exit(1);
 					}
 					if( settings.debug )
-						neko.Lib.rethrow(e);
+						rethrow(e);
 					print("Error: " + Std.string(e));
 					Sys.exit(1);
 				}
@@ -433,6 +473,7 @@ class Main {
 
 	inline function createHttpRequest(url:String):Http {
 		var req = new Http(url);
+		req.addHeader("User-Agent", 'haxelib $VERSION_LONG');
 		if (haxe.remoting.HttpConnection.TIMEOUT == 0)
 			req.cnxTimeout = 0;
 		return req;
@@ -586,7 +627,13 @@ class Main {
 		var h = createHttpRequest("http://"+SERVER.host+":"+SERVER.port+"/"+SERVER.url);
 		h.onError = function(e) throw e;
 		h.onData = print;
-		h.fileTransfer("file",id,new ProgressIn(new haxe.io.BytesInput(data),data.length),data.length);
+
+		var inp = if ( settings.quiet == false )
+			new ProgressIn(new haxe.io.BytesInput(data),data.length);
+		else
+			new haxe.io.BytesInput(data);
+
+		h.fileTransfer("file", id, inp, data.length);
 		print("Sending data.... ");
 		h.request(true);
 
@@ -804,7 +851,10 @@ class Main {
 		if (currentSize > 0)
 			h.addHeader("range", "bytes="+currentSize + "-");
 
-		var progress = new ProgressOut(out, currentSize);
+		var progress = if (settings.quiet == false )
+			new ProgressOut(out, currentSize);
+		else
+			out;
 
 		var has416Status = false;
 		h.onStatus = function(status) {
@@ -839,8 +889,7 @@ class Main {
 			// file is corrupted, remove it
 			if (!nodelete)
 				FileSystem.deleteFile(filepath);
-			neko.Lib.rethrow(e);
-			throw e;
+			rethrow(e);
 		}
 		f.close();
 		var infos = Data.readInfos(zip,false);
@@ -867,7 +916,7 @@ class Main {
 			if( n.charAt(0) == "/" || n.charAt(0) == "\\" || n.split("..").length > 1 )
 				throw "Invalid filename : "+n;
 
-			if (!settings.debug) {
+			if (settings.debug) {
 				var percent = Std.int((i / total) * 100);
 				Sys.print('${i + 1}/$total ($percent%)\r');
 			}
@@ -969,7 +1018,7 @@ class Main {
 			// on unixes, try to read system-wide config
 			rep = try File.getContent("/etc/.haxelib").trim() catch (_:Dynamic) null;
 			if (rep == null)
-				throw "This is the first time you are runing haxelib. Please run `haxelib setup` first";
+				throw "This is the first time you are running haxelib. Please run `haxelib setup` first";
 		} else {
 			// on windows, try to use haxe installation path
 			rep = getWindowsDefaultGlobalRepositoryPath();
@@ -1132,7 +1181,7 @@ class Main {
 				doUpdate(p, state);
 			} catch (e:VcsError) {
 				if (!e.match(VcsUnavailable(_)))
-					neko.Lib.rethrow(e);
+					rethrow(e);
 			}
 		}
 		if( state.updated )
