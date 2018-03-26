@@ -1,3 +1,10 @@
+haxe (1:3.4.7-1) unstable; urgency=low
+
+  * New upstream version.
+  * Bump Standards-Version to 4.1.3 (no changes).
+
+ -- Andy Li <andy@onthewings.net>  Mon, 26 Mar 2018 09:55:24 +0800
+
 haxe (1:3.4.4-2) unstable; urgency=low
 
   * Use dh_ocaml for ocamlopt detection.
