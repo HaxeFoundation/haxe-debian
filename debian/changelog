@@ -1,3 +1,11 @@
+haxe (1:3.4.7-2) unstable; urgency=medium
+
+  * Add camlp5.diff that replaces camlp4 with camlp5 (#933722).
+  * Use https for Homepage.
+  * Bump Standards-Version to 4.4.0 (no changes).
+
+ -- Andy Li <andy@onthewings.net>  Mon, 12 Aug 2019 10:38:36 +0800
+
 haxe (1:3.4.7-1) unstable; urgency=low
 
   * New upstream version.

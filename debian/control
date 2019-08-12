@@ -2,12 +2,12 @@ Source: haxe
 Section: devel
 Priority: optional
 Maintainer: Andy Li <andy@onthewings.net>
-Standards-Version: 4.1.3
+Standards-Version: 4.4.0
 Build-Depends: debhelper (>= 9),
                dh-ocaml,
                ocaml-nox,
                ocaml-findlib,
-               camlp4 (>= 3.11),
+               camlp5,
                libxml-light-ocaml-dev,
                neko (>= 2.0.0~),
                zlib1g-dev,
@@ -15,7 +15,7 @@ Build-Depends: debhelper (>= 9),
                bash-completion
 Vcs-Git: https://github.com/HaxeFoundation/haxe-debian.git
 Vcs-Browser: https://github.com/HaxeFoundation/haxe-debian
-Homepage: http://haxe.org
+Homepage: https://haxe.org
 
 Package: haxe
 Architecture: any
