@@ -1,6 +1,9 @@
 package unit;
 
+import utest.ui.Report;
+import utest.Runner;
 import unit.Test.*;
+import haxe.ds.List;
 
 @:access(unit.Test)
 @:expose("unit.TestMain")
@@ -10,15 +13,19 @@ class TestMain {
 	static var asyncWaits = new Array<haxe.PosInfos>();
 	static var asyncCache = new Array<Void -> Void>();
 
-	#if js
-	static function nodejsMain() {
-		main();
-		(untyped process).exit(Test.success ? 0 : 1);
-	}
-	#end
-
 	static function main() {
-	  var verbose = #if ( cpp || neko || php ) Sys.args().indexOf("-v") >= 0 #else false #end;
+		#if js
+		if (js.Browser.supported) {
+			var oTrace = haxe.Log.trace;
+			var traceElement = js.Browser.document.getElementById("haxe:trace");
+			haxe.Log.trace = function(v, ?infos) {
+				oTrace(v, infos);
+				traceElement.innerHTML += infos.fileName + ":" + infos.lineNumber + ": " + StringTools.htmlEscape(v) + "<br/>";
+			}
+		}
+		#end
+
+		var verbose = #if ( cpp || neko || php ) Sys.args().indexOf("-v") >= 0 #else false #end;
 
 		#if cs //"Turkey Test" - Issue #996
 		cs.system.threading.Thread.CurrentThread.CurrentCulture = new cs.system.globalization.CultureInfo('tr-TR');
@@ -31,7 +38,6 @@ class TestMain {
 		if( php.Web.isModNeko )
 			php.Web.setHeader("Content-Type","text/plain");
 		#end
-		resetTimer();
 		#if !macro
 		trace("Generated at: " + HelperMacros.getCompilationDate());
 		#end
@@ -55,15 +61,22 @@ class TestMain {
 			new TestInt64(),
 			new TestReflect(),
 			new TestSerialize(),
+			new TestSerializerCrossTarget(),
 			new TestMeta(),
 			new TestType(),
 			new TestOrder(),
 			new TestGADT(),
 			new TestGeneric(),
+			new TestArrowFunctions(),
+			new TestCasts(),
+			new TestSyntaxModule(),
+			new TestNull(),
+			#if (!no_http && (!azure || !(php && Windows)))
+			new TestHttp(),
+			#end
 			#if !no_pattern_matching
 			new TestMatch(),
 			#end
-			new TestSpecification(),
 			#if cs
 			new TestCSharp(),
 			#end
@@ -85,62 +98,45 @@ class TestMain {
 			#if (java || cs)
 			new TestOverloads(),
 			#end
-			// #if ((dce == "full") && !interp && !as3)
-			// new TestDCE(),
-			// #end
-			// #if ( (java || neko) && !macro && !interp)
-			// new TestThreads(),
-			// #end
+			new TestInterface(),
+			new TestNaN(),
+			#if ((dce == "full") && !interp && !as3)
+			new TestDCE(),
+			#end
+			new TestMapComprehension(),
+			new TestMacro(),
+			new TestKeyValueIterator(),
+			new TestFieldVariance()
 			//new TestUnspecified(),
 			//new TestRemoting(),
 		];
 
-
-		#if js
-		if (js.Browser.supported) {
-			classes.push(new TestJQuery());
+		for (specClass in unit.UnitBuilder.generateSpec("src/unitstd")) {
+			classes.push(specClass);
 		}
-		#end
-
 		TestIssues.addIssueClasses("src/unit/issues", "unit.issues");
 		TestIssues.addIssueClasses("src/unit/hxcpp_issues", "unit.hxcpp_issues");
-		var current = null;
-		#if (!fail_eager)
-		try
-		#end
-		{
-			asyncWaits.push(null);
-			for( inst in classes ) {
-				current = Type.getClass(inst);
-			if (verbose)
-			   logVerbose("Class " + Std.string(current) );
-				for( f in Type.getInstanceFields(current) )
-					if( f.substr(0,4) == "test" ) {
-				  if (verbose)
-					 logVerbose("   " + f);
-						#if fail_eager
-						Reflect.callMethod(inst,Reflect.field(inst,f),[]);
-						#else
-						try {
-							Reflect.callMethod(inst,Reflect.field(inst,f),[]);
-						}
-						#if !as3
-						catch( e : Dynamic ) {
-							onError(e,"EXCEPTION",Type.getClassName(current)+"."+f);
-						}
-						#end
-						#end
-						reportInfos = null;
-					}
-			}
-			asyncWaits.remove(null);
-			checkDone();
+
+		var runner = new Runner();
+		for (c in classes) {
+			runner.addCase(c);
 		}
-		#if (!as3 && !(fail_eager))
-		catch( e : Dynamic ) {
-			asyncWaits.remove(null);
-			onError(e,"ABORTED",Type.getClassName(current));
-		}
+		var report = Report.create(runner);
+		report.displayHeader = AlwaysShowHeader;
+		report.displaySuccessResults = NeverShowSuccessResults;
+		#if js
+		if (js.Browser.supported) {
+			runner.onComplete.add(function(_) {
+				untyped js.Browser.window.success = true; // TODO: need utest success state for this
+			});
+		};
 		#end
+		#if sys
+		if (verbose)
+			runner.onTestStart.add(function(test) {
+				Sys.println(' $test...'); // TODO: need utest success state for this
+			});
+		#end
+		runner.run();
 	}
 }

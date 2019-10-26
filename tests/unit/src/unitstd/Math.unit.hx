@@ -8,6 +8,9 @@ Math.isNaN(Math.NaN) == true;
 Math.isNaN(Math.sqrt( -1)) == true;
 Math.NEGATIVE_INFINITY == Math.NEGATIVE_INFINITY;
 Math.POSITIVE_INFINITY == Math.POSITIVE_INFINITY;
+#if !python
+Math.isNaN(0/0) == true;
+#end
 // +
 Math.POSITIVE_INFINITY + Math.POSITIVE_INFINITY == Math.POSITIVE_INFINITY;
 Math.NEGATIVE_INFINITY + Math.NEGATIVE_INFINITY == Math.NEGATIVE_INFINITY;
@@ -55,6 +58,9 @@ Math.isNaN(Math.POSITIVE_INFINITY / Math.NaN) == true;
 Math.isNaN(Math.NaN / Math.POSITIVE_INFINITY) == true;
 Math.isNaN(Math.NEGATIVE_INFINITY / Math.NaN) == true;
 
+// %
+// var izero = 0;
+// Math.isNaN(1%izero) == true;
 // abs
 Math.abs(-1.223) == 1.223;
 Math.abs(1.223) == 1.223;
@@ -364,9 +370,7 @@ math.log(math.POSITIVE_INFINITY) == math.POSITIVE_INFINITY;
 // exp + log
 var floats = [1.33, 12.0, -112.999992, 0.0, math.NEGATIVE_INFINITY, math.POSITIVE_INFINITY];
 for (f in floats) {
-	#if !php
 	feq(math.log(math.exp(f)), f);
-	#end
 }
 
 // sqrt
@@ -432,3 +436,10 @@ math.isNaN(math.POSITIVE_INFINITY) == false;
 math.isNaN(math.NEGATIVE_INFINITY) == false;
 math.isNaN(math.NaN) == true;
 math.isNaN(0.0) == false;
+
+// atan2
+math.atan2(0,1) == 0;
+math.atan2(0,1000) == 0;
+math.atan2(1,0) == Math.PI/2;
+math.atan2(-1,0) == -Math.PI/2;
+math.atan2(0,0) == 0;

@@ -7,17 +7,16 @@ compile.hxml
 --next
 -cmd echo Neko   && neko bin/neko/sys.n
 -cmd echo Python && python3 bin/python/sys.py
--cmd echo Cpp    && bin/cpp/Main-Debug
+-cmd echo Cpp    && bin/cpp/Main-debug
 -cmd echo CS     && mono bin/cs/bin/Main-Debug.exe
 -cmd echo Java   && java -jar bin/java/Main-Debug.jar
 -cmd echo Php    && php bin/php/Main/index.php
--cmd echo Php7    && php bin/php7/Main/index.php
 
 # Windows
 # --next
 # -cmd echo Neko   && neko bin\neko\sys.n
 # -cmd echo Python && python3 bin\python\sys.py
-# -cmd echo Cpp    && bin\cpp\Main-Debug.exe
+# -cmd echo Cpp    && bin\cpp\Main-debug.exe
 # -cmd echo CS     && bin\cs\bin\Main-Debug.exe
 # -cmd echo Java   && java -jar bin\java\Main-Debug.jar
 # -cmd echo Php    && php bin\php\Main\index.php

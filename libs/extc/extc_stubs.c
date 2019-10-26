@@ -19,6 +19,7 @@
 
 #include <assert.h>
 #include <caml/alloc.h>
+#include <caml/memory.h>
 #include <caml/callback.h>
 #include <caml/custom.h>
 #include <caml/mlvalues.h>
@@ -34,6 +35,7 @@
 #	include <string.h>
 #	include <termios.h>
 #	include <stdio.h>
+#	include <time.h>
 #	include <sys/time.h>
 #	include <sys/times.h>
 #	include <sys/stat.h>
@@ -43,6 +45,8 @@
 #	include <sys/param.h>
 #	include <sys/syslimits.h>
 #	include <mach-o/dyld.h>
+#include <mach/mach.h>
+#include <mach/mach_time.h>
 #endif
 #ifdef __FreeBSD__
 #	include <sys/param.h>
@@ -352,6 +356,14 @@ CAMLprim value zlib_deflate_bound(value zv,value len) {
 	return Val_int(deflateBound(ZStreamP_val(zv),Int_val(len)));
 }
 
+CAMLprim value zlib_crc32( value src, value len ) {
+	CAMLparam2(src,len);
+	CAMLlocal1(result);
+	uLong crc = crc32(0L, (Bytef*)(String_val(src)), Int_val(len));
+	result = caml_copy_int32(crc);
+	CAMLreturn(result);
+}
+
 CAMLprim value executable_path(value u) {
 #ifdef _WIN32
 	char path[MAX_PATH];
@@ -443,8 +455,16 @@ CAMLprim value get_real_path( value path ) {
 
 		// get actual file/dir name with proper case
 		if ((handle = FindFirstFile(out, &data)) != INVALID_HANDLE_VALUE) {
+			int klen = strlen(data.cFileName);
+			// a ~ was expanded !
+			if( klen != i - last ) {
+				int d = klen - (i - last);
+				memmove(out + i + d, out + i, len - i + 1);
+				len += d;
+				i += d;
+			}
 			// replace the component with proper case
-			memcpy(out + last, data.cFileName, i - last);
+			memcpy(out + last, data.cFileName, klen + 1);
 			FindClose(handle);
 		}
 
@@ -462,6 +482,10 @@ CAMLprim value get_real_path( value path ) {
 	return path;
 #endif
 }
+
+#ifndef _WIN32
+#define TimeSpecToSeconds(ts) (double)ts.tv_sec + (double)ts.tv_nsec / 1000000000.0
+#endif
 
 CAMLprim value sys_time() {
 #ifdef _WIN32
@@ -483,10 +507,29 @@ CAMLprim value sys_time() {
 		return caml_copy_double( ((double)ui.QuadPart) / 10000000.0 - EPOCH_DIFF );
 	}
 	return caml_copy_double( ((double)counter.QuadPart) / ((double)freq.QuadPart) );
+#elif __APPLE__
+
+	uint64_t time;
+	uint64_t elapsedNano;
+	static mach_timebase_info_data_t sTimebaseInfo;
+
+	time = mach_absolute_time();
+
+	if ( sTimebaseInfo.denom == 0 ) {
+		(void) mach_timebase_info(&sTimebaseInfo);
+	}
+
+	elapsedNano = time * sTimebaseInfo.numer / sTimebaseInfo.denom;
+
+	return caml_copy_double(time / 1000000000.0);
+#elif defined CLOCK_MONOTONIC_RAW
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC_RAW, &t);
+	return caml_copy_double(TimeSpecToSeconds(t));
 #else
-	struct tms t;
-	times(&t);
-	return caml_copy_double( ((double)(t.tms_utime + t.tms_stime)) / CLK_TCK );
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return caml_copy_double(TimeSpecToSeconds(t));
 #endif
 }
 

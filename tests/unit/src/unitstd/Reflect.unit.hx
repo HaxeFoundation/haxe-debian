@@ -37,8 +37,8 @@ Reflect.getProperty(c, "v") == "var";
 Reflect.getProperty(c, "prop") == "prop";
 Reflect.getProperty(c, "func")() == "foo";
 Reflect.getProperty(c, "propAcc") == "1";
-//Reflect.getProperty(null, "a") == null;
-//Reflect.getProperty(null, null) == null;
+Reflect.getProperty(null, "a") == null;
+Reflect.getProperty(null, null) == null;
 
 // setProperty
 Reflect.setProperty(x, "a", 2);
@@ -80,6 +80,7 @@ var y = Reflect.copy(x);
 Reflect.field(y, "a") == 2;
 Reflect.field(y, "b") == null;
 Reflect.field(y, "c") == null;
+Reflect.copy(null) == null;
 
 //compare
 Reflect.compare(1,2) < 0;
@@ -102,9 +103,19 @@ Reflect.compareMethods(y,z) == false;
 Reflect.compareMethods(x,x) == true;
 Reflect.compareMethods(y,y) == true;
 Reflect.compareMethods(z,z) == true;
-//Reflect.compareMethods(x,null) == false;
-//Reflect.compareMethods(null,x) == false;
-//Reflect.compareMethods(null,null) == false; // varies
+
+Reflect.compareMethods(x,null) == false;
+Reflect.compareMethods(null,x) == false;
+
+// compareMethods with closures
+var a = [1];
+var b = [2];
+var v : Dynamic = a.push;
+Reflect.compareMethods(a.push, a.push) == true;
+Reflect.compareMethods(a.push, a.pop) == false;
+Reflect.compareMethods(a.push, b.push) == false;
+Reflect.compareMethods(a.push, v) == true;
+Reflect.compareMethods(b.push, v) == false;
 
 // isObject
 Reflect.isObject({}) == true;
@@ -112,7 +123,6 @@ Reflect.isObject({v:"f"}) == true;
 Reflect.isObject(new C()) == true;
 Reflect.isObject(new C2()) == true;
 Reflect.isObject(new CChild()) == true;
-Reflect.isObject(new CDyn()) == true;
 Reflect.isObject(new EmptyClass()) == true;
 Reflect.isObject(Type.createEmptyInstance(ReallyEmptyClass)) == true;
 Reflect.isObject("foo") == true;
@@ -137,7 +147,6 @@ Reflect.isEnumValue({v:"f"}) == false;
 Reflect.isEnumValue(new C()) == false;
 Reflect.isEnumValue(new C2()) == false;
 Reflect.isEnumValue(new CChild()) == false;
-Reflect.isEnumValue(new CDyn()) == false;
 Reflect.isEnumValue(new EmptyClass()) == false;
 Reflect.isEnumValue(Type.createEmptyInstance(ReallyEmptyClass)) == false;
 Reflect.isEnumValue("foo") == false;

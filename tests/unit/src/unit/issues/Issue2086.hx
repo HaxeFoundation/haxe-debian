@@ -1,6 +1,7 @@
 package unit.issues;
 
 @:generic
+@:keep
 private class Node<T:Node<T>> extends Foo<T> {
 	public var node:T;
 	public function new(node:T) {
@@ -16,6 +17,7 @@ private class Node<T:Node<T>> extends Foo<T> {
 }
 
 @:generic
+@:keep
 private class Foo<T> {
 	public var s:String = "";
 	public function new() { }
@@ -24,6 +26,7 @@ private class Foo<T> {
 	}
 }
 
+@:keep
 private class StringNode extends Node<StringNode> {
 	public function new(s:String) {
 		super(this);

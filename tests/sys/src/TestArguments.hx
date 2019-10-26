@@ -1,8 +1,11 @@
+import utest.Assert;
+import utest.Runner;
+import utest.ui.Report;
+
 /**
 	This test is intented to be used by TestSys and io.TestProcess.
-	It will write the result to "temp/TestArguments.txt" (for debugging).
 */
-class TestArguments extends haxe.unit.TestCase {
+class TestArguments extends utest.Test {
 	// We may compare and update the test cases of other popular langs/libs: https://gist.github.com/andyli/d55ae9ea1327bbbf749d
 	static public var expectedArgs(default, never):Array<String> = [
 		"foo",
@@ -64,7 +67,9 @@ class TestArguments extends haxe.unit.TestCase {
 	});
 
 	static public var bin:String =
-	#if neko
+	#if interp
+		"TestArguments.hx";
+	#elseif neko
 		"bin/neko/TestArguments.n";
 	#elseif hl
 		"bin/hl/TestArguments.hl";
@@ -80,6 +85,12 @@ class TestArguments extends haxe.unit.TestCase {
 		#else
 			"bin/cs/bin/TestArguments.exe";
 		#end
+	#elseif (java && jvm)
+		#if debug
+			"bin/jvm/TestArguments-Debug.jar";
+		#else
+			"bin/jvm/TestArguments.jar";
+		#end
 	#elseif java
 		#if debug
 			"bin/java/TestArguments-Debug.jar";
@@ -88,8 +99,6 @@ class TestArguments extends haxe.unit.TestCase {
 		#end
 	#elseif python
 		"bin/python/TestArguments.py";
-	#elseif php7
-		"bin/php7/TestArguments/index.php";
 	#elseif php
 		"bin/php/TestArguments/index.php";
 	#elseif lua
@@ -98,27 +107,20 @@ class TestArguments extends haxe.unit.TestCase {
 		null;
 	#end
 
-	static public var log = "temp/TestArguments.txt";
-
 	function testArgs() {
 		var args = Sys.args();
 		for (i in 0...expectedArgs.length) {
-			assertEquals(expectedArgs[i], args[i]);
+			Assert.equals(expectedArgs[i], args[i]);
 		}
-		assertEquals(expectedArgs.length, args.length);
+		Assert.equals(expectedArgs.length, args.length);
 	}
 
 	static function main():Void {
-		var log = sys.io.File.write(log);
-		log.writeString(haxe.Json.stringify(Sys.args()) + "\n");
-		haxe.unit.TestRunner.print = function(v){
-			log.writeString(v);
-		};
-		var runner = new haxe.unit.TestRunner();
-		runner.add(new TestArguments());
-		var code = runner.run() ? 0 : 1;
-		log.flush();
-		log.close();
-		Sys.exit(code);
+		var runner = new Runner();
+		var report = Report.create(runner);
+		report.displayHeader = AlwaysShowHeader;
+		report.displaySuccessResults = NeverShowSuccessResults;
+		runner.addCase(new TestArguments());
+		runner.run();
 	}
 }

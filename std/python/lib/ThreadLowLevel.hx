@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2017 Haxe Foundation
+ * Copyright (C)2005-2019 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,15 +19,12 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+
 package python.lib;
 
 import python.Tuple;
 
-private typedef TODO = Dynamic;
-
 @:pythonImport("_thread")
 extern class ThreadLowLevel {
-
-	public static function start_new_thread(f:Void->Void, args:Tuple<Dynamic>):TODO;
-
+	public static function start_new_thread(f:Void->Void, args:Tuple<Dynamic>):Dynamic;
 }

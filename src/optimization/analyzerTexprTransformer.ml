@@ -1,6 +1,6 @@
 (*
 	The Haxe Compiler
-	Copyright (C) 2005-2017  Haxe Foundation
+	Copyright (C) 2005-2019  Haxe Foundation
 
 	This program is free software; you can redistribute it and/or
 	modify it under the terms of the GNU General Public License
@@ -81,12 +81,12 @@ let rec func ctx bb tf t p =
 		close_node g bb;
 		g.g_unreachable
 	in
-	let check_unbound_call v el =
-		if v.v_name = "$ref" then begin match el with
+	let check_unbound_call s el =
+		if s = "$ref" then begin match el with
 			| [{eexpr = TLocal v}] -> v.v_capture <- true
 			| _ -> ()
 		end;
-		if is_unbound_call_that_might_have_side_effects v el then ctx.has_unbound <- true;
+		if is_unbound_call_that_might_have_side_effects s el then ctx.has_unbound <- true;
 	in
 	let no_void t p =
 		if ExtType.is_void (follow t) then Error.error "Cannot use Void as value" p
@@ -96,7 +96,7 @@ let rec func ctx bb tf t p =
 		(fun () -> ctx.name_stack <- List.tl ctx.name_stack)
 	in
 	let rec value' bb e = match e.eexpr with
-		| TLocal v ->
+		| TLocal _ | TIdent _ ->
 			bb,e
 		| TBinop(OpAssign,({eexpr = TLocal v} as e1),e2) ->
 			block_element bb e,e1
@@ -104,8 +104,8 @@ let rec func ctx bb tf t p =
 			value bb e1
 		| TBlock _ | TIf _ | TSwitch _ | TTry _ ->
 			bind_to_temp bb false e
-		| TCall({eexpr = TLocal v},el) when is_really_unbound v ->
-			check_unbound_call v el;
+		| TCall({eexpr = TIdent s},el) when is_really_unbound s ->
+			check_unbound_call s el;
 			bb,e
 		| TCall(e1,el) ->
 			call bb e e1 el
@@ -159,6 +159,9 @@ let rec func ctx bb tf t p =
 		| TEnumParameter(e1,ef,ei) ->
 			let bb,e1 = value bb e1 in
 			bb,{e with eexpr = TEnumParameter(e1,ef,ei)}
+		| TEnumIndex e1 ->
+			let bb,e1 = value bb e1 in
+			bb,{e with eexpr = TEnumIndex e1}
 		| TFunction tf ->
 			let bb_func,bb_func_end = func ctx bb tf e.etype e.epos in
 			let e_fun = mk (TConst (TString "fun")) t_dynamic p in
@@ -170,8 +173,6 @@ let rec func ctx bb tf t p =
 			close_node g bb;
 			add_cfg_edge bb_func_end bb_next CFGGoto;
 			bb_next,ec
-		(*| TTypeExpr(TClassDecl {cl_kind = KAbstractImpl a}) when not (Meta.has Meta.RuntimeValue a.a_meta) ->
-			error "Cannot use abstract as value" e.epos*)
 		| TConst _ | TTypeExpr _ ->
 			bb,e
 		| TThrow _ | TReturn _ | TBreak | TContinue ->
@@ -236,11 +237,7 @@ let rec func ctx bb tf t p =
 				| s :: _ -> s
 				| [] -> ctx.temp_var_name
 		in
-		let v = match v with Some v -> v | None -> alloc_var (loop e) e.etype e.epos in
-		begin match ctx.com.platform with
-			| Globals.Cpp when sequential && not (Common.defined ctx.com Define.Cppia) -> ()
-			| _ -> v.v_meta <- [Meta.CompilerGenerated,[],e.epos];
-		end;
+		let v = match v with Some v -> v | None -> alloc_var VGenerated (loop e) e.etype e.epos in
 		let bb = declare_var_and_assign bb v e e.epos in
 		let e = {e with eexpr = TLocal v} in
 		let e = List.fold_left (fun e f -> f e) e fl in
@@ -306,12 +303,12 @@ let rec func ctx bb tf t p =
 	and call bb e e1 el =
 		let bb = ref bb in
 		let check e t = match e.eexpr with
-			| TLocal v when is_ref_type t ->
+			| TLocal v when ExtType.has_reference_semantics t ->
 				v.v_capture <- true;
 				e
 			| _ ->
-				if is_asvar_type t then begin
-					let v = alloc_var "tmp" t e.epos in
+				if ExtType.has_variable_semantics t then begin
+					let v = alloc_var VGenerated "tmp" t e.epos in
 					let bb',e = bind_to_temp ~v:(Some v) !bb false e in
 					bb := bb';
 					e
@@ -385,38 +382,46 @@ let rec func ctx bb tf t p =
 			end
 		| TIf(e1,e2,None) ->
 			let bb,e1 = bind_to_temp bb false e1 in
-			let bb_then = create_node BKConditional e2.etype e2.epos in
-			add_texpr bb (wrap_meta ":cond-branch" e1);
-			add_cfg_edge bb bb_then (CFGCondBranch (mk (TConst (TBool true)) ctx.com.basic.tbool e2.epos));
-			let bb_then_next = block bb_then e2 in
-			let bb_next = create_node BKNormal bb.bb_type bb.bb_pos in
-			set_syntax_edge bb (SEIfThen(bb_then,bb_next,e.epos));
-			add_cfg_edge bb bb_next CFGCondElse;
-			close_node g bb;
-			add_cfg_edge bb_then_next bb_next CFGGoto;
-			close_node g bb_then_next;
-			bb_next
+			if bb == g.g_unreachable then
+				bb
+			else begin
+				let bb_then = create_node BKConditional e2.etype e2.epos in
+				add_texpr bb (wrap_meta ":cond-branch" e1);
+				add_cfg_edge bb bb_then (CFGCondBranch (mk (TConst (TBool true)) ctx.com.basic.tbool e2.epos));
+				let bb_then_next = block bb_then e2 in
+				let bb_next = create_node BKNormal bb.bb_type bb.bb_pos in
+				set_syntax_edge bb (SEIfThen(bb_then,bb_next,e.epos));
+				add_cfg_edge bb bb_next CFGCondElse;
+				close_node g bb;
+				add_cfg_edge bb_then_next bb_next CFGGoto;
+				close_node g bb_then_next;
+				bb_next
+			end
 		| TIf(e1,e2,Some e3) ->
 			let bb,e1 = bind_to_temp bb false e1 in
-			let bb_then = create_node BKConditional e2.etype e2.epos in
-			let bb_else = create_node BKConditional e3.etype e3.epos in
-			add_texpr bb (wrap_meta ":cond-branch" e1);
-			add_cfg_edge bb bb_then (CFGCondBranch (mk (TConst (TBool true)) ctx.com.basic.tbool e2.epos));
-			add_cfg_edge bb bb_else CFGCondElse;
-			close_node g bb;
-			let bb_then_next = block bb_then e2 in
-			let bb_else_next = block bb_else e3 in
-			if bb_then_next == g.g_unreachable && bb_else_next == g.g_unreachable then begin
-				set_syntax_edge bb (SEIfThenElse(bb_then,bb_else,g.g_unreachable,e.etype,e.epos));
-				g.g_unreachable
-			end else begin
-				let bb_next = create_node BKNormal bb.bb_type bb.bb_pos in
-				set_syntax_edge bb (SEIfThenElse(bb_then,bb_else,bb_next,e.etype,e.epos));
-				add_cfg_edge bb_then_next bb_next CFGGoto;
-				add_cfg_edge bb_else_next bb_next CFGGoto;
-				close_node g bb_then_next;
-				close_node g bb_else_next;
-				bb_next
+			if bb == g.g_unreachable then
+				bb
+			else begin
+				let bb_then = create_node BKConditional e2.etype e2.epos in
+				let bb_else = create_node BKConditional e3.etype e3.epos in
+				add_texpr bb (wrap_meta ":cond-branch" e1);
+				add_cfg_edge bb bb_then (CFGCondBranch (mk (TConst (TBool true)) ctx.com.basic.tbool e2.epos));
+				add_cfg_edge bb bb_else CFGCondElse;
+				close_node g bb;
+				let bb_then_next = block bb_then e2 in
+				let bb_else_next = block bb_else e3 in
+				if bb_then_next == g.g_unreachable && bb_else_next == g.g_unreachable then begin
+					set_syntax_edge bb (SEIfThenElse(bb_then,bb_else,g.g_unreachable,e.etype,e.epos));
+					g.g_unreachable
+				end else begin
+					let bb_next = create_node BKNormal bb.bb_type bb.bb_pos in
+					set_syntax_edge bb (SEIfThenElse(bb_then,bb_else,bb_next,e.etype,e.epos));
+					add_cfg_edge bb_then_next bb_next CFGGoto;
+					add_cfg_edge bb_else_next bb_next CFGGoto;
+					close_node g bb_then_next;
+					close_node g bb_else_next;
+					bb_next
+				end
 			end
 		| TSwitch(e1,cases,edef) ->
 			let is_exhaustive = edef <> None || is_exhaustive e1 in
@@ -510,8 +515,8 @@ let rec func ctx bb tf t p =
 			set_syntax_edge bb (SETry(bb_try,bb_exc,catches,bb_next,e.epos));
 			if bb_try_next != g.g_unreachable then add_cfg_edge bb_try_next bb_next CFGGoto;
 			close_node g bb_try_next;
-            close_node g bb_exc;
-            close_node g bb;
+			close_node g bb_exc;
+			close_node g bb;
 			bb_next
 		(* control flow *)
 		| TReturn None ->
@@ -553,8 +558,8 @@ let rec func ctx bb tf t p =
 				add_terminator bb {e with eexpr = TThrow e1};
 			end
 		(* side_effects *)
-		| TCall({eexpr = TLocal v},el) when is_really_unbound v ->
-			check_unbound_call v el;
+		| TCall({eexpr = TIdent s},el) when is_really_unbound s ->
+			check_unbound_call s el;
 			add_texpr bb e;
 			bb
 		| TCall(e1,el) ->
@@ -566,7 +571,7 @@ let rec func ctx bb tf t p =
 			add_texpr bb {e with eexpr = TNew(c,tl,el)};
 			bb
 		| TCast(e1,Some mt) ->
-			let b,e1 = value bb e1 in
+			let bb,e1 = value bb e1 in
 			add_texpr bb {e with eexpr = TCast(e1,Some mt)};
 			bb
 		| TBinop(OpAssignOp op,({eexpr = TArray(e1,e2)} as ea),e3) ->
@@ -594,8 +599,12 @@ let rec func ctx bb tf t p =
 		| TLocal _ when not ctx.config.AnalyzerConfig.local_dce ->
 			add_texpr bb e;
 			bb
+		| TField (e1,fa) when has_side_effect e ->
+			let bb,e1 = value bb e1 in
+			add_texpr bb {e with eexpr = TField(e1,fa)};
+			bb
 		(* no-side-effect *)
-		| TEnumParameter _ | TFunction _ | TConst _ | TTypeExpr _ | TLocal _ ->
+		| TEnumParameter _ | TEnumIndex _ | TFunction _ | TConst _ | TTypeExpr _ | TLocal _ | TIdent _ ->
 			bb
 		(* no-side-effect composites *)
 		| TParenthesis e1 | TMeta(_,e1) | TCast(e1,None) | TField(e1,_) | TUnop(_,_,e1) ->
@@ -654,8 +663,7 @@ let from_tfunction ctx tf t p =
 	let bb_func,bb_exit = func ctx g.g_root tf t p in
 	ctx.entry <- bb_func;
 	close_node g g.g_root;
-	g.g_exit <- bb_exit;
-	set_syntax_edge bb_exit SEEnd
+	g.g_exit <- bb_exit
 
 let rec block_to_texpr_el ctx bb =
 	if bb.bb_dominator == ctx.graph.g_unreachable then
@@ -669,7 +677,7 @@ let rec block_to_texpr_el ctx bb =
 				Some bb_next,(block bb_sub) :: el
 			| el,SEMerge bb_next ->
 				Some bb_next,el
-			| el,(SEEnd | SENone) ->
+			| el,SENone ->
 				None,el
 			| {eexpr = TWhile(e1,_,flag)} as e :: el,(SEWhile(_,bb_body,bb_next)) ->
 				let e2 = block bb_body in
@@ -706,13 +714,13 @@ and func ctx i =
 	let bb,t,p,tf = Hashtbl.find ctx.graph.g_functions i in
 	let e = block_to_texpr ctx bb in
 	let rec loop e = match e.eexpr with
-		| TLocal v when not (is_unbound v) ->
+		| TLocal v ->
 			{e with eexpr = TLocal (get_var_origin ctx.graph v)}
-		| TVar(v,eo) when not (is_unbound v) ->
+		| TVar(v,eo) ->
 			let eo = Option.map loop eo in
 			let v' = get_var_origin ctx.graph v in
 			{e with eexpr = TVar(v',eo)}
-		| TBinop(OpAssign,e1,({eexpr = TBinop(op,e2,e3)} as e4)) when target_handles_assign_ops ctx.com ->
+		| TBinop(OpAssign,e1,({eexpr = TBinop(op,e2,e3)} as e4)) when target_handles_assign_ops ctx.com e3 ->
 			let e1 = loop e1 in
 			let e2 = loop e2 in
 			let e3 = loop e3 in
@@ -720,15 +728,20 @@ and func ctx i =
 				| OpAdd | OpMult | OpDiv | OpSub | OpAnd
 				| OpOr | OpXor | OpShl | OpShr | OpUShr | OpMod ->
 					true
-				| OpAssignOp _ | OpInterval | OpArrow | OpAssign | OpEq
+				| OpAssignOp _ | OpInterval | OpArrow | OpIn | OpAssign | OpEq
 				| OpNotEq | OpGt | OpGte | OpLt | OpLte | OpBoolAnd | OpBoolOr ->
 					false
 			in
 			begin match e1.eexpr,e2.eexpr with
 				| TLocal v1,TLocal v2 when v1 == v2 && not v1.v_capture && is_valid_assign_op op ->
 					begin match op,e3.eexpr with
-						| OpAdd,TConst (TInt i32) when Int32.to_int i32 = 1 && target_handles_assign_ops ctx.com -> {e with eexpr = TUnop(Increment,Prefix,e1)}
-						| OpSub,TConst (TInt i32) when Int32.to_int i32 = 1 && target_handles_assign_ops ctx.com -> {e with eexpr = TUnop(Decrement,Prefix,e1)}
+						| (OpAdd|OpSub) as op,TConst (TInt i32) when Int32.to_int i32 = 1 && ExtType.is_numeric (Abstract.follow_with_abstracts v1.v_type) ->
+							let op = match op with
+								| OpAdd -> Increment
+								| OpSub -> Decrement
+								| _ -> assert false
+							in
+							{e with eexpr = TUnop(op,Prefix,e1)}
 						| _ -> {e with eexpr = TBinop(OpAssignOp op,e1,e3)}
 					end
 				| _ ->
@@ -736,7 +749,7 @@ and func ctx i =
 			end
 		| TCall({eexpr = TConst (TString "fun")},[{eexpr = TConst (TInt i32)}]) ->
 			func ctx (Int32.to_int i32)
-		| TCall({eexpr = TLocal v},_) when is_really_unbound v ->
+		| TCall({eexpr = TIdent s},_) when is_really_unbound s ->
 			e
 		| _ ->
 			Type.map_expr loop e

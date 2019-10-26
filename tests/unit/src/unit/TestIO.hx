@@ -8,7 +8,7 @@ class TestIO extends Test {
 		check(true);
 	}
 
-	function excv<T>( f, e : T, ?pos ) {
+	function excv<T>( f:Void -> Void, e : T, ?pos ) {
 		try {
 			f();
 			eq(null,e,pos);
@@ -18,8 +18,6 @@ class TestIO extends Test {
 	}
 
 	function check(endian:Bool) {
-		infos("endian = "+endian);
-
 		var b = haxe.io.Bytes.ofString("ABCééé\r\n\t");
 		eq( b.length, 12 );
 		b.set(1,0);

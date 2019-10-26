@@ -270,7 +270,7 @@ let param_flags_of_int i =
 
 let null_param_flags = param_flags_of_int 0
 
-let callconv_of_int i =
+let callconv_of_int ?match_generic_inst:(match_generic_inst=false) i =
 	let basic = match i land 0xF with
 		| 0x0 -> CallDefault (* 0x0 *)
 		| 0x1 -> CallCDecl
@@ -282,6 +282,7 @@ let callconv_of_int i =
 		| 0x7 -> CallLocal (* 0x7 *)
 		| 0x8 -> CallProp (* 0x8 *)
 		| 0x9 -> CallUnmanaged (* 0x9 *)
+		| 0xa when match_generic_inst -> CallGenericInst (* 0xA *)
 		| i -> printf "error 0x%x\n\n" i; assert false
 	in
 	match i land 0x20 with
@@ -566,30 +567,12 @@ let read_sguid_idx ctx pos =
 
 let read_callconv ctx s pos =
 	let pos, conv = read_compressed_i32 s pos in
-	let basic = match conv land 0xF with
-		| 0x0 -> CallDefault (* 0x0 *)
-		| 0x5 -> CallVararg (* 0x5 *)
-		| 0x6 -> CallField (* 0x6 *)
-		| 0x7 -> CallLocal (* 0x7 *)
-		| 0x8 -> CallProp (* 0x8 *)
-		| 0x9 -> CallUnmanaged (* 0x9 *)
-		| 0xa -> CallGenericInst (* 0xA *)
-		| i -> printf "error 0x%x\n" i; assert false
+	let callconv = callconv_of_int conv ~match_generic_inst:true in
+	let pos = match conv land 0x10 with
+		| 0x10 -> fst (read_compressed_i32 s pos)
+		| _ -> pos
 	in
-	let basic = [basic] in
-	let pos, c = match conv land 0x10 with
-		| 0x10 ->
-			let pos, nparams = read_compressed_i32 s pos in
-			pos, CallGeneric nparams :: basic
-		| _ ->
-			pos, basic
-	in
-	match conv land 0x20 with
-		| 0x20 ->
-			pos, CallHasThis :: basic
-		| _ when conv land 0x40 = 0x40 ->
-			pos, CallExplicitThis :: basic
-		| _ -> pos, basic
+	pos, callconv
 
 let read_constant ctx with_type s pos =
 	match with_type with
@@ -2320,7 +2303,7 @@ let read_padded i npad =
 let read_meta_tables pctx header module_cache =
 	let i = pctx.r.i in
 	seek_rva pctx (fst header.clr_meta);
-	let magic = nread i 4 in
+	let magic = nread_string i 4 in
 	if magic <> "BSJB" then error ("Error reading metadata table: Expected magic 'BSJB'. Got " ^ magic);
 	let major = read_ui16 i in
 	let minor = read_ui16 i in
@@ -2362,21 +2345,21 @@ let read_meta_tables pctx header module_cache =
 		seek_rva pctx rva;
 		match String.lowercase s.str_name with
 		| "#guid" ->
-			sguid := nread i (Int32.to_int s.str_size)
+			sguid := nread_string i (Int32.to_int s.str_size)
 		| "#strings" ->
-			sstrings := nread i (Int32.to_int s.str_size)
+			sstrings := nread_string i (Int32.to_int s.str_size)
 		| "#us" ->
-			sus := nread i (Int32.to_int s.str_size)
+			sus := nread_string i (Int32.to_int s.str_size)
 		| "#blob" ->
-			sblob := nread i (Int32.to_int s.str_size)
+			sblob := nread_string i (Int32.to_int s.str_size)
 		| "#~" ->
 			assert (Option.is_none !compressed);
 			compressed := Some true;
-			smeta := nread i (Int32.to_int s.str_size)
+			smeta := nread_string i (Int32.to_int s.str_size)
 		| "#-" ->
 			assert (Option.is_none !compressed);
 			compressed := Some false;
-			smeta := nread i (Int32.to_int s.str_size)
+			smeta := nread_string i (Int32.to_int s.str_size)
 		| _ ->
 			extra := s :: !extra
 	) streams;

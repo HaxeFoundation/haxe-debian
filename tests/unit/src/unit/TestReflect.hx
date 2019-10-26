@@ -1,12 +1,14 @@
 package unit;
+
+import haxe.ds.List;
 import Type;
 
 interface InterfWithProp {
-	public var x(get_x, set_x) : Int;
+	public var x(get, set) : Int;
 }
 
 class ClassWithProp implements InterfWithProp {
-	public var x(get_x, set_x) : Int;
+	public var x(get, set) : Int;
 	var _x : Int;
 
 	public function new() {
@@ -21,7 +23,7 @@ class ClassWithProp implements InterfWithProp {
 		return v;
 	}
 
-	public static var STAT_X(default, set_STAT_X) : Int;
+	public static var STAT_X(default, set) : Int;
 
 	static function set_STAT_X(v) {
 		STAT_X = v * 2;
@@ -85,7 +87,7 @@ class TestReflect extends Test {
 
 	static var TNAMES = [
 		"null","Int","String","Bool","Float",
-		"Array",u("haxe.ds.StringMap"),u("List"),"Date","Xml","Math",
+		"Array",u("haxe.ds.StringMap"),u("haxe.ds.List"),"Date","Xml","Math",
 		u2("unit","MyEnum"),u2("unit","MyClass"),u2("unit","MySubClass"),
 		#if !flash u #end("Class"), u("Enum"), u("Dynamic"),
 		u2("unit","MyInterface")
@@ -95,11 +97,10 @@ class TestReflect extends Test {
 		for( i in 1...TYPES.length ) {
 			var t : Dynamic = TYPES[i];
 			var name = TNAMES[i];
-			infos("type "+name);
 			f( t == null );
-			if( name == u("Enum") ) {
+			if( name == u("Enum") || name == u("Bool") || name == u("Int") || name == u("Float") || name == u("Class") || name == u("Dynamic") ) {
 				// neither an enum or a class
-			} else if( t == MyEnum || t == Bool ) {
+			} else if( t == MyEnum ) {
 				eq( Type.getEnumName(t), name );
 				eq( Type.resolveEnum(name), t );
 			} else {
@@ -107,11 +108,9 @@ class TestReflect extends Test {
 				eq( Type.resolveClass(name), t );
 			}
 		}
-		infos(null);
 	}
 
 	public function testIs() {
-		is(null,null);
 		is(0,Int,Float);
 		is(1,Int,Float);
 		is(-1,Int,Float);
@@ -144,16 +143,13 @@ class TestReflect extends Test {
 		is(function() { },null);
 		is(MyClass,Class);
 		is(MyEnum,Enum);
-		is(Class,Class);
 	}
 
 	function is( v : Dynamic, t1 : Dynamic, ?t2 : Dynamic, ?pos : haxe.PosInfos ){
 		for( i in 0...TYPES.length ) {
 			var c : Dynamic = TYPES[i];
-			infos(Std.string(v)+" is "+TNAMES[i]);
 			eq( Std.is(v,c), c != null && (c == t1 || c == t2) || (c == Dynamic), pos );
 		}
-		infos(null);
 		t( (v is Dynamic), pos );
 	}
 
@@ -204,7 +200,6 @@ class TestReflect extends Test {
 
 	function typeof( v : Dynamic, rt : ValueType, ?pos : haxe.PosInfos ) {
 		var vt = Type.typeof(v);
-		infos("typeof("+Std.string(v)+") = "+vt);
 		t( Type.enumEq(vt,rt), pos );
 	}
 
@@ -249,6 +244,8 @@ class TestReflect extends Test {
 		exc( function() Type.createEnum(MyEnum,"Z",[]) );
 	}
 
+	static function compareMethodsDummy() {}
+
 	function testCompareMethods() {
 		var a = new MyClass(0);
 		var b = new MyClass(1);
@@ -257,6 +254,8 @@ class TestReflect extends Test {
 		f( Reflect.compareMethods(a.add,a.get) );
 		f( Reflect.compareMethods(a.add,null) );
 		f( Reflect.compareMethods(null, a.add) );
+		t( Reflect.compareMethods(compareMethodsDummy, compareMethodsDummy) );
+		t( Reflect.compareMethods(String.fromCharCode, String.fromCharCode) );
 		/*
 			Comparison between a method and a closure :
 			Not widely supported atm to justify officiel support

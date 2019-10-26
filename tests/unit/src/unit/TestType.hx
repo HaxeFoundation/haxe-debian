@@ -1,4 +1,6 @@
 package unit;
+
+import haxe.ds.List;
 import unit.MyEnum;
 import unit.MyClass;
 import unit.HelperMacros.*;
@@ -177,7 +179,7 @@ class TestType extends Test {
 		typedAs([ { x : new Child1() }, { x : new Child2() } ], [{ x: new Base() }]);
 
 		#if flash
-		typedAs(function() { return 0; var v:UInt = 0; return v; } (), 1);
+		typedAs((function() { return 0; var v:UInt = 0; return v; }) (), 1);
 		#end
 	}
 
@@ -258,9 +260,8 @@ class TestType extends Test {
 		var f : Void -> String = foo.bind(0);
  		eq("foo0", f());
 
-		// TODO: this fails on flash 9
 		var foo = function(bar = 2) { return bar; };
-		#if (flash || hl)
+		#if flash // Cannot skip not-nullable argument
 		t(typeError(foo.bind(_)));
 		#else
 		var l = foo.bind(_);
@@ -473,8 +474,8 @@ class TestType extends Test {
 
 	function testInline()
 	{
-		typedAs(inlineTest1([1]), var void:Void);
-		typedAs(inlineTest2([1]), var void:Void);
+		typedAs(inlineTest1([1]), (function():Void{})());
+		typedAs(inlineTest2([1]), (function():Void{})());
 	}
 
 	inline function inlineTest1<T>(map:Array<T>) {
@@ -489,7 +490,7 @@ class TestType extends Test {
 	{
 		#if !macro
 		eq(MyMacro.MyMacroHelper.followWithAbstracts(new Map<String,String>()), "TInst(haxe.ds.StringMap,[TInst(String,[])])");
-		eq(MyMacro.MyMacroHelper.followWithAbstractsOnce({ var x:TypedefToStringMap<String>; x; }), "TAbstract(Map,[TInst(String,[]),TInst(String,[])])");
+		eq(MyMacro.MyMacroHelper.followWithAbstractsOnce({ var x:TypedefToStringMap<String>; x; }), "TType(Map,[TInst(String,[]),TInst(String,[])])");
 		eq(MyMacro.MyMacroHelper.followWithAbstracts(new TypedefToStringMap<String>()), "TInst(haxe.ds.StringMap,[TInst(String,[])])");
 		#end
 	}
@@ -536,6 +537,8 @@ class TestType extends Test {
 		gf1(2);
 		gf1("foo");
 		gf1(true);
+		gf1({foo: 1});
+		gf1(function(i:Int):String return '$i');
 
 		gf1(new haxe.Template("foo"));
 
@@ -547,8 +550,9 @@ class TestType extends Test {
 		hsf(TestType, "gf1_haxe_Template");
 
 		hsf(TestType, "gf1_haxe_ds_GenericStack_Int");
+		hsf(TestType, "gf1_anon_foo_Int");
+		hsf(TestType, "gf1_func_Int_String");
 		t(typeError(gf1(null))); // monos don't work
-		t(typeError(gf1( { foo:1 } ))); // structures don't work
 
 		eq("foo[1,2]", gf2("foo", [1, 2]));
 		eq("foo[[1,2]]", gf2("foo", [[1, 2]]));
@@ -792,6 +796,7 @@ class TestType extends Test {
 	function testAbstractTypeParameterVariance() {
 		var a:Array<unit.MyAbstract.MyInt> = [1, 2, 3];
 		var b:Array<unit.MyAbstract.MyInt2> = a;
+		t(true);
 	}
 
 	function testExposingAbstract() {

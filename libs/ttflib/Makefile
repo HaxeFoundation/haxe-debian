@@ -1,7 +1,7 @@
 OCAMLOPT=ocamlopt
 OCAMLC=ocamlc
 
-FLAGS=-I ../extlib -I ../swflib
+FLAGS=-package extlib -safe-string -I ../extlib-leftovers -I ../swflib
 FILES=tTFData tTFParser tTFTools tTFSwfWriter tTFCanvasWriter tTFJsonWriter
 LIBS=extLib swflib unix
 
@@ -9,21 +9,21 @@ OUTPUT=ttf
 
 all: native bytecode
 
-native: ttf.cmxa
+native: ttflib.cmxa
 
-bytecode: ttf.cma
+bytecode: ttflib.cma
 
-ttf.cmxa: $(FILES:=.ml)
-	$(OCAMLOPT) $(FLAGS) $(FILES:=.ml) -g -a -o ttf.cmxa
+ttflib.cmxa: $(FILES:=.ml)
+	ocamlfind $(OCAMLOPT) $(FLAGS) $(FILES:=.ml) -g -a -o ttflib.cmxa
 
-ttf.cma: $(FILES:=.ml)
-	$(OCAMLC) $(FLAGS) $(FILES:=.ml) -g -a -o ttf.cma
+ttflib.cma: $(FILES:=.ml)
+	ocamlfind $(OCAMLC) $(FLAGS) $(FILES:=.ml) -g -a -o ttflib.cma
 
 exec:
-	$(OCAMLOPT) $(FLAGS) $(LIBS:=.cmxa) $(FILES:=.ml) main.ml -g -o $(OUTPUT)
+	ocamlfind $(OCAMLOPT) $(FLAGS) $(LIBS:=.cmxa) $(FILES:=.ml) main.ml -g -o $(OUTPUT)
 
 clean:
-	rm -rf ttf.cmxa ttf.cma ttf.lib ttf.a $(wildcard *.cmx) $(wildcard *.obj) $(wildcard *.o) $(wildcard *.cmi) $(wildcard *.cmo)
+	rm -rf ttflib.cmxa ttflib.cma ttflib.lib ttflib.a $(wildcard *.cmx) $(wildcard *.obj) $(wildcard *.o) $(wildcard *.cmi) $(wildcard *.cmo)
 
 .PHONY: all native bytecode clean exec
 

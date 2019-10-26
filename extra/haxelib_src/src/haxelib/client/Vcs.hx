@@ -134,7 +134,7 @@ class Vcs implements IVcs {
 		switch (commandResult) {
 			case {code: 0}: //pass
 			case {code: code, out:out}:
-				if (!settings.debug) 
+				if (!settings.debug)
 					Sys.stderr().writeString(out);
 				Sys.exit(code);
 		}
@@ -243,11 +243,11 @@ class Git extends Vcs {
 
 	override public function update(libName:String):Bool {
 		if (
-			command(executable, ["diff", "--exit-code"]).code != 0
+			command(executable, ["diff", "--exit-code", "--no-ext-diff"]).code != 0
 			||
-			command(executable, ["diff", "--cached", "--exit-code"]).code != 0
+			command(executable, ["diff", "--cached", "--exit-code", "--no-ext-diff"]).code != 0
 		) {
-			if (Cli.ask("Reset changes to " + libName + " " + name + " repo so we can pull latest version?")) {
+			if (Cli.ask("Reset changes to " + libName + " " + name + " repo so we can pull latest version")) {
 				sure(command(executable, ["reset", "--hard"]));
 			} else {
 				if (!settings.quiet)
@@ -286,7 +286,7 @@ class Git extends Vcs {
 
 
 		Sys.setCwd(libPath);
-		
+
 		if (version != null && version != "") {
 			var ret = command(executable, ["checkout", "tags/" + version]);
 			if (ret.code != 0)
@@ -328,7 +328,7 @@ class Mercurial extends Vcs {
 	override public function update(libName:String):Bool {
 		command(executable, ["pull"]);
 		var summary = command(executable, ["summary"]).out;
-		var diff = command(executable, ["diff", "-U", "2", "--git", "--subrepos"]);
+		var diff = command(executable, ["diff", "-U", "2", "--git", "--subrepos", "--no-ext-diff"]);
 		var status = command(executable, ["status"]);
 
 		// get new pulled changesets:
@@ -345,7 +345,7 @@ class Mercurial extends Vcs {
 		if (diff.code + status.code + diff.out.length + status.out.length != 0) {
 			if (!settings.quiet)
 				Sys.println(diff.out);
-			if (Cli.ask("Reset changes to " + libName + " " + name + " repo so we can update to latest version?")) {
+			if (Cli.ask("Reset changes to " + libName + " " + name + " repo so we can update to latest version")) {
 				sure(command(executable, ["update", "--clean"]));
 			} else {
 				changed = false;

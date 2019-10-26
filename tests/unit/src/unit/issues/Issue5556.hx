@@ -5,6 +5,8 @@ class Issue5556 extends unit.Test {
 		var x = dynamicFunc(randomCall());
 		#if (!flash && !js)
 		eq(1, x);
+		#else
+		noAssert();
 		#end
 	}
 
@@ -13,5 +15,5 @@ class Issue5556 extends unit.Test {
 		return 1;
 	}
 
-	static dynamic function dynamicFunc(x) return x;
+	static dynamic function dynamicFunc(x:Dynamic) return x;
 }
