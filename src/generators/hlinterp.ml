@@ -1,5 +1,5 @@
 (*
- * Copyright (C)2005-2017 Haxe Foundation
+ * Copyright (C)2005-2019 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,6 +25,7 @@ open Hlcode
 type value =
 	| VNull
 	| VInt of int32
+	| VInt64 of int64
 	| VFloat of float
 	| VBool of bool
 	| VDyn of value * ttype
@@ -37,13 +38,15 @@ type value =
 	| VRef of ref_value * ttype
 	| VVirtual of vvirtual
 	| VDynObj of vdynobj
-	| VEnum of int * value array
+	| VEnum of enum_proto * int * value array
 	| VAbstract of vabstract
 	| VVarArgs of vfunction * value option
+	| VStruct of vobject
 
 and ref_value =
 	| RStack of int
 	| RValue of value ref
+	| RArray of value array * int
 
 and vabstract =
 	| AHashBytes of (string, value) Hashtbl.t
@@ -119,6 +122,7 @@ type context = {
 let default t =
 	match t with
 	| HUI8 | HUI16 | HI32 -> VInt Int32.zero
+	| HI64 -> VInt64 Int64.zero
 	| HF32 | HF64 -> VFloat 0.
 	| HBool -> VBool false
 	| _ -> if is_nullable t then VNull else VUndef
@@ -132,15 +136,17 @@ let get_type = function
 	| VClosure (f,None) -> Some (match f with FFun f -> f.ftype | FNativeFun (_,_,t) -> t)
 	| VClosure (f,Some _) -> Some (match f with FFun { ftype = HFun(_::args,ret) } | FNativeFun (_,_,HFun(_::args,ret)) -> HFun (args,ret) | _ -> assert false)
 	| VVarArgs _ -> Some (HFun ([],HDyn))
+	| VEnum (e,_,_) -> Some (HEnum e)
 	| _ -> None
 
 let v_dynamic = function
-	| VNull	| VDyn _ | VObj _ | VClosure _ | VArray _ | VVirtual _ | VDynObj _ | VVarArgs _ -> true
+	| VNull	| VDyn _ | VObj _ | VClosure _ | VArray _ | VVirtual _ | VDynObj _ | VVarArgs _ | VEnum _ -> true
 	| _ -> false
 
 let rec is_compatible v t =
 	match v, t with
 	| VInt _, (HUI8 | HUI16 | HI32) -> true
+	| VInt64 _, HI64 -> true
 	| VFloat _, (HF32 | HF64) -> true
 	| VBool _, HBool -> true
 	| _, HVoid -> true
@@ -158,6 +164,7 @@ let rec is_compatible v t =
 	| VRef (_,t1), HRef t2 -> tsame t1 t2
 	| VAbstract _, HAbstract _ -> true
 	| VEnum _, HEnum _ -> true
+	| VStruct v, HStruct _ -> safe_cast (HStruct v.oproto.pclass) t
 	| _ -> false
 
 type cast =
@@ -199,6 +206,10 @@ let alloc_obj ctx t =
 		let obj = VObj { oproto = p; ofields = ftable } in
 		List.iter (fun (fid,mk) -> ftable.(fid) <- mk obj) bindings;
 		obj
+	| HStruct p ->
+		let p, fields, bindings = get_proto ctx p in
+		let ftable = Array.map default fields in
+		VStruct { oproto = p; ofields = ftable }
 	| HVirtual v ->
 		let o = {
 			dfields = Hashtbl.create 0;
@@ -237,12 +248,16 @@ let get_to_string ctx p =
 
 let set_i32 b p v =
 	try
-		String.set b p (char_of_int ((Int32.to_int v) land 0xFF));
-		String.set b (p+1) (char_of_int ((Int32.to_int (Int32.shift_right_logical v 8)) land 0xFF));
-		String.set b (p+2) (char_of_int ((Int32.to_int (Int32.shift_right_logical v 16)) land 0xFF));
-		String.set b (p+3) (char_of_int (Int32.to_int (Int32.shift_right_logical v 24)));
+		Bytes.set (Bytes.unsafe_of_string b) p (char_of_int ((Int32.to_int v) land 0xFF));
+		Bytes.set (Bytes.unsafe_of_string b) (p+1) (char_of_int ((Int32.to_int (Int32.shift_right_logical v 8)) land 0xFF));
+		Bytes.set (Bytes.unsafe_of_string b) (p+2) (char_of_int ((Int32.to_int (Int32.shift_right_logical v 16)) land 0xFF));
+		Bytes.set (Bytes.unsafe_of_string b) (p+3) (char_of_int (Int32.to_int (Int32.shift_right_logical v 24)));
 	with _ ->
 		error "Set outside of bytes bounds"
+
+let set_i64 b p v =
+	set_i32 b p (Int64.to_int32 v);
+	set_i32 b (p + 4) (Int64.to_int32 (Int64.shift_right_logical v 32))
 
 let get_i32 b p =
 	let i = int_of_char (String.get b p) in
@@ -250,6 +265,11 @@ let get_i32 b p =
 	let k = int_of_char (String.get b (p + 2)) in
 	let l = int_of_char (String.get b (p + 3)) in
 	Int32.logor (Int32.of_int (i lor (j lsl 8) lor (k lsl 16))) (Int32.shift_left (Int32.of_int l) 24)
+
+let get_i64 b p =
+	let low = get_i32 b p in
+	let high = get_i32 b (p + 4) in
+	Int64.logor (Int64.logand (Int64.of_int32 low) 0xFFFFFFFFL) (Int64.shift_left (Int64.of_int32 high) 32)
 
 let make_dyn v t =
 	if v = VNull || is_dynamic t then
@@ -260,17 +280,19 @@ let make_dyn v t =
 let get_ref ctx = function
 	| RStack i -> ctx.stack.(i)
 	| RValue r -> !r
+	| RArray (a,i) -> a.(i)
 
 let set_ref ctx r v =
 	match r with
 	| RStack i -> ctx.stack.(i) <- v
 	| RValue r -> r := v
+	| RArray (a,i) -> a.(i) <- v
 
 let fstr = function
 	| FFun f -> "function@" ^ string_of_int f.findex
 	| FNativeFun (s,_,_) -> "native[" ^ s ^ "]"
 
-let caml_to_hl str = utf8_to_utf16 str
+let caml_to_hl str = Common.utf8_to_utf16 str true
 
 let hash ctx str =
 	let h = hl_hash str in
@@ -295,7 +317,7 @@ let utf16_iter f s =
 	loop 0
 
 let utf16_char buf c =
-	utf16_add buf (int_of_char c)
+	Common.utf16_add buf (int_of_char c)
 
 let hl_to_caml str =
 	let utf16_eof s =
@@ -307,7 +329,7 @@ let hl_to_caml str =
 		loop 0
 	in
 	let b = UTF8.Buf.create (String.length str / 2) in
-	utf16_iter (fun c -> UTF8.Buf.add_char b (UChar.chr c)) (utf16_eof str);
+	utf16_iter (fun c -> UTF8.Buf.add_char b (UCharExt.chr c)) (utf16_eof str);
 	UTF8.Buf.contents b
 
 let null_access() =
@@ -325,11 +347,12 @@ let rec vstr_d ctx v =
 	match v with
 	| VNull -> "null"
 	| VInt i -> Int32.to_string i ^ "i"
+	| VInt64 i -> Int64.to_string i ^ "l"
 	| VFloat f -> string_of_float f ^ "f"
 	| VBool b -> if b then "true" else "false"
 	| VDyn (v,t) -> "dyn(" ^ vstr_d v ^ ":" ^ tstr t ^ ")"
 	| VObj o ->
-		let p = "#" ^ o.oproto.pclass.pname in
+		let p = o.oproto.pclass.pname in
 		(match get_to_string ctx o.oproto.pclass with
 		| Some f -> p ^ ":" ^ vstr_d (ctx.fcall f [v])
 		| None -> p)
@@ -344,9 +367,10 @@ let rec vstr_d ctx v =
 	| VRef (r,_) -> "ref(" ^ vstr_d (get_ref ctx r) ^ ")"
 	| VVirtual v -> "virtual(" ^ vstr_d v.vvalue ^ ")"
 	| VDynObj d -> "dynobj(" ^ String.concat "," (Hashtbl.fold (fun f i acc -> (f^":"^vstr_d d.dvalues.(i)) :: acc) d.dfields []) ^ ")"
-	| VEnum (i,vals) -> "enum#" ^ string_of_int i  ^ "(" ^ String.concat "," (Array.to_list (Array.map vstr_d vals)) ^ ")"
+	| VEnum (e,i,vals) -> let n, _, _ = e.efields.(i) in if Array.length vals = 0 then n else n ^ "(" ^ String.concat "," (Array.to_list (Array.map vstr_d vals)) ^ ")"
 	| VAbstract _ -> "abstract"
 	| VVarArgs _ -> "varargs"
+	| VStruct v -> "@" ^ v.oproto.pclass.pname
 
 let rec to_virtual ctx v vp =
 	match v with
@@ -546,7 +570,7 @@ let rec dyn_get_field ctx obj field rt =
 			get_with d.dvalues.(idx) d.dtypes.(idx)
 		with Not_found ->
 			default rt)
-	| VObj o ->
+	| VObj o | VDyn (VStruct o, HStruct _) ->
 		let default rt =
 			match get_method o.oproto.pclass "__get_field" with
 			| None -> default rt
@@ -648,6 +672,14 @@ let stack_frame ctx (f,pos) =
 	let file, line = make_stack ctx (f,pos) in
 	Printf.sprintf "%s:%d: Called from fun@%d @x%X" file line f.findex (!pos - 1)
 
+let cached_string ctx idx =
+	try
+		Hashtbl.find ctx.cached_strings idx
+	with Not_found ->
+		let s = caml_to_hl ctx.code.strings.(idx) in
+		Hashtbl.add ctx.cached_strings idx s;
+		s
+
 let virt_make_val v =
 	let hfields = Hashtbl.create 0 in
 	let ftypes = DynArray.create() in
@@ -673,13 +705,14 @@ let rec vstr ctx v t =
 	match v with
 	| VNull -> "null"
 	| VInt i -> Int32.to_string i
+	| VInt64 i -> Int64.to_string i
 	| VFloat f -> float_to_string f
 	| VBool b -> if b then "true" else "false"
 	| VDyn (v,t) ->
 		vstr v t
 	| VObj o ->
 		(match get_to_string ctx o.oproto.pclass with
-		| None -> "#" ^ o.oproto.pclass.pname
+		| None -> o.oproto.pclass.pname
 		| Some f -> vstr (ctx.fcall f [v]) HBytes)
 	| VBytes b -> (try hl_to_caml b with _ -> "?" ^ String.escaped b)
 	| VClosure (f,_) -> fstr f
@@ -701,21 +734,18 @@ let rec vstr ctx v t =
 		with Not_found ->
 			"{" ^ String.concat ", " (Hashtbl.fold (fun f i acc -> (f^":"^vstr d.dvalues.(i) d.dtypes.(i)) :: acc) d.dfields []) ^ "}")
 	| VAbstract _ -> "abstract"
-	| VEnum (i,vals) ->
-		(match t with
-		| HEnum e ->
-			let n, _, pl = e.efields.(i) in
-			if Array.length pl = 0 then
-				n
-			else
-				let rec loop i =
-					if i = Array.length pl then []
-					else let v = vals.(i) in vstr v pl.(i) :: loop (i + 1)
-				in
-				n ^ "(" ^ String.concat "," (loop 0) ^ ")"
-		| _ ->
-			assert false)
+	| VEnum (e,i,vals) ->
+		let n, _, pl = e.efields.(i) in
+		if Array.length pl = 0 then
+			n
+		else
+			let rec loop i =
+				if i = Array.length pl then []
+				else let v = vals.(i) in vstr v pl.(i) :: loop (i + 1)
+			in
+			n ^ "(" ^ String.concat "," (loop 0) ^ ")"
 	| VVarArgs _ -> "varargs"
+	| VStruct s -> "@" ^ s.oproto.pclass.pname
 
 let interp ctx f args =
 	let func = get_function ctx in
@@ -741,14 +771,6 @@ let interp ctx f args =
 	let rtype i = Array.unsafe_get f.regs i in
 	let check v t id =
 		if ctx.checked && not (is_compatible v t) then error (Printf.sprintf "Can't set %s(%s) with %s" (id()) (tstr t) (vstr_d ctx v))
-	in
-	let cached_string idx =
-		try
-			Hashtbl.find ctx.cached_strings idx
-		with Not_found ->
-			let s = caml_to_hl ctx.code.strings.(idx) in
-			Hashtbl.add ctx.cached_strings idx s;
-			s
 	in
 	let check_obj v o fid =
 		if ctx.checked then match o with
@@ -826,8 +848,8 @@ let interp ctx f args =
 		| OMov (a,b) -> set a (get b)
 		| OInt (r,i) -> set r (VInt ctx.code.ints.(i))
 		| OFloat (r,i) -> set r (VFloat (Array.unsafe_get ctx.code.floats i))
-		| OString (r,s) -> set r (VBytes (cached_string s))
-		| OBytes (r,s) -> set r (VBytes (ctx.code.strings.(s) ^ "\x00"))
+		| OString (r,s) -> set r (VBytes (cached_string ctx s))
+		| OBytes (r,s) -> set r (VBytes (Bytes.to_string ctx.code.bytes.(s)))
 		| OBool (r,b) -> set r (VBool b)
 		| ONull r -> set r VNull
 		| OAdd (r,a,b) -> set r (numop Int32.add ( +. ) a b)
@@ -869,19 +891,21 @@ let interp ctx f args =
 		| OJSLte (a,b,i) -> if vcompare a b (<=) then pos := !pos + i
 		| OJULt (a,b,i) -> if ucompare (get a) (get b) < 0 then pos := !pos + i
 		| OJUGte (a,b,i) -> if ucompare (get a) (get b) >= 0 then pos := !pos + i
+		| OJNotLt (a,b,i) -> if not (vcompare a b (<)) then pos := !pos + i
+		| OJNotGte (a,b,i) -> if not (vcompare a b (>=)) then pos := !pos + i
 		| OJEq (a,b,i) -> if vcompare a b (=) then pos := !pos + i
 		| OJNotEq (a,b,i) -> if not (vcompare a b (=)) then pos := !pos + i
 		| OJAlways i -> pos := !pos + i
 		| OToDyn (r,a) -> set r (make_dyn (get a) f.regs.(a))
 		| OToSFloat (r,a) -> set r (match get a with VInt v -> VFloat (Int32.to_float v) | VFloat _ as v -> v | _ -> assert false)
 		| OToUFloat (r,a) -> set r (match get a with VInt v -> VFloat (ufloat v) | VFloat _ as v -> v | _ -> assert false)
-		| OToInt (r,a) -> set r (match get a with VFloat v -> VInt (Int32.of_float v) | VInt _ as v -> v | _ -> assert false)
+		| OToInt (r,a) -> set r (match get a with VFloat v -> VInt (Int32.of_float v) | VInt i when rtype r = HI64 -> VInt64 (Int64.of_int32 i) | VInt _ as v -> v | _ -> assert false)
 		| OLabel _ -> ()
 		| ONew r ->
 			set r (alloc_obj ctx (rtype r))
 		| OField (r,o,fid) ->
 			set r (match get o with
-				| VObj v -> v.ofields.(fid)
+				| VObj v | VStruct v -> v.ofields.(fid)
 				| VVirtual v as obj ->
 					(match v.vindexes.(fid) with
 					| VFNone -> dyn_get_field ctx obj (let n,_,_ = v.vtype.vfields.(fid) in n) (rtype r)
@@ -892,7 +916,7 @@ let interp ctx f args =
 			let rv = get r in
 			let o = get o in
 			(match o with
-			| VObj v ->
+			| VObj v | VStruct v ->
 				check_obj rv o fid;
 				v.ofields.(fid) <- rv
 			| VVirtual v ->
@@ -905,10 +929,10 @@ let interp ctx f args =
 			| VNull -> null_access()
 			| _ -> assert false)
 		| OGetThis (r, fid) ->
-			set r (match get 0 with VObj v -> v.ofields.(fid) | _ -> assert false)
+			set r (match get 0 with VObj v | VStruct v -> v.ofields.(fid) | _ -> assert false)
 		| OSetThis (fid, r) ->
 			(match get 0 with
-			| VObj v as o ->
+			| (VObj v | VStruct v) as o ->
 				let rv = get r in
 				check_obj rv o fid;
 				v.ofields.(fid) <- rv
@@ -953,16 +977,6 @@ let interp ctx f args =
 			let m = (match get o with
 			| VObj v as obj -> VClosure (v.oproto.pmethods.(m), Some obj)
 			| VNull -> null_access()
-			| VVirtual v ->
-				let name, _, _ = v.vtype.vfields.(m) in
-				(match v.vvalue with
-				| VObj o as obj ->
-					(try
-						let m = PMap.find name o.oproto.pclass.pfunctions in
-						VClosure (get_function ctx m, Some obj)
-					with Not_found ->
-						VNull)
-				| _ -> assert false)
 			| _ -> assert false
 			) in
 			set r (if m = VNull then m else dyn_cast ctx m (match get_type m with None -> assert false | Some v -> v) (rtype r))
@@ -982,56 +996,51 @@ let interp ctx f args =
 				let b = int_of_char (String.get b (Int32.to_int p + 1)) in
 				set r (VInt (Int32.of_int (a lor (b lsl 8))))
 			| _ -> assert false)
-		| OGetI32 (r,b,p) ->
-			(match get b, get p with
-			| VBytes b, VInt p -> set r (VInt (get_i32 b (Int32.to_int p)))
-			| _ -> assert false)
-		| OGetF32 (r,b,p) ->
-			(match get b, get p with
-			| VBytes b, VInt p -> set r (VFloat (Int32.float_of_bits (get_i32 b (Int32.to_int p))))
-			| _ -> assert false)
-		| OGetF64 (r,b,p) ->
+		| OGetMem (r,b,p) ->
 			(match get b, get p with
 			| VBytes b, VInt p ->
 				let p = Int32.to_int p in
-				let i64 = Int64.logor (Int64.logand (Int64.of_int32 (get_i32 b p)) 0xFFFFFFFFL) (Int64.shift_left (Int64.of_int32 (get_i32 b (p + 4))) 32) in
-				set r (VFloat (Int64.float_of_bits i64))
-			| _ -> assert false)
+				set r (match rtype r with
+				| HI32 -> VInt (get_i32 b p)
+				| HI64 -> VInt64 (get_i64 b p)
+				| HF32 -> VFloat (Int32.float_of_bits (get_i32 b p))
+				| HF64 -> VFloat (Int64.float_of_bits (get_i64 b p))
+				| _ -> assert false)
+			| _ ->
+				assert false)
 		| OGetArray (r,a,i) ->
 			(match get a, get i with
 			| VArray (a,_), VInt i -> set r a.(Int32.to_int i)
 			| _ -> assert false);
 		| OSetUI8 (r,p,v) ->
 			(match get r, get p, get v with
-			| VBytes b, VInt p, VInt v -> String.set b (Int32.to_int p) (char_of_int ((Int32.to_int v) land 0xFF))
+			| VBytes b, VInt p, VInt v -> Bytes.set (Bytes.unsafe_of_string b) (Int32.to_int p) (char_of_int ((Int32.to_int v) land 0xFF))
 			| _ -> assert false)
 		| OSetUI16 (r,p,v) ->
 			(match get r, get p, get v with
 			| VBytes b, VInt p, VInt v ->
-				String.set b (Int32.to_int p) (char_of_int ((Int32.to_int v) land 0xFF));
-				String.set b (Int32.to_int p + 1) (char_of_int (((Int32.to_int v) lsr 8) land 0xFF))
+				Bytes.set (Bytes.unsafe_of_string b) (Int32.to_int p) (char_of_int ((Int32.to_int v) land 0xFF));
+				Bytes.set (Bytes.unsafe_of_string b) (Int32.to_int p + 1) (char_of_int (((Int32.to_int v) lsr 8) land 0xFF))
 			| _ -> assert false)
-		| OSetI32 (r,p,v) ->
-			(match get r, get p, get v with
-			| VBytes b, VInt p, VInt v -> set_i32 b (Int32.to_int p) v
-			| _ -> assert false)
-		| OSetF32 (r,p,v) ->
-			(match get r, get p, get v with
-			| VBytes b, VInt p, VFloat v -> set_i32 b (Int32.to_int p) (Int32.bits_of_float v)
-			| _ -> assert false)
-		| OSetF64 (r,p,v) ->
-			(match get r, get p, get v with
-			| VBytes b, VInt p, VFloat v ->
+		| OSetMem (r,p,v) ->
+			(match get r, get p with
+			| VBytes b, VInt p ->
 				let p = Int32.to_int p in
-				let v64 = Int64.bits_of_float v in
-				set_i32 b p (Int64.to_int32 v64);
-				set_i32 b (p + 4) (Int64.to_int32 (Int64.shift_right_logical v64 32));
-			| _ -> assert false)
+				(match rtype v, get v with
+				| HI32, VInt v -> set_i32 b p v
+				| HI64, VInt64 v -> set_i64 b p v
+				| HF32, VFloat f -> set_i32 b p (Int32.bits_of_float f)
+				| HF64, VFloat f -> set_i64 b p (Int64.bits_of_float f)
+				| _ -> assert false)
+			| _ ->
+				assert false)
 		| OSetArray (a,i,v) ->
 			(match get a, get i with
 			| VArray (a,t), VInt i ->
 				let v = get v in
 				check v t (fun() -> "array");
+				let idx = Int32.to_int i in
+				if ctx.checked && (idx < 0 || idx >= Array.length a) then error (Printf.sprintf "Can't set array index %d with %s" idx (vstr_d ctx v));
 				a.(Int32.to_int i) <- v
 			| _ -> assert false);
 		| OSafeCast (r, v) ->
@@ -1056,21 +1065,24 @@ let interp ctx f args =
 					| HUI8 -> 1
 					| HUI16 -> 2
 					| HI32 -> 3
-					| HF32 -> 4
-					| HF64 -> 5
-					| HBool -> 6
-					| HBytes -> 7
-					| HDyn -> 8
-					| HFun _ -> 9
-					| HObj _ -> 10
-					| HArray -> 11
-					| HType -> 12
-					| HRef _ -> 13
-					| HVirtual _ -> 14
-					| HDynObj -> 15
-					| HAbstract _ -> 16
-					| HEnum _ -> 17
-					| HNull _ -> 18)))
+					| HI64 -> 4
+					| HF32 -> 5
+					| HF64 -> 6
+					| HBool -> 7
+					| HBytes -> 8
+					| HDyn -> 9
+					| HFun _ -> 10
+					| HObj _ -> 11
+					| HArray -> 12
+					| HType -> 13
+					| HRef _ -> 14
+					| HVirtual _ -> 15
+					| HDynObj -> 16
+					| HAbstract _ -> 17
+					| HEnum _ -> 18
+					| HNull _ -> 19
+					| HMethod _ -> 20
+					| HStruct _ -> 21)))
 				| _ -> assert false);
 		| ORef (r,v) ->
 			set r (VRef (RStack (v + spos),rtype v))
@@ -1092,26 +1104,26 @@ let interp ctx f args =
 		| ODynSet (o,fid,vr) ->
 			dyn_set_field ctx (get o) ctx.code.strings.(fid) (get vr) (rtype vr)
 		| OMakeEnum (r,e,pl) ->
-			set r (VEnum (e,Array.map get (Array.of_list pl)))
+			set r (VEnum ((match rtype r with HEnum e -> e | _ -> assert false),e,Array.map get (Array.of_list pl)))
 		| OEnumAlloc (r,f) ->
 			(match rtype r with
 			| HEnum e ->
 				let _, _, fl = e.efields.(f) in
 				let vl = Array.create (Array.length fl) VUndef in
-				set r (VEnum (f, vl))
+				set r (VEnum (e, f, vl))
 			| _ -> assert false
 			)
 		| OEnumIndex (r,v) ->
 			(match get v with
-			| VEnum (i,_) | VDyn (VEnum (i,_),_) -> set r (VInt (Int32.of_int i))
+			| VEnum (_,i,_) -> set r (VInt (Int32.of_int i))
 			| _ -> assert false)
 		| OEnumField (r, v, _, i) ->
 			(match get v with
-			| VEnum (_,vl) -> set r vl.(i)
+			| VEnum (_,_,vl) -> set r vl.(i)
 			| _ -> assert false)
 		| OSetEnumField (v, i, r) ->
 			(match get v, rtype v with
-			| VEnum (id,vl), HEnum e ->
+			| VEnum (_,id,vl), HEnum e ->
 				let rv = get r in
 				let _, _, fields = e.efields.(id) in
 				check rv fields.(i) (fun() -> "enumfield");
@@ -1130,6 +1142,16 @@ let interp ctx f args =
 			traps := (r,target) :: !traps
 		| OEndTrap _ ->
 			traps := List.tl !traps
+		| OAssert _ ->
+			throw_msg ctx "Assert"
+		| ORefData (r,d) ->
+			(match get d with
+			| VArray (a,t) -> set r (VRef (RArray (a,0),t))
+			| _ -> assert false)
+		| ORefOffset (r,r2,off) ->
+			(match get r2, get off with
+			| VRef (RArray (a,pos),t), VInt i -> set r (VRef (RArray (a,pos + Int32.to_int i),t))
+			| _ -> assert false)
 		| ONop _ ->
 			()
 		);
@@ -1172,8 +1194,11 @@ let call_fun ctx f args =
 			raise (InterpThrow v)
 		| Failure msg ->
 			throw_msg ctx msg
-		| e ->
+		| Sys_exit _ as exc ->
+			raise exc
+(*		| e ->
 			throw_msg ctx (Printexc.to_string e)
+*)
 
 let call_wrap ?(final=(fun()->())) ctx f args =
 	let old_st = ctx.call_stack in
@@ -1226,7 +1251,7 @@ let load_native ctx lib name t =
 		(match name with
 		| "alloc_bytes" ->
 			(function
-			| [VInt i] -> VBytes (String.create (int i))
+			| [VInt i] -> VBytes (Bytes.unsafe_to_string (Bytes.create (int i)))
 			| _ -> assert false)
 		| "alloc_array" ->
 			(function
@@ -1236,7 +1261,7 @@ let load_native ctx lib name t =
 			(function
 			| [VType t] -> alloc_obj ctx t
 			| _ -> assert false)
-		| "alloc_enum" ->
+		| "alloc_enum_dyn" ->
 			(function
 			| [VType (HEnum e); VInt idx; VArray (vl,vt); VInt len] ->
 				let idx = int idx in
@@ -1245,7 +1270,7 @@ let load_native ctx lib name t =
 				if Array.length args <> len then
 					VNull
 				else
-					VDyn (VEnum (idx,Array.mapi (fun i v -> dyn_cast ctx v vt args.(i)) (Array.sub vl 0 len)),HEnum e)
+					VEnum (e,idx,Array.mapi (fun i v -> dyn_cast ctx v vt args.(i)) (Array.sub vl 0 len))
 			| vl ->
 				assert false)
 		| "array_blit" ->
@@ -1257,7 +1282,7 @@ let load_native ctx lib name t =
 		| "bytes_blit" ->
 			(function
 			| [VBytes dst; VInt dp; VBytes src; VInt sp; VInt len] ->
-				String.blit src (int sp) dst (int dp) (int len);
+				String.blit src (int sp) (Bytes.unsafe_of_string dst) (int dp) (int len);
 				VUndef
 			| [(VBytes _ | VNull); VInt _; (VBytes _ | VNull); VInt _; VInt len] ->
 				if len = 0l then VUndef else error "bytes_blit to NULL bytes";
@@ -1327,18 +1352,13 @@ let load_native ctx lib name t =
 			(function
 			| [VBytes str; VInt pos; VInt len] ->
 				(try
-					let i = (match Interp.parse_int (hl_to_caml_sub str (int pos) (int len)) with
-						| Interp.VInt v -> Int32.of_int v
-						| Interp.VInt32 v -> v
-						| _ -> assert false
-					) in
-					VDyn (VInt i,HI32)
+					VDyn (VInt (Numeric.parse_int (hl_to_caml_sub str (int pos) (int len))),HI32)
 				with _ ->
 					VNull)
 			| l -> assert false)
 		| "parse_float" ->
 			(function
-			| [VBytes str; VInt pos; VInt len] -> (try VFloat (Interp.parse_float (hl_to_caml_sub str (int pos) (int len))) with _ -> VFloat nan)
+			| [VBytes str; VInt pos; VInt len] -> (try VFloat (Numeric.parse_float (hl_to_caml_sub str (int pos) (int len))) with _ -> VFloat nan)
 			| _ -> assert false)
 		| "dyn_compare" ->
 			(function
@@ -1595,7 +1615,7 @@ let load_native ctx lib name t =
 			| _ -> assert false)
 		| "enum_parameters" ->
 			(function
-			| [VDyn (VEnum (idx,pl),HEnum e)] ->
+			| [VEnum (e,idx,pl)] ->
 				let _,_, ptypes = e.efields.(idx) in
 				VArray (Array.mapi (fun i v -> make_dyn v ptypes.(i)) pl,HDyn)
 			| _ ->
@@ -1628,18 +1648,18 @@ let load_native ctx lib name t =
 			| _ -> assert false)
 		| "type_enum_values" ->
 			(function
-			| [VType (HEnum e as t)] ->
-				VArray (Array.mapi (fun i (_,_,args) -> if Array.length args <> 0 then VNull else VDyn (VEnum (i,[||]),t)) e.efields,HDyn)
+			| [VType (HEnum e)] ->
+				VArray (Array.mapi (fun i (_,_,args) -> if Array.length args <> 0 then VNull else VEnum (e,i,[||])) e.efields,HDyn)
 			| _ -> assert false)
 		| "type_enum_eq" ->
 			(function
-			| [VDyn (VEnum _, HEnum _); VNull] | [VNull; VDyn (VEnum _, HEnum _)] -> VBool false
+			| [VEnum _; VNull] | [VNull; VEnum _] -> VBool false
 			| [VNull; VNull] -> VBool true
-			| [VDyn (VEnum _ as v1, HEnum e1); VDyn (VEnum _ as v2, HEnum e2)] ->
+			| [VEnum (e1,_,_) as v1; VEnum (e2,_,_) as v2] ->
 				let rec loop v1 v2 e =
 					match v1, v2 with
-					| VEnum (t1,_), VEnum (t2,_) when t1 <> t2 -> false
-					| VEnum (t,vl1), VEnum (_,vl2) ->
+					| VEnum (_,t1,_), VEnum (_,t2,_) when t1 <> t2 -> false
+					| VEnum (_,t,vl1), VEnum (_,_,vl2) ->
 						let _, _, pl = e.efields.(t) in
 						let rec chk i =
 							if i = Array.length pl then true
@@ -1753,9 +1773,9 @@ let load_native ctx lib name t =
 						if c >= int_of_char 'a' && c <= int_of_char 'z' then c + int_of_char 'A' - int_of_char 'a'
 						else c
 					in
-					utf16_add buf c
+					Common.utf16_add buf c
 				) (String.sub s (int pos) ((int len) lsl 1));
-				utf16_add buf 0;
+				Common.utf16_add buf 0;
 				VBytes (Buffer.contents buf)
 			| _ -> assert false)
 		| "ucs2_lower" ->
@@ -1767,9 +1787,9 @@ let load_native ctx lib name t =
 						if c >= int_of_char 'A' && c <= int_of_char 'Z' then c + int_of_char 'a' - int_of_char 'A'
 						else c
 					in
-					utf16_add buf c
+					Common.utf16_add buf c
 				) (String.sub s (int pos) ((int len) lsl 1));
-				utf16_add buf 0;
+				Common.utf16_add buf 0;
 				VBytes (Buffer.contents buf)
 			| _ -> assert false)
 		| "url_encode" ->
@@ -1777,18 +1797,8 @@ let load_native ctx lib name t =
 			| [VBytes s; VRef (r, HI32)] ->
 				let s = hl_to_caml s in
 				let buf = Buffer.create 0 in
-				let hex = "0123456789ABCDEF" in
-				for i = 0 to String.length s - 1 do
-					let c = String.unsafe_get s i in
-					match c with
-					| 'A'..'Z' | 'a'..'z' | '0'..'9' | '_' | '-' | '.' ->
-						utf16_char buf c
-					| _ ->
-						utf16_char buf '%';
-						utf16_char buf (String.unsafe_get hex (int_of_char c lsr 4));
-						utf16_char buf (String.unsafe_get hex (int_of_char c land 0xF));
-				done;
-				utf16_add buf 0;
+				Common.url_encode s (utf16_char buf);
+				Common.utf16_add buf 0;
 				let str = Buffer.contents buf in
 				set_ref r (to_int (String.length str lsr 1 - 1));
 				VBytes str
@@ -1857,10 +1867,14 @@ let load_native ctx lib name t =
 			(function
 			| [VBytes a; VInt apos; VBytes b; VInt bpos; VInt len] -> to_int (String.compare (String.sub a (int apos) (int len)) (String.sub b (int bpos) (int len)))
 			| _ -> assert false)
+		| "string_compare" ->
+			(function
+			| [VBytes a; VBytes b; VInt len] -> to_int (String.compare (String.sub a 0 ((int len) * 2)) (String.sub b 0 ((int len)*2)))
+			| _ -> assert false)
 		| "bytes_fill" ->
 			(function
 			| [VBytes a; VInt pos; VInt len; VInt v] ->
-				String.fill a (int pos) (int len) (char_of_int ((int v) land 0xFF));
+				Bytes.fill (Bytes.unsafe_of_string a) (int pos) (int len) (char_of_int ((int v) land 0xFF));
 				VUndef
 			| _ -> assert false)
 		| "exception_stack" ->
@@ -2026,6 +2040,54 @@ let load_native ctx lib name t =
 			| [VBytes file;VInt min;VInt max] ->
 				VAbstract (APos { Globals.pfile = String.sub file 0 (String.length file - 1); pmin = Int32.to_int min; pmax = Int32.to_int max })
 			| _ -> assert false)
+		| "dyn_op" ->
+			let op_names = [|"+";"-";"*";"%";"/";"<<";">>";">>>";"&";"|";"^"|] in
+			(function
+			| [VInt op; a; b] ->
+				let op = Int32.to_int op in
+				let is_number v =
+					match v with
+					| VNull -> true
+					| VDyn (_,t) -> is_number t
+					| _ -> false
+				in
+				let error() =
+					failwith ("Can't perform dyn op " ^ vstr ctx a HDyn ^ " " ^ op_names.(op) ^ " " ^ vstr ctx b HDyn)
+				in
+				let fop op =
+					if is_number a && is_number b then begin
+						let a = dyn_cast ctx a HDyn HF64 in
+						let b = dyn_cast ctx b HDyn HF64 in
+						match a, b with
+						| VFloat a, VFloat b -> VDyn (VFloat (op a b),HF64)
+						| _ -> assert false
+					end else
+						error();
+				in
+				let iop op =
+					if is_number a && is_number b then begin
+						let a = dyn_cast ctx a HDyn HI32 in
+						let b = dyn_cast ctx b HDyn HI32 in
+						match a, b with
+						| VInt a, VInt b -> VDyn (VInt (op a b),HI32)
+						| _ -> assert false
+					end else
+						error();
+				in
+				(match op with
+				| 0 -> fop ( +. )
+				| 1 -> fop ( -. )
+				| 2 -> fop ( *. )
+				| 3 -> fop mod_float
+				| 4 -> fop ( /. )
+				| 5 -> iop (fun a b -> Int32.shift_left a (Int32.to_int b))
+				| 6 -> iop (fun a b -> Int32.shift_right a (Int32.to_int b))
+				| 7 -> iop (fun a b -> Int32.shift_right_logical a (Int32.to_int b))
+				| 8 -> iop Int32.logand
+				| 9 -> iop Int32.logor
+				| 10 -> iop Int32.logxor
+				| _ -> assert false)
+			| _ -> assert false)
 		| _ ->
 			unresolved())
 	| "macro" ->
@@ -2053,11 +2115,13 @@ let create checked =
 			globals = [||];
 			natives = [||];
 			strings = [||];
+			bytes = [||];
 			ints = [||];
 			debugfiles = [||];
 			floats = [||];
 			entrypoint = 0;
 			version = 0;
+			constants = [||];
 		};
 		checked = checked;
 		fcall = (fun _ _ -> assert false);
@@ -2096,9 +2160,29 @@ let add_code ctx code =
 		functions.(fd.findex) <- FFun fd;
 		loop (i + 1)
 	in
-	loop  (Array.length ctx.code.functions);
+	loop (Array.length ctx.code.functions);
 	ctx.t_functions <- functions;
 	ctx.code <- code;
+	Array.iter (fun (g,fields) ->
+		let t = code.globals.(g) in
+		let get_const_val t idx =
+			match t with
+			| HI32 -> VInt code.ints.(idx)
+			| HBytes -> VBytes (cached_string ctx idx)
+			| _ -> assert false
+		in
+		let v = (match t with
+		| HObj o ->
+			if Array.length o.pfields <> Array.length fields then assert false;
+			let proto,_,_ = get_proto ctx o in
+			VObj {
+				oproto = proto;
+				ofields = Array.mapi (fun i (_,_,t) -> get_const_val t fields.(i)) o.pfields;
+			}
+		| _ -> assert false
+		) in
+		ctx.t_globals.(g) <- v;
+	) code.constants;
 	(* call entrypoint *)
 	ignore(call_wrap ctx functions.(code.entrypoint) [])
 
@@ -2138,12 +2222,12 @@ let check code macros =
 		in
 		let numeric r =
 			match rtype r with
-			| HUI8 | HUI16 | HI32 | HF32 | HF64 -> ()
+			| HUI8 | HUI16 | HI32 | HI64 | HF32 | HF64 -> ()
 			| _ -> error (reg_inf r ^ " should be numeric")
 		in
 		let int r =
 			match rtype r with
-			| HUI8 | HUI16 | HI32 -> ()
+			| HUI8 | HUI16 | HI32 | HI64 -> ()
 			| _ -> error (reg_inf r ^ " should be integral")
 		in
 		let float r =
@@ -2176,11 +2260,16 @@ let check code macros =
 		let is_dyn r =
 			if not (is_dynamic (rtype r)) then error (reg_inf r ^ " should be castable to dynamic")
 		in
+		let get_field r p fid =
+			try snd (resolve_field p fid) with Not_found -> error (reg_inf r ^ " does not have field " ^ string_of_int fid)
+		in
 		let tfield o fid proto =
 			if fid < 0 then error (reg_inf o ^ " does not have " ^ (if proto then "proto " else "") ^ "field " ^ string_of_int fid);
 			match rtype o with
 			| HObj p ->
-				if proto then ftypes.(p.pvirtuals.(fid)) else (try snd (resolve_field p fid) with Not_found -> error (reg_inf o ^ " does not have field " ^ string_of_int fid))
+				if proto then ftypes.(p.pvirtuals.(fid)) else get_field o p fid
+			| HStruct p when not proto ->
+				get_field o p fid
 			| HVirtual v when not proto ->
 				let _,_, t = v.vfields.(fid) in
 				t
@@ -2202,9 +2291,12 @@ let check code macros =
 				if i < 0 || i >= Array.length code.floats then error "float outside range";
 			| OBool (r,_) ->
 				reg r HBool
-			| OString (r,i) | OBytes (r,i) ->
+			| OString (r,i) ->
 				reg r HBytes;
 				if i < 0 || i >= Array.length code.strings then error "string outside range";
+			| OBytes (r,i) ->
+				reg r HBytes;
+				if i < 0 || i >= Array.length code.bytes then error "bytes outside range";
 			| ONull r ->
 				let t = rtype r in
 				if not (is_nullable t) then error (tstr t ^ " is not nullable")
@@ -2246,16 +2338,24 @@ let check code macros =
 				(match rl with
 				| [] -> assert false
 				| obj :: rl2 ->
-					let t, rl = (match rtype obj with
-						| HVirtual v ->
-							let _, _, t = v.vfields.(m) in
-							t, rl2
-						| _ ->
-							tfield obj m true, rl
-					) in
-					match t with
-					| HFun (targs, tret) when List.length targs = List.length rl -> List.iter2 reg rl targs; check tret (rtype r)
-					| t -> check t (HFun (List.map rtype rl, rtype r)))
+					let check_args targs tret rl =
+						if List.length targs <> List.length rl then false else begin
+							List.iter2 reg rl targs;
+							check tret (rtype r);
+							true;
+						end
+					in
+					match rtype obj with
+					| HVirtual v ->
+						let _, _, t = v.vfields.(m) in
+						(match t with
+						| HMethod (args,ret) when check_args args ret rl2 -> ()
+						| _ -> check t (HMethod (List.map rtype rl, rtype r)))
+					| _ ->
+						let t = tfield obj m true in
+						match t with
+						| HFun (args, ret) when check_args args ret rl -> ()
+						| _ -> check t (HFun (List.map rtype rl, rtype r)))
 			| OCallClosure (r,f,rl) ->
 				(match rtype f with
 				| HFun (targs,tret) when List.length targs = List.length rl -> List.iter2 reg rl targs; check tret (rtype r)
@@ -2271,14 +2371,15 @@ let check code macros =
 				reg r HBool;
 				can_jump delta
 			| OJNull (r,delta) | OJNotNull (r,delta) ->
-				ignore(rtype r);
+				if not (is_nullable (rtype r)) then reg r HDyn;
 				can_jump delta
-			| OJUGte (a,b,delta) | OJULt (a,b,delta) | OJSGte (a,b,delta) | OJSLt (a,b,delta) | OJSGt (a,b,delta) | OJSLte (a,b,delta) ->
+			| OJUGte (a,b,delta) | OJULt (a,b,delta) | OJSGte (a,b,delta) | OJSLt (a,b,delta) | OJSGt (a,b,delta) | OJSLte (a,b,delta) | OJNotLt (a,b,delta) | OJNotGte (a,b,delta) ->
 				if not (safe_cast (rtype a) (rtype b)) then reg b (rtype a);
 				can_jump delta
 			| OJEq (a,b,delta) | OJNotEq (a,b,delta) ->
 				(match rtype a, rtype b with
 				| (HObj _ | HVirtual _), (HObj _ | HVirtual _) -> ()
+				| (HDyn | HFun _), (HDyn | HFun _) -> ()
 				| ta, tb when safe_cast tb ta -> ()
 				| _ -> reg a (rtype b));
 				can_jump delta
@@ -2298,7 +2399,7 @@ let check code macros =
 				()
 			| ONew r ->
 				(match rtype r with
-				| HDynObj | HVirtual _ -> ()
+				| HDynObj | HVirtual _ | HStruct _ -> ()
 				| _ -> is_obj r)
 			| OField (r,o,fid) ->
 				check (tfield o fid false) (rtype r)
@@ -2319,9 +2420,6 @@ let check code macros =
 						reg r (HFun (tl,tret));
 					| _ ->
 						assert false)
-				| HVirtual v ->
-					let _,_, t = v.vfields.(fid) in
-					reg r t;
 				| _ ->
 					is_obj o)
 			| OInstanceClosure (r,f,arg) ->
@@ -2339,30 +2437,22 @@ let check code macros =
 				reg a HArray;
 				reg i HI32;
 				ignore(rtype v);
-			| OGetUI8 (r,b,p) | OGetI32 (r,b,p) | OGetUI16(r,b,p) ->
+			| OGetUI8 (r,b,p) | OGetUI16(r,b,p) ->
 				reg r HI32;
 				reg b HBytes;
 				reg p HI32;
-			| OGetF32 (r,b,p) ->
-				reg r HF32;
+			| OGetMem (r,b,p) ->
+				(match rtype r with HI32 | HI64 | HF32 | HF64 -> () | _ -> error (reg_inf r ^ " should be numeric"));
 				reg b HBytes;
 				reg p HI32;
-			| OGetF64 (r,b,p) ->
-				reg r HF64;
-				reg b HBytes;
-				reg p HI32;
-			| OSetUI8 (r,p,v) | OSetI32 (r,p,v) | OSetUI16 (r,p,v) ->
+			| OSetUI8 (r,p,v) | OSetUI16 (r,p,v) ->
 				reg r HBytes;
 				reg p HI32;
 				reg v HI32;
-			| OSetF32 (r,p,v) ->
+			| OSetMem (r,p,v) ->
 				reg r HBytes;
 				reg p HI32;
-				reg v HF32;
-			| OSetF64 (r,p,v) ->
-				reg r HBytes;
-				reg p HI32;
-				reg v HF64;
+				(match rtype v with HI32 | HI64 | HF32 | HF64 -> () | _ -> error (reg_inf r ^ " should be numeric"));
 			| OSetArray (a,i,v) ->
 				reg a HArray;
 				reg i HI32;
@@ -2444,6 +2534,15 @@ let check code macros =
 				can_jump idx
 			| OEndTrap _ ->
 				()
+			| OAssert _ ->
+				()
+			| ORefData (r,d) ->
+				reg d HArray;
+				(match rtype r with HRef _ -> () | _ -> reg r (HRef HDyn))
+			| ORefOffset (r,r2,off) ->
+				(match rtype r2 with HRef _ -> () | _ -> reg r2 (HRef HDyn));
+				reg r (rtype r2);
+				reg off HI32;
 			| ONop _ ->
 				()
 		) f.code
@@ -2464,6 +2563,7 @@ let check code macros =
 	Array.iter check_fun code.functions
 
 (* ------------------------------- SPEC ---------------------------------------------- *)
+(*
 
 open Hlopt
 
@@ -2473,6 +2573,7 @@ type svalue =
 	| SInt of int32
 	| SFloat of float
 	| SString of string
+	| SBytes of int
 	| SBool of bool
 	| SNull
 	| SType of ttype
@@ -2528,6 +2629,7 @@ let rec svalue_string v =
 	| SInt i -> Int32.to_string i
 	| SFloat f -> string_of_float f
 	| SString s -> "\"" ^ s ^ "\""
+	| SBytes i -> "bytes$" ^ string_of_int i
 	| SBool b -> if b then "true" else "false"
 	| SNull -> "null"
 	| SRef _ -> "ref"
@@ -2553,7 +2655,7 @@ let rec svalue_string v =
 	| SDelayed (str,_) -> str
 
 let svalue_iter f = function
-	| SUndef | SArg _ | SInt _ | SFloat _ | SString _ | SBool _ | SNull | SType _ | SResult _
+	| SUndef | SArg _ | SInt _ | SFloat _ | SBytes _ | SString _ | SBool _ | SNull | SType _ | SResult _
 	| SFun (_,None) | SGlobal _ | SRef _ | SRefResult _ | SUnreach | SExc | SDelayed _ ->
 		()
 	| SOp (_,a,b) | SMem (a,b,_) -> f a; f b
@@ -2734,7 +2836,8 @@ let make_spec (code:code) (f:fundecl) =
 			| OInt (d,i) -> args.(d) <- SInt code.ints.(i)
 			| OFloat (d,f) -> args.(d) <- SFloat code.floats.(f)
 			| OBool (d,b) -> args.(d) <- SBool b
-			| OBytes (d,s) | OString (d,s) -> args.(d) <- SString code.strings.(s)
+			| OString (d,s) -> args.(d) <- SString code.strings.(s)
+			| OBytes (d,s) -> args.(d) <- SBytes s
 			| ONull d -> args.(d) <- SNull
 			| OAdd (d,a,b) -> args.(d) <- SOp ("+",args.(a),args.(b))
 			| OSub (d,a,b) -> args.(d) <- SOp ("-",args.(a),args.(b))
@@ -2781,8 +2884,10 @@ let make_spec (code:code) (f:fundecl) =
 			| OJSGte (a,b,_) -> semit (SJComp (">=",args.(a),args.(b)))
 			| OJSGt (a,b,_) -> semit (SJComp (">",args.(a),args.(b)))
 			| OJSLte (a,b,_) -> semit (SJComp ("<=",args.(a),args.(b)))
-			| OJULt (a,b,_) -> semit (SJComp ("<!",args.(a),args.(b)))
-			| OJUGte (a,b,_) -> semit (SJComp (">=!",args.(a),args.(b)))
+			| OJULt (a,b,_) -> semit (SJComp ("<U",args.(a),args.(b)))
+			| OJUGte (a,b,_) -> semit (SJComp (">=U",args.(a),args.(b)))
+			| OJNotLt (a,b,_) -> semit (SJComp ("not<",args.(a),args.(b)))
+			| OJNotGte (a,b,_) -> semit (SJComp ("not>=",args.(a),args.(b)))
 			| OJEq (a,b,_) -> semit (SJComp ("==",args.(a),args.(b)))
 			| OJNotEq (a,b,_) -> semit (SJComp ("!=",args.(a),args.(b)))
 			| OJAlways _ -> semit SJump
@@ -2805,15 +2910,11 @@ let make_spec (code:code) (f:fundecl) =
 			| OTrap _ | OEndTrap _ -> ()
 			| OGetUI8 (d,b,i) -> args.(d) <- SMem (args.(b),args.(i),HUI8)
 			| OGetUI16 (d,b,i) -> args.(d) <- SMem (args.(b),args.(i),HUI16)
-			| OGetI32 (d,b,i) -> args.(d) <- SMem (args.(b),args.(i),HI32)
-			| OGetF32 (d,b,i) -> args.(d) <- SMem (args.(b),args.(i),HF32)
-			| OGetF64 (d,b,i) -> args.(d) <- SMem (args.(b),args.(i),HF64)
+			| OGetMem (d,b,i) -> args.(d) <- SMem (args.(b),args.(i),f.regs.(d))
 			| OGetArray (d,b,i) -> args.(d) <- SMem (args.(b),args.(i),HArray)
 			| OSetUI8 (b,i,v) -> semit (SWriteMem (args.(b),args.(i),args.(v),HUI8))
 			| OSetUI16 (b,i,v) -> semit (SWriteMem (args.(b),args.(i),args.(v),HUI16))
-			| OSetI32 (b,i,v) -> semit (SWriteMem (args.(b),args.(i),args.(v),HI32))
-			| OSetF32 (b,i,v) -> semit (SWriteMem (args.(b),args.(i),args.(v),HF32))
-			| OSetF64 (b,i,v) -> semit (SWriteMem (args.(b),args.(i),args.(v),HF64))
+			| OSetMem (b,i,v) -> semit (SWriteMem (args.(b),args.(i),args.(v),f.regs.(v)))
 			| OSetArray (b,i,v) -> semit (SWriteMem (args.(b),args.(i),args.(v),HArray))
 			| ONew d ->
 				incr alloc_count;
@@ -2837,6 +2938,7 @@ let make_spec (code:code) (f:fundecl) =
 			| OEnumIndex (d,r) -> args.(d) <- SConv ("index",args.(r))
 			| OEnumField (d,r,fid,cid) -> args.(d) <- SEnumField (args.(r),fid,cid)
 			| OSetEnumField (e,fid,r) -> semit (SSetEnumField (args.(e),fid,args.(r)))
+			| OAssert _  -> ()
 			| ONop _ -> ()
 		done;
 		Hashtbl.add block_args b.bstart args
@@ -2851,3 +2953,4 @@ let make_spec (code:code) (f:fundecl) =
 	in
 	loop 0;
 	List.rev !out_spec
+*)

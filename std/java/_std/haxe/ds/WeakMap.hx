@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2017 Haxe Foundation
+ * Copyright (C)2005-2019 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,17 +19,17 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+
 package haxe.ds;
 
 import java.NativeArray;
 import java.lang.ref.WeakReference;
 import java.lang.ref.ReferenceQueue;
 
-@:coreApi class WeakMap<K:{}, V> implements haxe.Constraints.IMap<K,V>
-{
-	@:extern private static inline var HASH_UPPER = 0.77;
-	@:extern private static inline var FLAG_EMPTY = 0;
-	@:extern private static inline var FLAG_DEL = 1;
+@:coreApi class WeakMap<K:{}, V> implements haxe.Constraints.IMap<K, V> {
+	extern private static inline var HASH_UPPER = 0.77;
+	extern private static inline var FLAG_EMPTY = 0;
+	extern private static inline var FLAG_DEL = 1;
 
 	/**
 	 * This is the most important structure here and the reason why it's so fast.
@@ -40,9 +40,10 @@ import java.lang.ref.ReferenceQueue;
 	 * The insertion algorithm will do the same but will also break when FLAG_DEL is found;
 	 */
 	private var hashes:NativeArray<HashType>;
-	private var entries:NativeArray<Entry<K,V>>;
 
-  //weak map specific
+	private var entries:NativeArray<Entry<K, V>>;
+
+	// weak map specific
 	private var queue:ReferenceQueue<K>;
 
 	private var nBuckets:Int;
@@ -50,50 +51,49 @@ import java.lang.ref.ReferenceQueue;
 	private var nOccupied:Int;
 	private var upperBound:Int;
 
-	private var cachedEntry:Entry<K,V>;
+	#if !no_map_cache
+	private var cachedEntry:Entry<K, V>;
 	private var cachedIndex:Int;
+	#end
 
-#if DEBUG_HASHTBL
+	#if DEBUG_HASHTBL
 	private var totalProbes:Int;
 	private var probeTimes:Int;
 	private var sameHash:Int;
 	private var maxProbe:Int;
-#end
+	#end
 
-	public function new() : Void
-	{
+	public function new():Void {
+		#if !no_map_cache
 		cachedIndex = -1;
+		#end
 		queue = new ReferenceQueue();
 	}
 
 	@:analyzer(ignore)
-	private function cleanupRefs():Void
-	{
+	private function cleanupRefs():Void {
 		var x:Dynamic = null, nOccupied = nOccupied;
-		while (( x = queue.poll()) != null)
-		{
-			//even if not found on hashtable (already removed), release value
-			var x:Entry<K,V> = cast x;
+		while ((x = queue.poll()) != null) {
+			// even if not found on hashtable (already removed), release value
+			var x:Entry<K, V> = cast x;
 			x.value = null;
 
-			//lookup index
-			if (nOccupied != 0)
-			{
+			// lookup index
+			if (nOccupied != 0) {
 				var mask = nBuckets - 1, hash = x.hash, nProbes = 0;
 				var i = hash & mask;
 				var last = i, flag;
-				while(!isEmpty(flag = hashes[i]) && (isDel(flag) || flag != hash || entries[i] != x))
-				{
+				while (!isEmpty(flag = hashes[i]) && (isDel(flag) || flag != hash || entries[i] != x)) {
 					i = (i + ++nProbes) & mask;
 				}
 
-				if (entries[i] == x)
-				{
-					if (cachedIndex == i)
-					{
+				if (entries[i] == x) {
+					#if !no_map_cache
+					if (cachedIndex == i) {
 						cachedIndex = -1;
 						cachedEntry = null;
 					}
+					#end
 					entries[i] = null;
 					hashes[i] = FLAG_DEL;
 					--size;
@@ -102,14 +102,12 @@ import java.lang.ref.ReferenceQueue;
 		}
 	}
 
-	public function set( key : K, value : V ) : Void
-	{
+	public function set(key:K, value:V):Void {
 		cleanupRefs();
 		var x:Int, k:Int;
-		if (nOccupied >= upperBound)
-		{
+		if (nOccupied >= upperBound) {
 			if (nBuckets > (size << 1))
-				resize(nBuckets - 1); //clear "deleted" elements
+				resize(nBuckets - 1); // clear "deleted" elements
 			else
 				resize(nBuckets + 2);
 		}
@@ -122,22 +120,21 @@ import java.lang.ref.ReferenceQueue;
 			var i = k & mask, nProbes = 0;
 
 			var delKey = -1;
-			//for speed up
+			// for speed up
 			if (isEmpty(hashes[i])) {
 				x = i;
 			} else {
-				//var inc = getInc(k, mask);
+				// var inc = getInc(k, mask);
 				var last = i, flag;
-				while(! (isEmpty(flag = hashes[i]) || (flag == k && entries[i].keyEquals(key) )) )
-				{
+				while (!(isEmpty(flag = hashes[i]) || (flag == k && entries[i].keyEquals(key)))) {
 					if (delKey == -1 && isDel(flag))
 						delKey = i;
 					i = (i + ++nProbes) & mask;
-#if DEBUG_HASHTBL
+					#if DEBUG_HASHTBL
 					probeTimes++;
 					if (i == last)
 						throw "assert";
-#end
+					#end
 				}
 
 				if (isEmpty(flag) && delKey != -1)
@@ -146,16 +143,15 @@ import java.lang.ref.ReferenceQueue;
 					x = i;
 			}
 
-#if DEBUG_HASHTBL
+			#if DEBUG_HASHTBL
 			if (nProbes > maxProbe)
 				maxProbe = nProbes;
 			totalProbes++;
-#end
+			#end
 		}
 
-		var flag = hashes[x], entry = new Entry(key,value,k,queue);
-		if (isEmpty(flag))
-		{
+		var flag = hashes[x], entry = new Entry(key, value, k, queue);
+		if (isEmpty(flag)) {
 			entries[x] = entry;
 			hashes[x] = k;
 			size++;
@@ -169,85 +165,84 @@ import java.lang.ref.ReferenceQueue;
 			entries[x] = entry;
 		}
 
+		#if !no_map_cache
 		cachedIndex = x;
 		cachedEntry = entry;
+		#end
 	}
 
-	@:final private function lookup( key : K ) : Int
-	{
-		if (nBuckets != 0)
-		{
+	private final function lookup(key:K):Int {
+		if (nBuckets != 0) {
 			var hashes = hashes, entries = entries;
 
 			var mask = nBuckets - 1, hash = hash(key), k = hash, nProbes = 0;
 			var i = k & mask;
 			var last = i, flag;
-			//var inc = getInc(k, mask);
-			while (!isEmpty(flag = hashes[i]) && (isDel(flag) || flag != k || !entries[i].keyEquals(key)))
-			{
+			// var inc = getInc(k, mask);
+			while (!isEmpty(flag = hashes[i]) && (isDel(flag) || flag != k || !entries[i].keyEquals(key))) {
 				i = (i + ++nProbes) & mask;
-#if DEBUG_HASHTBL
+				#if DEBUG_HASHTBL
 				probeTimes++;
 				if (i == last)
 					throw "assert";
-#end
+				#end
 			}
 
-#if DEBUG_HASHTBL
+			#if DEBUG_HASHTBL
 			if (nProbes > maxProbe)
 				maxProbe = nProbes;
 			totalProbes++;
-#end
+			#end
 			return isEither(flag) ? -1 : i;
 		}
 
 		return -1;
 	}
 
-	@:final @:private function resize(newNBuckets:Int) : Void
-	{
-		//This function uses 0.25*n_bucktes bytes of working space instead of [sizeof(key_t+val_t)+.25]*n_buckets.
+	@:private final function resize(newNBuckets:Int):Void {
+		// This function uses 0.25*n_bucktes bytes of working space instead of [sizeof(key_t+val_t)+.25]*n_buckets.
 		var newHash = null;
 		var j = 1;
 		{
 			newNBuckets = roundUp(newNBuckets);
-			if (newNBuckets < 4) newNBuckets = 4;
-			if (size >= (newNBuckets * HASH_UPPER + 0.5)) /* requested size is too small */
-			{
+			if (newNBuckets < 4)
+				newNBuckets = 4;
+			if (size >= (newNBuckets * HASH_UPPER + 0.5))
+				/* requested size is too small */ {
 				j = 0;
 			} else { /* hash table size to be changed (shrink or expand); rehash */
 				var nfSize = newNBuckets;
-				newHash = new NativeArray( nfSize );
-				if (nBuckets < newNBuckets) //expand
+				newHash = new NativeArray(nfSize);
+				if (nBuckets < newNBuckets) // expand
 				{
 					var e = new NativeArray(newNBuckets);
 					if (entries != null)
 						arrayCopy(entries, 0, e, 0, nBuckets);
 					entries = e;
-				} //otherwise shrink
+				} // otherwise shrink
 			}
 		}
 
-		if (j != 0)
-		{ //rehashing is required
-			//resetting cache
+		if (j != 0) { // rehashing is required
+			// resetting cache
+			#if !no_map_cache
 			cachedEntry = null;
 			cachedIndex = -1;
+			#end
 
 			j = -1;
 			var nBuckets = nBuckets, entries = entries, hashes = hashes;
 
 			var newMask = newNBuckets - 1;
-			while (++j < nBuckets)
-			{
+			while (++j < nBuckets) {
 				var k;
-				if (!isEither(k = hashes[j]))
-				{
+				if (!isEither(k = hashes[j])) {
 					var entry = entries[j];
 
+					entries[j] = null;
 					hashes[j] = FLAG_DEL;
-					while (true) /* kick-out process; sort of like in Cuckoo hashing */
-					{
+					while (true)
+						/* kick-out process; sort of like in Cuckoo hashing */ {
 						var nProbes = 0;
 						var i = k & newMask;
 
@@ -256,8 +251,8 @@ import java.lang.ref.ReferenceQueue;
 
 						newHash[i] = k;
 
-						if (i < nBuckets && !isEither(k = hashes[i])) /* kick out the existing element */
-						{
+						if (i < nBuckets && !isEither(k = hashes[i]))
+							/* kick out the existing element */ {
 							{
 								var tmp = entries[i];
 								entries[i] = entry;
@@ -273,8 +268,8 @@ import java.lang.ref.ReferenceQueue;
 				}
 			}
 
-			if (nBuckets > newNBuckets) /* shrink the hash table */
-			{
+			if (nBuckets > newNBuckets)
+				/* shrink the hash table */ {
 				{
 					var e = new NativeArray(newNBuckets);
 					arrayCopy(entries, 0, e, 0, newNBuckets);
@@ -289,21 +284,22 @@ import java.lang.ref.ReferenceQueue;
 		}
 	}
 
-	public function get( key : K ) : Null<V>
-	{
+	public function get(key:K):Null<V> {
 		cleanupRefs();
 		var idx = -1;
-		if (cachedEntry != null && cachedEntry.keyEquals(key) && ( (idx = cachedIndex) != -1 ))
-		{
+		#if !no_map_cache
+		if (cachedEntry != null && cachedEntry.keyEquals(key) && ((idx = cachedIndex) != -1)) {
 			return cachedEntry.value;
 		}
+		#end
 
 		idx = lookup(key);
-		if (idx != -1)
-		{
+		if (idx != -1) {
 			var entry = entries[idx];
+			#if !no_map_cache
 			cachedEntry = entry;
 			cachedIndex = idx;
+			#end
 
 			return entry.value;
 		}
@@ -311,21 +307,22 @@ import java.lang.ref.ReferenceQueue;
 		return null;
 	}
 
-	private function getDefault( key : K, def : V ) : V
-	{
+	private function getDefault(key:K, def:V):V {
 		cleanupRefs();
 		var idx = -1;
-		if (cachedEntry != null && cachedEntry.keyEquals(key) && ( (idx = cachedIndex) != -1 ))
-		{
+		#if !no_map_cache
+		if (cachedEntry != null && cachedEntry.keyEquals(key) && ((idx = cachedIndex) != -1)) {
 			return cachedEntry.value;
 		}
+		#end
 
 		idx = lookup(key);
-		if (idx != -1)
-		{
+		if (idx != -1) {
 			var entry = entries[idx];
+			#if !no_map_cache
 			cachedEntry = entry;
 			cachedIndex = idx;
+			#end
 
 			return entry.value;
 		}
@@ -333,21 +330,22 @@ import java.lang.ref.ReferenceQueue;
 		return def;
 	}
 
-	public function exists( key : K ) : Bool
-	{
+	public function exists(key:K):Bool {
 		cleanupRefs();
 		var idx = -1;
-		if (cachedEntry != null && cachedEntry.keyEquals(key) && ( (idx = cachedIndex) != -1 ))
-		{
+		#if !no_map_cache
+		if (cachedEntry != null && cachedEntry.keyEquals(key) && ((idx = cachedIndex) != -1)) {
 			return true;
 		}
+		#end
 
 		idx = lookup(key);
-		if (idx != -1)
-		{
+		if (idx != -1) {
 			var entry = entries[idx];
+			#if !no_map_cache
 			cachedEntry = entry;
 			cachedIndex = idx;
+			#end
 
 			return true;
 		}
@@ -355,24 +353,25 @@ import java.lang.ref.ReferenceQueue;
 		return false;
 	}
 
-	public function remove( key : K ) : Bool
-	{
+	public function remove(key:K):Bool {
 		cleanupRefs();
 		var idx = -1;
-		if ( !(cachedEntry != null && cachedEntry.keyEquals(key) && ( (idx = cachedIndex) != -1 )) )
+		#if !no_map_cache
+		if (!(cachedEntry != null && cachedEntry.keyEquals(key) && ((idx = cachedIndex) != -1)))
+		#end
 		{
 			idx = lookup(key);
 		}
 
-		if (idx == -1)
-		{
+		if (idx == -1) {
 			return false;
 		} else {
-			if (cachedEntry != null && cachedEntry.keyEquals(key))
-			{
+			#if !no_map_cache
+			if (cachedEntry != null && cachedEntry.keyEquals(key)) {
 				cachedIndex = -1;
 				cachedEntry = null;
 			}
+			#end
 
 			hashes[idx] = FLAG_DEL;
 			entries[idx] = null;
@@ -382,93 +381,63 @@ import java.lang.ref.ReferenceQueue;
 		}
 	}
 
-	/**
-		Returns an iterator of all keys in the hashtable.
-		Implementation detail: Do not set() any new value while iterating, as it may cause a resize, which will break iteration
-	**/
-	public function keys() : Iterator<K>
-	{
+	public inline function keys():Iterator<K> {
 		cleanupRefs();
-		var i = 0;
-		var len = nBuckets;
-		var lastKey = null; //keep a strong reference to the key while iterating, so it can't be collected while iterating
-		return {
-			hasNext: function() {
-				for (j in i...len)
-				{
-					if (!isEither(hashes[j]))
-					{
-						var entry = entries[j];
-						var last = entry.get();
-						if (last != null)
-						{
-							lastKey = last;
-							cachedIndex = i;
-							cachedEntry = entry;
-							i = j;
-							return true;
-						}
-					}
-				}
-				return false;
-			},
-			next: function() {
-				i = i + 1;
-				return lastKey;
-			}
-		};
+		return new WeakMapKeyIterator(this);
 	}
 
-	/**
-		Returns an iterator of all values in the hashtable.
-		Implementation detail: Do not set() any new value while iterating, as it may cause a resize, which will break iteration
-	**/
-	public function iterator() : Iterator<V>
-	{
+	public inline function iterator():Iterator<V> {
 		cleanupRefs();
-		var i = 0;
-		var len = nBuckets;
-		return {
-			hasNext: function() {
-				for (j in i...len)
-				{
-					if (!isEither(hashes[j]))
-					{
-						i = j;
-						return true;
-					}
-				}
-				return false;
-			},
-			next: function() {
-				var ret = entries[i].value;
-				i = i + 1;
-				return ret;
-			}
-		};
+		return new WeakMapValueIterator(this);
 	}
 
-	/**
-		Returns an displayable representation of the hashtable content.
-	**/
+	public inline function keyValueIterator():KeyValueIterator<K, V> {
+		return new haxe.iterators.MapKeyValueIterator(this);
+	}
 
-	public function toString() : String {
+	public function copy():WeakMap<K, V> {
+		var copied = new WeakMap();
+		for (key in keys())
+			copied.set(key, get(key));
+		return copied;
+	}
+
+	public function toString():String {
 		var s = new StringBuf();
 		s.add("{");
 		var it = keys();
-		for( i in it ) {
+		for (i in it) {
 			s.add(Std.string(i));
 			s.add(" => ");
 			s.add(Std.string(get(i)));
-			if( it.hasNext() )
+			if (it.hasNext())
 				s.add(", ");
 		}
 		s.add("}");
 		return s.toString();
 	}
 
-	@:extern private static inline function roundUp(x:Int):Int
-	{
+	public function clear():Void {
+		hashes = null;
+		entries = null;
+		queue = new ReferenceQueue();
+		nBuckets = 0;
+		size = 0;
+		nOccupied = 0;
+		upperBound = 0;
+		#if !no_map_cache
+		cachedEntry = null;
+		cachedIndex = -1;
+		#end
+		#if DEBUG_HASHTBL
+		totalProbes = 0;
+		probeTimes = 0;
+		sameHash = 0;
+		maxProbe = 0;
+		#end
+	}
+
+	extern private static inline function roundUp(x:Int):Int {
 		--x;
 		x |= (x) >>> 1;
 		x |= (x) >>> 2;
@@ -478,38 +447,36 @@ import java.lang.ref.ReferenceQueue;
 		return ++x;
 	}
 
-	@:extern private static inline function getInc(k:Int, mask:Int):Int //return 1 for linear probing
+	extern private static inline function getInc(k:Int, mask:Int):Int // return 1 for linear probing
 		return (((k) >> 3 ^ (k) << 3) | 1) & (mask);
 
-	@:extern private static inline function isEither(v:HashType):Bool
+	extern private static inline function isEither(v:HashType):Bool
 		return (v & 0xFFFFFFFE) == 0;
 
-	@:extern private static inline function isEmpty(v:HashType):Bool
+	extern private static inline function isEmpty(v:HashType):Bool
 		return v == FLAG_EMPTY;
 
-	@:extern private static inline function isDel(v:HashType):Bool
+	extern private static inline function isDel(v:HashType):Bool
 		return v == FLAG_DEL;
 
-	//guarantee: Whatever this function is, it will never return 0 nor 1
-	@:extern private static inline function hash(s:Dynamic):HashType
-	{
+	// guarantee: Whatever this function is, it will never return 0 nor 1
+	extern private static inline function hash(s:Dynamic):HashType {
 		var k:Int = untyped s.hashCode();
-		//k *= 357913941;
-		//k ^= k << 24;
-		//k += ~357913941;
-		//k ^= k >> 31;
-		//k ^= k << 31;
+		// k *= 357913941;
+		// k ^= k << 24;
+		// k += ~357913941;
+		// k ^= k >> 31;
+		// k ^= k << 31;
 
-		k = (k+0x7ed55d16) + (k<<12);
-		k = (k^0xc761c23c) ^ (k>>19);
-		k = (k+0x165667b1) + (k<<5);
-		k = (k+0xd3a2646c) ^ (k<<9);
-		k = (k+0xfd7046c5) + (k<<3);
-		k = (k^0xb55a4f09) ^ (k>>16);
+		k = (k + 0x7ed55d16) + (k << 12);
+		k = (k ^ 0xc761c23c) ^ (k >> 19);
+		k = (k + 0x165667b1) + (k << 5);
+		k = (k + 0xd3a2646c) ^ (k << 9);
+		k = (k + 0xfd7046c5) + (k << 3);
+		k = (k ^ 0xb55a4f09) ^ (k >> 16);
 
 		var ret = k;
-		if (isEither(ret))
-		{
+		if (isEither(ret)) {
 			if (ret == 0)
 				ret = 2;
 			else
@@ -519,31 +486,96 @@ import java.lang.ref.ReferenceQueue;
 		return ret;
 	}
 
-	@:extern private static inline function arrayCopy(sourceArray:Dynamic, sourceIndex:Int, destinationArray:Dynamic, destinationIndex:Int, length:Int):Void
+	extern private static inline function arrayCopy(sourceArray:Dynamic, sourceIndex:Int, destinationArray:Dynamic, destinationIndex:Int, length:Int):Void
 		java.lang.System.arraycopy(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
 
-	@:extern private static inline function assert(x:Bool):Void
-	{
-#if DEBUG_HASHTBL
-		if (!x) throw "assert failed";
-#end
+	extern private static inline function assert(x:Bool):Void {
+		#if DEBUG_HASHTBL
+		if (!x)
+			throw "assert failed";
+		#end
 	}
 }
 
-private class Entry<K,V> extends WeakReference<K>
-{
+private class Entry<K, V> extends WeakReference<K> {
 	public var value:V;
 	public var hash(default, null):Int;
-	public function new(key:K, value:V, hash:Int, queue:ReferenceQueue<K>)
-	{
+
+	public function new(key:K, value:V, hash:Int, queue:ReferenceQueue<K>) {
 		super(key, queue);
 		this.value = value;
 		this.hash = hash;
 	}
 
-	@:final inline public function keyEquals(k:K):Bool
-	{
+	final inline public function keyEquals(k:K):Bool {
 		return k != null && untyped k.equals(get());
+	}
+}
+
+@:access(haxe.ds.WeakMap)
+private final class WeakMapKeyIterator<T:{}, V> {
+	var m:WeakMap<T, V>;
+	var i:Int;
+	var len:Int;
+	var lastKey:T;
+
+	public function new(m:WeakMap<T, V>) {
+		this.i = 0;
+		this.m = m;
+		this.len = m.nBuckets;
+	}
+
+	public function hasNext():Bool {
+		for (j in i...len) {
+			if (!WeakMap.isEither(m.hashes[j])) {
+				var entry = m.entries[j], last = entry.get();
+				if (last != null) {
+					#if !no_map_cache
+					m.cachedIndex = i;
+					m.cachedEntry = entry;
+					#end
+					lastKey = last; // keep a strong reference to the key while iterating, so it doesn't get collected
+					i = j;
+					return true;
+				}
+			}
+		}
+		lastKey = null;
+		return false;
+	}
+
+	public function next():T {
+		i = i + 1;
+		return lastKey;
+	}
+}
+
+@:access(haxe.ds.WeakMap)
+private final class WeakMapValueIterator<K:{}, T> {
+	var m:WeakMap<K, T>;
+	var i:Int;
+	var len:Int;
+
+	public function new(m:WeakMap<K, T>) {
+		this.i = 0;
+		this.m = m;
+		this.len = m.nBuckets;
+	}
+
+	public function hasNext():Bool {
+		for (j in i...len) {
+			if (!WeakMap.isEither(m.hashes[j]) && m.entries[j].get() != null) {
+				i = j;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public inline function next():T {
+		var ret = m.entries[i];
+		i = i + 1;
+		return ret.value;
 	}
 }
 

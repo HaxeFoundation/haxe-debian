@@ -15,13 +15,7 @@
 
 -swf all9.swf
 -xml flash9.xml
--swf-version 11.4
-
---next
-
--D php7
--php all_php7
--xml php7.xml
+--swf-version 11.4
 
 --next
 
@@ -32,19 +26,21 @@
 
 -cpp all_cpp
 -xml cpp.xml
--D xmldoc
 -D HXCPP_MULTI_THREADED
 
 --next
 -java all_java
 -xml java.xml
--D xmldoc
+
+--next
+-java all_jvm
+-D jvm
+-xml jvm.xml
 
 --next
 -cs all_cs
 -D unsafe
 -xml cs.xml
--D xmldoc
 
 --next
 -python all_python
@@ -53,6 +49,10 @@
 --next
 -hl all_hl
 -xml hl.xml
+
+--next
+--interp
+-xml interp.xml
 
 --next
 

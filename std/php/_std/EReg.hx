@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2017 Haxe Foundation
+ * Copyright (C)2005-2019 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,103 +19,161 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-@:coreApi @:final class EReg {
 
-	var r : Dynamic;
-	var last : String;
-	var global : Bool;
-	var pattern : String;
-	var options : String;
-	var re : String;
-	var matches : ArrayAccess<Dynamic>;
+import haxe.extern.EitherType;
+import php.*;
 
-	public function new( r : String, opt : String ) : Void {
+@:coreApi final class EReg {
+	var r:Dynamic;
+	var last:String;
+	var global:Bool;
+	var pattern:String;
+	var options:String;
+	var re:String;
+	var reUnicode(get, never):String;
+	var matches:NativeIndexedArray<NativeIndexedArray<EitherType<Int, String>>>;
+
+	public function new(r:String, opt:String):Void {
 		this.pattern = r;
-		var a = opt.split("g");
-		global = a.length > 1;
-		if( global )
-			opt = a.join("");
-		this.options = opt;
-		this.re = untyped __php__("'\"' . str_replace('\"','\\\\\"',$r) . '\"' . $opt");
+		options = Global.str_replace('g', '', opt);
+		global = options != opt;
+		options = Global.str_replace('u', '', options);
+		this.re = '"' + Global.str_replace('"', '\\"', r) + '"' + options;
 	}
 
-	public function match( s : String ) : Bool {
-		var p : Int = untyped __call__("preg_match", re, s, matches, __php__("PREG_OFFSET_CAPTURE"));
-
-		if(p > 0)
-			last = s;
-		else
-			last = null;
-		return p > 0;
+	public function match(s:String):Bool {
+		return matchFromByte(s, 0);
 	}
 
-	public function matched( n : Int ) : String {
-		if (matches == null ||  n < 0 ) throw "EReg::matched";
-		// we can't differenciate between optional groups at the end of a match
-		// that have not been matched and invalid groups
-		if( n >= untyped __call__("count", matches)) return null;
-		if(untyped __php__("$this->matches[$n][1] < 0")) return null;
-		return untyped __php__("$this->matches[$n][0]");
-	}
-
-	public function matchedLeft() : String {
-		if( untyped __call__("count", matches) == 0 ) throw "No string matched";
-		return last.substr(0, untyped __php__("$this->matches[0][1]"));
-	}
-
-	public function matchedRight() : String {
-		if( untyped __call__("count", matches) == 0 ) throw "No string matched";
-		var x : Int = untyped __php__("$this->matches[0][1]") + __call__("strlen",__php__("$this->matches[0][0]"));
-		return last.substr(x);
-	}
-
-	public function matchedPos() : { pos : Int, len : Int } {
-		return untyped { pos : __php__("$this->matches[0][1]"), len : __call__("strlen",__php__("$this->matches[0][0]")) };
-	}
-
-	public function matchSub( s : String, pos : Int, len : Int = -1):Bool {
-		var p : Int = untyped __call__("preg_match", re, len < 0 ? s : s.substr(0,pos + len), matches, __php__("PREG_OFFSET_CAPTURE"), pos);
-		if(p > 0) {
-			last = s;
+	inline function matchFromByte(s:String, bytesOffset:Int):Bool {
+		var p = Global.preg_match(reUnicode, s, matches, Const.PREG_OFFSET_CAPTURE, bytesOffset);
+		if (p == false) {
+			handlePregError();
+			p = Global.preg_match(re, s, matches, Const.PREG_OFFSET_CAPTURE);
 		}
-		else
+		if ((p : Int) > 0) {
+			last = s;
+		} else {
 			last = null;
-		return p > 0;
+		}
+		return (p : Int) > 0;
 	}
 
-	public function split( s : String ) : Array<String> {
-		return untyped __php__("new _hx_array(preg_split($this->re, $s, $this->{\"global\"} ? -1 : 2))");
+	function handlePregError():Void {
+		var e = Global.preg_last_error();
+		if (e == Const.PREG_INTERNAL_ERROR) {
+			throw 'EReg: internal PCRE error';
+		} else if (e == Const.PREG_BACKTRACK_LIMIT_ERROR) {
+			throw 'EReg: backtrack limit';
+		} else if (e == Const.PREG_RECURSION_LIMIT_ERROR) {
+			throw 'EReg: recursion limit';
+		} else if (e == Const.PREG_JIT_STACKLIMIT_ERROR) {
+			throw 'failed due to limited JIT stack space';
+		}
+		// else if(e == Const.PREG_BAD_UTF8_ERROR) {
+		// 	throw 'EReg: malformed UTF8';
+		// } else if(e == Const.PREG_BAD_UTF8_OFFSET_ERROR) {
+		// 	throw 'EReg: the offset didn\'t correspond to the begin of a valid UTF-8 code point';
+		// }
 	}
 
-	public function replace( s : String, by : String ) : String {
-		by = untyped __call__("str_replace", "\\$", "\\\\$", by);
-		by = untyped __call__("str_replace", "$$", "\\$", by);
-		untyped __php__("if(!preg_match('/\\\\([^?].*?\\\\)/', $this->re)) $by = preg_replace('/\\$(\\d+)/', '\\\\\\$\\1', $by)");
-		return untyped __call__("preg_replace", re, by, s, global ? -1 : 1);
+	public function matched(n:Int):String {
+		if (matches == null || n < 0)
+			throw "EReg::matched";
+		// we can't differentiate between optional groups at the end of a match
+		// that have not been matched and invalid groups
+		if (n >= Global.count(matches))
+			return null;
+		if ((matches[n][1] : Int) < 0)
+			return null;
+		return matches[n][0];
 	}
 
-	public function map( s : String, f : EReg -> String ) : String {
-		var offset = 0;
-		var buf = new StringBuf();
+	public function matchedLeft():String {
+		if (Global.count(matches) == 0)
+			throw "No string matched";
+		return Global.substr(last, 0, matches[0][1]);
+	}
+
+	public function matchedRight():String {
+		if (Global.count(matches) == 0)
+			throw "No string matched";
+		var x:Int = (matches[0][1] : Int) + Global.strlen(matches[0][0]);
+		return Global.substr(last, x);
+	}
+
+	public function matchedPos():{pos:Int, len:Int} {
+		return {
+			pos: Global.mb_strlen(Global.substr(last, 0, matches[0][1])),
+			len: Global.mb_strlen(matches[0][0])
+		};
+	}
+
+	public function matchSub(s:String, pos:Int, len:Int = -1):Bool {
+		var subject = len < 0 ? s : s.substr(0, pos + len);
+		var p = Global.preg_match(reUnicode, subject, matches, Const.PREG_OFFSET_CAPTURE, pos);
+		if (p == false) {
+			handlePregError();
+			p = Global.preg_match(re, subject, matches, Const.PREG_OFFSET_CAPTURE, pos);
+		}
+		if ((p : Int) > 0) {
+			last = s;
+		} else {
+			last = null;
+		}
+		return (p : Int) > 0;
+	}
+
+	public function split(s:String):Array<String> {
+		var parts:NativeArray = Global.preg_split(reUnicode, s, (global ? -1 : 2));
+		if (parts == null) {
+			handlePregError();
+			parts = Global.preg_split(re, s, (global ? -1 : 2));
+		}
+		return @:privateAccess Array.wrap(parts);
+	}
+
+	public function replace(s:String, by:String):String {
+		by = Global.str_replace("\\$", "\\\\$", by);
+		by = Global.str_replace("$$", "\\$", by);
+		if (!Global.preg_match('/\\\\([^?].*?\\\\)/', re)) {
+			by = Global.preg_replace('/\\$(\\d+)/', '\\$\\1', by);
+		}
+		var result = Global.preg_replace(reUnicode, by, s, global ? -1 : 1);
+		if (result == null) {
+			handlePregError();
+			result = Global.preg_replace(re, by, s, global ? -1 : 1);
+		}
+		return result;
+	}
+
+	public function map(s:String, f:EReg->String):String {
+		if(!matchFromByte(s, 0)) {
+			return s;
+		}
+		var result = '';
+		var bytesOffset = 0;
+		var bytesTotal = Global.strlen(s);
 		do {
-			if (offset >= s.length)
-				break;
-			else if (!matchSub(s, offset)) {
-				buf.add(s.substr(offset));
-				break;
+			result += Global.substr(s, bytesOffset, matches[0][1] - bytesOffset);
+			result += f(this);
+			bytesOffset = matches[0][1];
+			if(matches[0][0] == '') {
+				result += Global.mb_substr(Global.substr(s, bytesOffset), 0, 1);
+				bytesOffset++;
+			} else {
+				bytesOffset += Global.strlen(matches[0][0]);
 			}
-			var p = matchedPos();
-			buf.add(s.substr(offset, p.pos - offset));
-			buf.add(f(this));
-			if (p.len == 0) {
-				buf.add(s.substr(p.pos, 1));
-				offset = p.pos + 1;
-			}
-			else
-				offset = p.pos + p.len;
-		} while (global);
-		if (!global && offset > 0 && offset < s.length)
-			buf.add(s.substr(offset));
-		return buf.toString();
+		} while(global && bytesOffset < bytesTotal && matchFromByte(s, bytesOffset));
+		result += Global.substr(s, bytesOffset);
+		return result;
+	}
+
+	public static inline function escape(s:String):String {
+		return Global.preg_quote(s);
+	}
+
+	inline function get_reUnicode():String {
+		return Syntax.concat(re, 'u');
 	}
 }

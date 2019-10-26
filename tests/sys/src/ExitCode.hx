@@ -3,11 +3,13 @@ import sys.io.*;
 import haxe.io.*;
 
 /**
-	This is intented to be used by TestSys and io.TestProcess.
+	This is intended to be used by TestSys and io.TestProcess.
 */
 class ExitCode {
 	static public var bin:String =
-	#if neko
+	#if interp
+		"bin/interp/ExitCode";
+	#elseif neko
 		"bin/neko/ExitCode.n";
 	#elseif hl
 		"bin/hl/ExitCode.hl";
@@ -23,6 +25,12 @@ class ExitCode {
 		#else
 			"bin/cs/bin/ExitCode.exe";
 		#end
+	#elseif (java && jvm)
+		#if debug
+			"bin/jvm/ExitCode-Debug.jar";
+		#else
+			"bin/jvm/ExitCode.jar";
+		#end
 	#elseif java
 		#if debug
 			"bin/java/ExitCode-Debug.jar";
@@ -31,8 +39,6 @@ class ExitCode {
 		#end
 	#elseif python
 		"bin/python/ExitCode.py";
-	#elseif php7
-		"bin/php7/ExitCode/index.php";
 	#elseif php
 		"bin/php/ExitCode/index.php";
 	#elseif lua

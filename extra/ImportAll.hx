@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2017 Haxe Foundation
+ * Copyright (C)2005-2018 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -38,10 +38,8 @@ class ImportAll {
 			haxe.macro.Compiler.define("macro");
 		}
 		switch( pack ) {
-		case "php7":
-			if( !Context.defined("php7") ) return;
 		case "php":
-			if( !Context.defined("php") || Context.defined("php7") ) return;
+			if( !Context.defined("php") ) return;
 		case "neko":
 			if( !Context.defined("neko") ) return;
 		case "js":
@@ -54,8 +52,12 @@ class ImportAll {
 			return;
 		case "sys":
 			if(!isSysTarget()) return;
+		case "sys.thread":
+			if ( !Context.defined("target.threaded") ) return;
 		case "java":
 			if( !Context.defined("java") ) return;
+		case "jvm":
+			if( !Context.defined("jvm") ) return;
 		case "cs":
 			if( !Context.defined("cs") ) return;
 		case "python":
@@ -68,7 +70,7 @@ class ImportAll {
 			if( !Context.defined("eval") ) return;
 		case "ssl":
 			if (!Context.defined("neko") && !Context.defined("cpp")) return;
-		case "tools", "build-tool": return;
+		case "tools", "build-tool", "jar-tool": return;
 		}
 		for( p in Context.getClassPath() ) {
 			if( p == "/" )
@@ -97,9 +99,6 @@ class ImportAll {
 					case "haxe.remoting.SyncSocketConnection": if( !(Context.defined("neko") || Context.defined("php") || Context.defined("cpp")) ) continue;
 					case "neko.vm.Ui" | "sys.db.Sqlite" | "sys.db.Mysql" if ( Context.defined("interp") ): continue;
 					case "sys.db.Sqlite" | "sys.db.Mysql" | "cs.db.AdoNet" if ( Context.defined("cs") ): continue;
-					}
-					if( Context.defined("php7") && cl.indexOf("php7.") == 0 ) {
-						cl = "php." + cl.substr("php7.".length);
 					}
 					Context.getModule(cl);
 				} else if( sys.FileSystem.isDirectory(p + "/" + file) )

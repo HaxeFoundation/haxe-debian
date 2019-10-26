@@ -1,5 +1,7 @@
 ﻿package unit;
 
+import haxe.ds.List;
+
 class TestSerialize extends Test {
 
 	function id<T>( v : T ) : T {
@@ -171,7 +173,6 @@ class TestSerialize extends Test {
 		eq( b2.length, b.length );
 		for( i in 0...b.length )
 			eq( b2.get(i), b.get(i) );
-		infos(null);
 	}
 
 }

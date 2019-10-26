@@ -16,11 +16,11 @@ e2.length == 0;
 var a = [1];
 var l = Lambda.list(a);
 name(a) == "Array";
-name(l) == "List";
+name(l) == "haxe.ds.List";
 l.length == 1;
 l.first() == 1;
 var l2 = Lambda.list(l);
-name(l2) == "List";
+name(l2) == "haxe.ds.List";
 l != l2;
 var e = new List();
 var e2 = Lambda.list(e);
@@ -31,9 +31,9 @@ e2.length == 0;
 var a = [1, 2, 3];
 var b = Lambda.map(a,function(i) return i * 2);
 b.length == 3;
-b.pop() == 2;
-b.pop() == 4;
 b.pop() == 6;
+b.pop() == 4;
+b.pop() == 2;
 
 // mapi
 var a = [1, 2, 3];
@@ -45,9 +45,9 @@ function myMap(index, i) {
 var b = Lambda.mapi(a, myMap);
 total == 3;
 b.length == 3;
-b.pop() == 2;
-b.pop() == 4;
 b.pop() == 6;
+b.pop() == 4;
+b.pop() == 2;
 
 // has
 Lambda.has([1,2,3],1) == true;
@@ -81,8 +81,8 @@ Lambda.iter([],function(i) return throw "no call");
 Lambda.array(Lambda.filter([1,2,3,4],function(i) return i < 3)) == [1,2];
 Lambda.array(Lambda.filter([1,2,3,4],function(i) return true)) == [1,2,3,4];
 Lambda.array(Lambda.filter([1,2,3,4],function(i) return false)) == [];
-Lambda.array(Lambda.filter([],function(i) return false)) == [];
-Lambda.array(Lambda.filter([],function(i) return true)) == [];
+Lambda.array(Lambda.filter([],function(_) return false)) == [];
+Lambda.array(Lambda.filter([],function(_) return true)) == [];
 Lambda.array(Lambda.filter([],null)) == [];
 
 

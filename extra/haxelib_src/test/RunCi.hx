@@ -84,6 +84,7 @@ class RunCi {
 
 	static function testClient():Void {
 		runCommand("haxe", ["client_tests.hxml"]);
+		runCommand("neko", ["bin/test.n"]);
 	}
 
 	static function testServer():Void {
@@ -157,8 +158,12 @@ Listen 2000
 <Directory "$DocumentRoot">
     Options Indexes FollowSymLinks
     AllowOverride All
+' + (switch (systemName()) {
+	case "Windows": '';
+	case _: '
     Order allow,deny
-    Allow from all
+    Allow from all';
+}) + '
     Require all granted
 </Directory>
 ';
@@ -184,7 +189,7 @@ Listen 2000
 					pass: user.pass,
 					host: "localhost",
 					port: 3306,
-					#if (haxe_ver < 4.0) database: "", #end
+					#if (haxe_ver < 4.0) database: "mysql", #end
 				});
 				cnx.request('create user if not exists \'${dbConfig.user}\'@\'localhost\' identified by \'${dbConfig.pass}\';');
 				cnx.request('create database if not exists ${dbConfig.database};');
@@ -202,7 +207,7 @@ Listen 2000
 			case "Windows":
 				configDb();
 
-				download("https://www.apachelounge.com/download/VC15/binaries/httpd-2.4.29-Win32-VC15.zip", "bin/httpd.zip");
+				download("https://home.apache.org/~steffenal/VC15/binaries/httpd-2.4.41-win32-VC15.zip", "bin/httpd.zip");
 				runCommand("7z", ["x", "bin\\httpd.zip", "-obin\\httpd"]);
 				writeApacheConf("bin\\httpd\\Apache24\\conf\\httpd.conf");
 
@@ -238,9 +243,9 @@ Listen 2000
 					println("====================");
 				}
 			case "Mac":
-				runCommand("brew", ["install", "httpd", "mysql"]);
+				runCommand("brew", ["install", "httpd", "mysql@5.7"]);
 
-				runCommand("mysql.server", ["start"]);
+				runCommand("brew", ["services", "start", "mysql@5.7"]);
 
 				configDb();
 
@@ -273,7 +278,7 @@ Listen 2000
 
 				writeApacheConf("haxelib.conf");
 				runCommand("sudo", ["ln", "-s", Path.join([Sys.getCwd(), "haxelib.conf"]), "/etc/apache2/conf-enabled/haxelib.conf"]);
-				
+
 				runCommand("sudo", ["service", "apache2", "restart"]);
 				Sys.sleep(2.5);
 
@@ -297,7 +302,7 @@ Listen 2000
 		}
 
 		Sys.setCwd("www");
-		runCommand("bower", ["install"]);
+		runCommand("npm", ["install"]);
 		Sys.setCwd("..");
 
 		Sys.putEnv("HAXELIB_SERVER", HAXELIB_SERVER);
@@ -308,7 +313,7 @@ Listen 2000
 		switch (systemName()) {
 			case "Mac":
 				runCommand("apachectl", ["stop"]);
-				runCommand("mysql.server", ["stop"]);
+				runCommand("brew", ["services", "stop", "mysql@5.7"]);
 			case _:
 				//pass
 		}
@@ -347,7 +352,7 @@ Listen 2000
 				break;
 			}
 
-			if (Timer.stamp() - t > 120) {
+			if (Timer.stamp() - t > 9 * 60) {
 				throw "server is not reachable...";
 			}
 
@@ -370,8 +375,10 @@ Listen 2000
 					runCommand("haxe", ["integration_tests.hxml", "-D", "system_haxelib"]);
 				case _:
 					runCommand("haxe", ["integration_tests.hxml"]);
+					runCommand("neko", ["bin/integration_tests.n"]);
 					runCommand("haxe", ["integration_tests.hxml", "-D", "system_haxelib"]);
 			}
+			runCommand("neko", ["bin/integration_tests.n"]);
 		}
 		if (Sys.getEnv("CI") != null && Sys.getEnv("USE_DOCKER") == null) {
 			runWithLocalServer(test);
@@ -464,16 +471,15 @@ Listen 2000
 		compileLegacyClient();
 		compileLegacyServer();
 
-		// the server can only be compiled with haxe 3.2+
+		// the server can only be compiled with haxe 3.4+
 		// haxe 3.1.3 bundles haxelib client 3.1.0-rc.4, which is not upgradable to later haxelib
 		// so there is no need to test the client either
 		#if (haxe_ver >= 3.2)
 			compileClient();
 			testClient();
-			compileServer();
 		#end
-		// buddy is only compatiable with haxe 3.4+
-		#if (haxe_ver >= 3.4)
+		#if ((haxe_ver >= 3.4) && (haxe_ver < 4))
+			compileServer();
 			testServer();
 		#end
 
@@ -482,7 +488,7 @@ Listen 2000
 			case "Windows", "Linux":
 				integrationTests();
 			case "Mac":
-				#if (haxe_ver >= 3.2)
+				#if ((haxe_ver >= 3.4) && (haxe_ver < 4))
 					integrationTests();
 				#end
 			case _:

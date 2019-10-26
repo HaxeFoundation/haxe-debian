@@ -1,6 +1,6 @@
 # Using Haxelib
 
-If the `haxelib` command is executed without any arguments, it prints an exhaustive list of all available arguments. 
+If the `haxelib` command is executed without any arguments, it prints an exhaustive list of all available arguments.
 
 The following commands are available:
 
@@ -24,6 +24,7 @@ The following commands are available:
     <li><a href="#user">user</a></li>
     <li><a href="#config">config</a></li>
     <li><a href="#path">path</a></li>
+    <li><a href="#libpath">libpath</a></li>
     <li><a href="#version">version</a></li>
     <li><a href="#help">help</a></li>
   </ul>
@@ -77,98 +78,123 @@ The following commands are available:
 </div>
 </div>
 
+Also, following environment variables affect haxelib behavior if set:
+
+<div class="row">
+<div class="span3">
+  <h4><a href="#environment_variables">Environment variables</a></h4>
+  <ul>
+    <li><a href="#HAXELIB_NO_SSL">HAXELIB_NO_SSL</a></li>
+    <li><a href="#HAXELIB_REMOTE">HAXELIB_REMOTE</a></li>
+  </ul>
+</div>
+</div>
 
 <a name="basic" class="anch"></a>
 
-## Basic
-
-
+# Basic
 
 <a name="install" class="anch"></a>
 
-#### `haxelib install`
+## haxelib install
 
+Installs the given project. You can optionally specify a specific version to be installed. By default, latest released version will be installed.
 
+### haxelib install [project-name]
+Installs latests released version of the library.
 ```
-haxelib install [project-name] [version]
-haxelib install actuate         # Install latest version
-haxelib install actuate 1.8.2   # Install specific version
-```
-
-> Install the given project. You can optionally specify a specific version to be installed. By default, latest released version will be installed.
-
-```
-haxelib install [library-file]
-haxelib install actuate.zip     # Install from zip file
+haxelib install actuate
 ```
 
-> Install the project contained in the zip file.
-
+### haxelib install [project-name] [version]
+Installs a specific version of the library.
 ```
-haxelib install [hxml-file]
-haxelib install build.hxml      # Install all dependencies listed in hxml file
-```
-
-> Install all the dependencies from a hxml file.
-
-```
-haxelib install all             # Install all dependencies in all hxml files
+haxelib install actuate 1.8.2
 ```
 
-> Install all the dependencies from all hxml files in the current directory.
+### haxelib install all
+Install all dependencies in all hxml files
+```
+haxelib install all
+```
 
+### haxelib install [hxml-file]
+Install all dependencies listed in hxml file
 
+```
+haxelib install build.hxml
+```
+
+### haxelib install [library-file]
+
+Install the project contained in the zip file.
+```
+haxelib install actuate.zip
+```
 
 <a name="update" class="anch"></a>
 
-#### `haxelib update`
+## haxelib update [project-name]
 
+Update a single library to the latest version.
 ```
-haxelib update [project-name]
 haxelib update minject
 ```
 
-> Update a single library to the latest version.
+### haxelib update
 
+Update all the installed projects to their latest version. This command prompts a confirmation for each updating project.
 ```
 haxelib update
 ```
 
-> Update all the installed projects to their latest version. This command prompts a confirmation for each updating project.
-
-
 
 <a name="remove" class="anch"></a>
 
-#### `haxelib remove`
+## haxelib remove
 
+Remove a complete project or only a specified version if specified.
+Note: this doesn't remove the library from the registry but from the machine it is installed on.
+
+
+### haxelib remove [project-name]
+Remove all versions of the project
 ```
-haxelib remove [project-name] [version]
-haxelib remove format            # Remove all versions
-haxelib remove format 3.1.2      # Remove the specified version
+haxelib remove format
 ```
 
-> Remove a complete project or only a specified version if specified.
+### haxelib remove [project-name] [version]
 
-
+Remove the specified version
+```
+haxelib remove format 3.1.2
+```
 
 <a name="list" class="anch"></a>
 
-#### `haxelib list`
+## haxelib list [search]
 
+List all the installed projects and their versions. For each project, the version surrounded by brackets is the current one.
+
+### haxelib list
+
+
+List all installed projects
 ```
-haxelib list [search]
-haxelib list                     # List all installed projects
-haxelib list ufront              # List all projects with "ufront" in their name
+haxelib list
 ```
 
-> List all the installed projects and their versions. For each project, the version surrounded by brackets is the current one.
+### haxelib list [search]
 
+List all projects with "ufront" in their name
+```
+haxelib list ufront
+```
 
 
 <a name="set" class="anch"></a>
 
-#### `haxelib set`
+### haxelib set
 
 ```
 haxelib set [project-name] [version]
@@ -181,13 +207,13 @@ haxelib set tink_core 1.0.0-rc.8
 
 <a name="information" class="anch"></a>
 
-## Information
+# Information
 
 
 
 <a name="search" class="anch"></a>
 
-#### `haxelib search`
+### haxelib search
 
 ```
 haxelib search [word]
@@ -200,7 +226,7 @@ haxelib search tween
 
 <a name="info" class="anch"></a>
 
-#### `haxelib info`
+### haxelib info
 
 ```
 haxelib info [project-name]
@@ -213,7 +239,7 @@ haxelib info openfl
 
 <a name="user" class="anch"></a>
 
-#### `haxelib user`
+### haxelib user
 
 ```
 haxelib user [user-name]
@@ -226,7 +252,7 @@ haxelib user jason
 
 <a name="config" class="anch"></a>
 
-#### `haxelib config`
+### haxelib config
 
 ```
 haxelib config
@@ -240,7 +266,7 @@ haxelib config
 
 <a name="path" class="anch"></a>
 
-#### `haxelib path`
+### haxelib path
 
 ```
 haxelib path [project-name[:version]...]
@@ -249,8 +275,19 @@ haxelib path hscript:2.0.0
 haxelib path hscript erazor buddy
 haxelib path hscript erazor buddy:1.0.0
 ```
+Example output :
+```
+haxelib path openfl hxcpp format
+--macro openfl._internal.utils.ExtraParams.include()
+/usr/local/lib/haxe/lib/openfl/6.5.3/
+-D openfl=6.5.3
+/usr/local/lib/haxe/lib/hxcpp/git/
+-D hxcpp=3.4.0
+/usr/local/lib/haxe/lib/format/3,3,0/
+-D format=3.3.0
+```
 
-> Prints the path to one or more libraries, as well as any dependencies and compiler definitions required by those libraries.
+> Prints the source paths to one or more libraries, as well as any dependencies and compiler definitions required by those libraries.
 >
 > You can specify a version by appending `:version` to the library name. If no version is specified the set version is used.
 >
@@ -260,9 +297,36 @@ haxelib path hscript erazor buddy:1.0.0
 
 
 
+<a name="libpath" class="anch"></a>
+
+### haxelib libpath
+
+```
+haxelib libpath [project-name[:version]...]
+haxelib libpath hscript
+haxelib libpath hscript:2.0.0
+haxelib libpath hscript erazor buddy
+haxelib libpath hscript erazor buddy:1.0.0
+```
+Example output :
+```
+haxelib libpath hxcpp format hscript
+/usr/local/lib/haxe/lib/hxcpp/git/
+/usr/local/lib/haxe/lib/format/3,3,0/
+/usr/local/lib/haxe/lib/hxcpp/2,1,1/
+```
+
+> Prints the root path of one or more libraries. Will output 1 path per line.
+>
+> You can specify a version by appending `:version` to the library name. If no version is specified the set version is used.
+>
+> If a [development](#dev) version is set it'll be used even if a version is specified.
+
+
+
 <a name="version" class="anch"></a>
 
-#### `haxelib version`
+### haxelib version
 
 ```
 haxelib version
@@ -276,7 +340,7 @@ haxelib version
 
 <a name="help" class="anch"></a>
 
-#### `haxelib help`
+### haxelib help
 
 ```
 haxelib help
@@ -288,18 +352,18 @@ haxelib help
 
 <a name="development" class="anch"></a>
 
-## Development
+# Development
 
 
 
 <a name="submit" class="anch"></a>
 
-#### `haxelib submit`
+## haxelib submit
 
 ```
 haxelib submit [project.zip]
 haxelib submit detox.zip
-haxelib sumbit
+haxelib submit
 ```
 
 > Submits a zip package to Haxelib so other users can install it.
@@ -316,7 +380,7 @@ haxelib sumbit
 
 <a name="register" class="anch"></a>
 
-#### `haxelib register`
+### haxelib register
 
 ```
 haxelib register [username] [email] [fullname] [password] [passwordconfirmation]
@@ -330,7 +394,7 @@ haxelib register [username] [email] [fullname] [password] [passwordconfirmation]
 
 <a name="dev" class="anch"></a>
 
-#### `haxelib dev`
+### haxelib dev
 
 ```
 haxelib dev [project-name] [directory]
@@ -348,7 +412,7 @@ haxelib dev starling                     # Cancel dev, use installed version.
 
 <a name="git" class="anch"></a>
 
-#### `haxelib git`
+### haxelib git
 
 ```
 haxelib git [project-name] [git-clone-path] [branch]
@@ -367,7 +431,7 @@ haxelib git minject git@github.com:massiveinteractive/minject.git v2          # 
 
 <a name="hg" class="anch"></a>
 
-#### `haxelib hg`
+### haxelib hg
 
 ```
 haxelib hg [project-name] [mercurial-clone-path] [branch]
@@ -381,13 +445,13 @@ haxelib hg [project-name] [mercurial-clone-path] [branch]
 
 <a name="miscellaneous" class="anch"></a>
 
-## Miscellaneous
+# Miscellaneous
 
 
 
 <a name="setup" class="anch"></a>
 
-#### `haxelib setup`
+### haxelib setup
 
 ```
 haxelib setup [path]
@@ -401,7 +465,7 @@ haxelib setup [path]
 
 <a name="newrepo" class="anch"></a>
 
-#### `haxelib newrepo`
+### haxelib newrepo
 
 ```
 haxelib newrepo
@@ -417,7 +481,7 @@ haxelib newrepo
 
 <a name="deleterepo" class="anch"></a>
 
-#### `haxelib deleterepo`
+### haxelib deleterepo
 
 ```
 haxelib deleterepo
@@ -431,7 +495,7 @@ haxelib deleterepo
 
 <a name="convertxml" class="anch"></a>
 
-#### `haxelib convertxml`
+### haxelib convertxml
 
 ```
 haxelib convertxml
@@ -442,7 +506,7 @@ haxelib convertxml
 
 <a name="run" class="anch"></a>
 
-#### `haxelib run`
+### haxelib run
 
 ```
 haxelib run [project-name[:version]] [parameters]
@@ -461,7 +525,7 @@ haxelib run openfl create DisplayingABitmap
 
 <a name="proxy" class="anch"></a>
 
-#### `haxelib proxy`
+### haxelib proxy
 
 ```
 haxelib proxy [host port [username password]]
@@ -488,7 +552,7 @@ otherwise they'll be passed as arguments to the library.
 
 <a name="flat" class="anch"></a>
 
-#### `haxelib --flat`
+### haxelib --flat
 
 ```
 haxelib --flat
@@ -500,7 +564,7 @@ haxelib --flat
 
 <a name="always" class="anch"></a>
 
-#### `haxelib --always`
+### haxelib --always
 
 ```
 haxelib --always
@@ -512,7 +576,7 @@ haxelib --always
 
 <a name="system" class="anch"></a>
 
-#### `haxelib --system`
+### haxelib --system
 
 ```
 haxelib --system
@@ -526,7 +590,7 @@ haxelib --system
 
 <a name="debug" class="anch"></a>
 
-#### `haxelib --debug`
+### haxelib --debug
 
 ```
 haxelib --debug
@@ -538,7 +602,7 @@ haxelib --debug
 
 <a name="quiet" class="anch"></a>
 
-#### `haxelib --quiet`
+### haxelib --quiet
 
 ```
 haxelib --quiet
@@ -550,7 +614,7 @@ haxelib --quiet
 
 <a name="never" class="anch"></a>
 
-#### `haxelib --never`
+### haxelib --never
 
 ```
 haxelib --never
@@ -562,7 +626,7 @@ haxelib --never
 
 <a name="global" class="anch"></a>
 
-#### `haxelib --global`
+### haxelib --global
 
 ```
 haxelib --global
@@ -574,7 +638,7 @@ haxelib --global
 
 <a name="parameters" class="anch"></a>
 
-## Parameters
+# Parameters
 
 
 
@@ -585,7 +649,7 @@ otherwise they'll be passed as arguments to the library.
 
 <a name="cwd" class="anch"></a>
 
-#### `haxelib -cwd`
+### haxelib -cwd
 
 ```
 haxelib -cwd [dir]
@@ -597,7 +661,7 @@ haxelib -cwd [dir]
 
 <a name="notimeout" class="anch"></a>
 
-#### `haxelib -no-timeout`
+### haxelib -no-timeout
 
 ```
 haxelib -no-timeout
@@ -609,10 +673,25 @@ haxelib -no-timeout
 
 <a name="R" class="anch"></a>
 
-#### `haxelib -R`
+### haxelib -R
 
 ```
 haxelib -R [host:port[/dir]]
 ```
 
 > Allow the usage of a custom Haxelib server instead of `lib.haxe.org`.
+
+<a name="environment_variables" class="anch"></a>
+
+# Environment Variables
+
+<a name="HAXELIB_NO_SSL" class="anch"></a>
+
+## HAXELIB_NO_SSL
+
+If `HAXELIB_NO_SSL` is set to `1` or `true`, then haxelib client will use http instead of https.
+
+## HAXELIB_REMOTE
+
+`HAXELIB_REMOTE` may contain a url to a custom Haxelib server instead of `https://lib.haxe.org/`.
+However, if <a href="#R">-R</a> command line argument is provided, then `HAXELIB_REMOTE` is ignored.

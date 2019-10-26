@@ -1,8 +1,13 @@
 package unit;
 
+import haxe.ds.List;
 using MyClass.UsingBase;
 using MyClass.UsingChild1;
 using MyClass.UsingChild2;
+
+
+interface IMyParent {}
+interface IMyChild extends IMyParent {}
 
 class MyClass {
 
@@ -36,19 +41,7 @@ class MyParent {
 	function b() return 20;
 }
 
-class MyDynamicChildWithToString extends MyParent implements Dynamic
-{
-	public function toString()
-	{
-		return "Custom toString";
-	}
-}
-
-class MyDynamicChildWithoutToString extends MyParent implements Dynamic
-{
-}
-
-class MyChild1 extends MyParent {
+class MyChild1 extends MyParent implements IMyChild {
 	public override function a() { return 12; }
 	override function b() return 21;
 	function c() return 19;
@@ -142,12 +135,12 @@ class InitWithoutCtor {
 class InitProperties {
 	public var accNull(default, null):Int = 3;
 	public var accDefault(default, default):Int = 3;
-	public var accFunc(default, set_accFunc):Int = 3;
+	public var accFunc(default, set):Int = 3;
 	public var accNever(default, never):Int = 3;
 	public var accDynamic(default, dynamic):Int = 3;
 
-	function set_accFunc(v) return throw "setter was called";
-	function set_accDynamic(v) return throw "setter was called";
+	function set_accFunc(_) return throw "setter was called";
+	function set_accDynamic(_) return throw "setter was called";
 	public function new() { }
 }
 
@@ -155,11 +148,11 @@ class ParamConstraintsClass {
 	public function new() { }
 	static public function staticSingle< A:Base > (a:A):A { return a; }
 	public function memberSingle< A:Base > (a:A):A { return a; }
-	public function memberMultiple < A:(Base, I1) > (a:A):A { return a; }
+	public function memberMultiple < A:Base & I1 > (a:A):A { return a; }
 	public function memberComplex < A:I1, B:List<A> > (a:A, b:B) { return b; }
 	public function memberBasic < A:String, B:Array<A> > (a:A, b:B) { return b[0]; }
 
-	public function memberAnon < A:( { x : Int }, { y : Float } ) > (v:A) { return v.x + v.y; }
+	public function memberAnon < A:{ x : Int } & { y : Float }> (v:A) { return v.x + v.y; }
 
 #if !(java || cs)  //this is a known bug caused by issue #915
 	@:overload(function< A, B:Array<A> > (a:A, b:B):Void { } )
@@ -211,7 +204,7 @@ class UsingUnrelated {
 		return 1;
 	}
 
-	static function set_SX(v) {
+	static function set_SX(v:Int) {
 		return v;
 	}
 
@@ -239,7 +232,7 @@ class UsingUnrelated {
 		return 1;
 	}
 
-	function set_x(v) {
+	function set_x(v:Int) {
 		return v;
 	}
 
@@ -268,7 +261,7 @@ class BaseSuperProp {
 	}
 
 	function get_prop() return 1;
-	function set_prop(v) return v;
+	function set_prop(v:Int) return v;
 
 	function get_fProp() return function(i:Int) return "test" +i;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2017 Haxe Foundation
+ * Copyright (C)2005-2019 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,68 +22,76 @@
 
 package haxe.ds;
 
-@:coreApi
-class ObjectMap <K:{ }, V> implements haxe.Constraints.IMap<K,V> {
-	static function getId(key: { } ):String {
-		return untyped __php__("spl_object_hash($key)");
-	}
+import php.*;
 
-	@:analyzer(no_simplification)
-	var h : ArrayAccess<V>;
-	@:analyzer(no_simplification)
-	var hk : ArrayAccess<K>;
+@:coreApi
+class ObjectMap<K:{}, V> implements haxe.Constraints.IMap<K, V> {
+	var _keys:NativeAssocArray<K>;
+	var _values:NativeAssocArray<V>;
 
 	public function new():Void {
-		h = untyped __call__('array');
-		hk = untyped __call__('array');
+		_keys = new NativeAssocArray();
+		_values = new NativeAssocArray();
 	}
 
-	public function set(key:K, value:V):Void untyped {
-		var id = getId(key);
-		untyped h[id] = value;
-		untyped hk[id] = key;
+	public function set(key:K, value:V):Void {
+		var id = Global.spl_object_hash(key);
+		_keys[id] = key;
+		_values[id] = value;
 	}
 
 	public function get(key:K):Null<V> {
-		var id = getId(key);
-		if (untyped __call__("array_key_exists", id, h))
-			return untyped h[id];
-		else
-			return null;
+		var id = Global.spl_object_hash(key);
+		return Global.isset(_values[id]) ? _values[id] : null;
 	}
 
 	public function exists(key:K):Bool {
-		return untyped __call__("array_key_exists", getId(key), h);
+		return Global.array_key_exists(Global.spl_object_hash(key), _values);
 	}
 
-	public function remove( key : K ) : Bool {
-		var id = getId(key);
-		if (untyped __call__("array_key_exists", id, h)) {
-			untyped __call__("unset", h[id]);
-			untyped __call__("unset", hk[id]);
+	public function remove(key:K):Bool {
+		var id = Global.spl_object_hash(key);
+		if (Global.array_key_exists(id, _values)) {
+			Global.unset(_keys[id], _values[id]);
 			return true;
-		} else
+		} else {
 			return false;
+		}
 	}
 
-	public inline function keys() : Iterator<K> {
-		return untyped __call__("new _hx_array_iterator", __call__("array_values", hk));
+	public inline function keys():Iterator<K> {
+		return _keys.iterator();
 	}
 
-	public inline function iterator() : Iterator<V> {
-		return untyped __call__("new _hx_array_iterator", __call__("array_values", h));
+	@:ifFeature("dynamic_read.iterator", "anon_optional_read.iterator", "anon_read.iterator")
+	public inline function iterator():Iterator<V> {
+		return _values.iterator();
 	}
 
-	public function toString() : String {
+	@:ifFeature("dynamic_read.keyValueIterator", "anon_optional_read.keyValueIterator", "anon_read.keyValueIterator")
+	public inline function keyValueIterator():KeyValueIterator<K, V> {
+		return new haxe.iterators.MapKeyValueIterator(this);
+	}
+
+	public inline function copy():ObjectMap<K, V> {
+		return Syntax.clone(this);
+	}
+
+	public function toString():String {
 		var s = "{";
 		var it = keys();
-		for( i in it ) {
+		for (i in it) {
 			s += Std.string(i);
 			s += " => ";
 			s += Std.string(get(i));
-			if( it.hasNext() )
+			if (it.hasNext())
 				s += ", ";
 		}
 		return s + "}";
+	}
+
+	public inline function clear():Void {
+		_keys = new NativeAssocArray();
+		_values = new NativeAssocArray();
 	}
 }

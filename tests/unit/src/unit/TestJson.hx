@@ -48,11 +48,6 @@ class TestJson extends Test {
 
 	// TODO: test pretty-printing (also with objects with skipped function fields!)
 	function testHaxeJson() {
-		#if php
-		// php's haxe.Utf8 uses mbstring
-		if (untyped __call__("extension_loaded", "mbstring")) {
-		#end
-
 		var str = haxe.format.JsonPrinter.print( { x : -4500, y : 1.456, a : ["hello", "wor'\"\n\t\rd"], b : function() {} } );
 		str = str.substr(1, str.length - 2); // remove {}
 		var parts = str.split(",");
@@ -88,16 +83,14 @@ class TestJson extends Test {
 		deepId( {array: mix} );
 
 		eq( haxe.format.JsonParser.parse('"\\u00E9"'), "é" );
+		//exc(() -> haxe.format.JsonParser.parse('{"""a": 1}'));
+		exc( function() haxe.format.JsonParser.parse('{"""a": 1}'));
 
 		eq(haxe.format.JsonPrinter.print(Math.POSITIVE_INFINITY), "null");
 		eq(haxe.format.JsonPrinter.print(Math.NEGATIVE_INFINITY), "null");
 		eq(haxe.format.JsonPrinter.print(Math.NaN), "null");
 		eq(haxe.format.JsonPrinter.print(function() {}), "\"<fun>\"");
 		eq(haxe.format.JsonPrinter.print({a: function() {}, b: 1}), "{\"b\":1}");
-
-		#if php
-		}
-		#end
 	}
 
 	function test3690() {
@@ -106,4 +99,22 @@ class TestJson extends Test {
 		eq( parsed.x, -4500 );
 		eq( parsed.y, 1.456 );
 	}
+
+	function test8593_stringifyNestedObjects() {
+		var src = {
+			one: {
+				two: "three"
+			}
+		};
+		eq('{"one":{"two":"three"}}', haxe.Json.stringify(src));
+	}
+
+	#if (!neko && (cpp && !cppia && !hxcpp_smart_strings))
+	function test8228() {
+		var strJson = haxe.Json.stringify("👽");
+		t(strJson == '"👽"' || strJson == '"\\ud83d\\udc7d"');
+		eq( haxe.Json.parse('"👽"'), "👽" );
+		eq( haxe.Json.parse('"\\ud83d\\udc7d"'), "👽" );
+	}
+	#end
 }

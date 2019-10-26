@@ -22,6 +22,20 @@ map3.exists("foo") == true;
 map3.get("foo") == 1;
 map4.exists("foo") == true;
 map4.get("foo") == 1;
+
+var copied = map.copy();
+copied != map;
+copied.exists("foo") == map.exists("foo");
+copied.exists("bar") == map.exists("bar");
+copied.exists("baz") == map.exists("baz");
+copied.get("foo") == map.get("foo");
+copied.get("bar") == map.get("bar");
+copied.get("baz") == map.get("baz");
+
+copied.set("foo", 4);
+copied.get("foo") == 4;
+map.get("foo") == 1;
+
 var values = [];
 for (val in map) {
 	values.push(val);
@@ -42,6 +56,15 @@ map.exists("bar") == false;
 map.exists("baz") == true;
 map.get("bar") == null;
 
+var map3 = [1=>"2",2=>"4",3=>"6"];
+var keys = [for (k=>v in map3) k];
+keys.sort(Reflect.compare);
+keys == [1,2,3];
+var values = [for (k=>v in map3) v];
+values.sort(Reflect.compare);
+values == ["2","4","6"];
+
+
 // Int
 var map = new Map();
 map.exists(1) == false;
@@ -56,6 +79,20 @@ map.exists(3) == true;
 map.get(1) == 1;
 map.get(2) == 2;
 map.get(3) == 3;
+
+var copied = map.copy();
+copied != map;
+copied.exists(1) == map.exists(1);
+copied.exists(2) == map.exists(2);
+copied.exists(3) == map.exists(3);
+copied.get(1) == map.get(1);
+copied.get(2) == map.get(2);
+copied.get(3) == map.get(3);
+
+copied.set(1, 4);
+copied.get(1) == 4;
+map.get(1) == 1;
+
 var values = [];
 for (val in map) {
 	values.push(val);
@@ -76,6 +113,14 @@ map.exists(2) == false;
 map.exists(3) == true;
 map.get(2) == null;
 
+var map3 = [1=>2,2=>4,3=>6];
+var keys = [for (k=>v in map3) k];
+keys.sort(Reflect.compare);
+keys == [1,2,3];
+var values = [for (k=>v in map3) v];
+values.sort(Reflect.compare);
+values == [2,4,6];
+
 // Hashable
 var map = new Map();
 var a = new unit.MyAbstract.ClassWithHashCode(1);
@@ -92,6 +137,29 @@ map.exists(c) == true;
 map.get(a) == 1;
 map.get(b) == 2;
 map.get(c) == 3;
+
+var keys = [for (k=>v in map) k];
+keys[0] in [a,b,c];
+keys[1] in [a,b,c];
+keys[2] in [a,b,c];
+var values = [for (k=>v in map) v];
+values[0] in [1,2,3];
+values[1] in [1,2,3];
+values[2] in [1,2,3];
+
+var copied = map.copy();
+copied != map;
+copied.exists(a) == map.exists(a);
+copied.exists(b) == map.exists(b);
+copied.exists(c) == map.exists(c);
+copied.get(a) == map.get(a);
+copied.get(b) == map.get(b);
+copied.get(c) == map.get(c);
+
+copied.set(a, 4);
+copied.get(a) == 4;
+map.get(a) == 1;
+
 var values = [];
 for (val in map) {
 	values.push(val);
@@ -128,6 +196,29 @@ map.exists(c) == true;
 map.get(a) == 1;
 map.get(b) == 2;
 map.get(c) == 3;
+
+var keys = [for (k=>v in map) k];
+keys[0] in [a,b,c];
+keys[1] in [a,b,c];
+keys[2] in [a,b,c];
+var values = [for (k=>v in map) v];
+values[0] in [1,2,3];
+values[1] in [1,2,3];
+values[2] in [1,2,3];
+
+var copied = map.copy();
+copied != map;
+copied.exists(a) == map.exists(a);
+copied.exists(b) == map.exists(b);
+copied.exists(c) == map.exists(c);
+copied.get(a) == map.get(a);
+copied.get(b) == map.get(b);
+copied.get(c) == map.get(c);
+
+copied.set(a, 4);
+copied.get(a) == 4;
+map.get(a) == 1;
+
 var values = [];
 for (val in map) {
 	values.push(val);
@@ -173,3 +264,70 @@ map["foo"] == 9;
 //[a => b].keys().next() == a;
 //[a => b].iterator().next() == b;
 #end
+
+var map:Map<String, Int>;
+HelperMacros.typedAs((null : Map<String, Int>), map = []);
+HelperMacros.typeError(map[1] = 1) == true;
+
+#if !(java || cs)
+['' => ''].keyValueIterator().next().key == '';
+['' => ''].keyValueIterator().next().value == '';
+[2 => 3].keyValueIterator().next().key == 2;
+[2 => 3].keyValueIterator().next().value == 3;
+#end
+
+// Test unification
+
+var map = [1=>"2",2=>"4"];
+var iterable:KeyValueIterable<Int, String> = map;
+var values = [for(kv in iterable.keyValueIterator()) kv.value];
+values[0] in ["2","4"];
+values[1] in ["2","4"];
+
+var iterator:KeyValueIterator<Int,String> = iterable.keyValueIterator();
+var keys = [for(kv in iterator) kv.key];
+keys[0] in [1,2];
+keys[1] in [1,2];
+
+
+// Test through Dynamic
+
+var map = [1=>"2",2=>"4"];
+var dyn:Dynamic = map;
+var it = dyn.iterator();
+var it:Iterator<String> = cast it;
+var values = [for(v in it) v];
+values[0] in ["2","4"];
+values[1] in ["2","4"];
+
+var it = dyn.keyValueIterator();
+var it:KeyValueIterator<Int,String> = cast it;
+var values = [for(kv in it) kv.value];
+values[0] in ["2","4"];
+values[1] in ["2","4"];
+var it = dyn.keyValueIterator();
+var it:KeyValueIterator<Int,String> = cast it;
+var keys = [for(kv in it) kv.key];
+keys[0] in [1,2];
+keys[1] in [1,2];
+
+
+var map = ["1a"=>"2","1b"=> "4"];
+var dyn:Dynamic = map;
+var it = dyn.iterator();
+var it:Iterator<String> = cast it;
+var values = [for(v in it) v];
+values[0] in ["2","4"];
+values[1] in ["2","4"];
+
+var it = dyn.keyValueIterator();
+var it:KeyValueIterator<String,String> = cast it;
+var values = [for(kv in it) kv.value];
+values[0] in ["2","4"];
+values[1] in ["2","4"];
+
+var it = dyn.keyValueIterator();
+var it:KeyValueIterator<String,String> = cast it;
+var keys = [for(kv in it) kv.key];
+keys[0] in ["1a","1b"];
+keys[1] in ["1a","1b"];

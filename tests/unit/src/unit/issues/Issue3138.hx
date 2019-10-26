@@ -8,11 +8,12 @@ class Issue3138 extends Test
 #if (java || cs)
 		var b = new D();
 #end
+		noAssert();
 	}
 }
 
 private class A {
-	public function new(a) {}
+	public function new(_) {}
 }
 
 private class B extends A {

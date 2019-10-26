@@ -5,7 +5,7 @@ import unit.Test;
 
 class Issue2951 extends Test{
 
-  public static inline function foo (x) {
+  public static inline function foo (_) {
 
   }
 
@@ -41,5 +41,6 @@ class Issue2951 extends Test{
 		  if ((args.length == 0)) true else false;
 		  setCwd(last);
 	  };
+	  noAssert();
   }
 }

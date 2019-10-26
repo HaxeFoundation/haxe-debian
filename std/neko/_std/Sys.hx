@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2017 Haxe Foundation
+ * Copyright (C)2005-2019 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,6 +19,8 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+import haxe.SysTools;
+
 @:coreApi class Sys {
 
 	public static function print( v : Dynamic ) : Void {
@@ -99,11 +101,11 @@
 				case "Windows":
 					cmd = [
 						for (a in [StringTools.replace(cmd, "/", "\\")].concat(args))
-						StringTools.quoteWinArg(a, true)
+						SysTools.quoteWinArg(a, true)
 					].join(" ");
 					return sys_command(untyped cmd.__s);
 				case _:
-					cmd = [cmd].concat(args).map(StringTools.quoteUnixArg).join(" ");
+					cmd = [cmd].concat(args).map(SysTools.quoteUnixArg).join(" ");
 					return sys_command(untyped cmd.__s);
 			}
 		}
@@ -163,18 +165,27 @@
 	// It has to be initialized before any call to loadModule or Sys.setCwd()...
 	private static var sys_program_path = {
 		var m = neko.vm.Module.local().name;
-		try {
-			sys.FileSystem.fullPath(m);
-		} catch (e:Dynamic) {
-			// maybe the neko module name was supplied without .n extension...
-			if (!StringTools.endsWith(m, ".n")) {
-				try {
-					sys.FileSystem.fullPath(m + ".n");
-				} catch (e:Dynamic) {
+		if (m == "") { // it is likely neko embedded in an exe
+			var exe = new String(sys_exe_path());
+			try {
+				sys.FileSystem.fullPath(exe);
+			} catch (e:Dynamic) {
+				exe;
+			}
+		} else {
+			try {
+				sys.FileSystem.fullPath(m);
+			} catch (e:Dynamic) {
+				// maybe the neko module name was supplied without .n extension...
+				if (!StringTools.endsWith(m, ".n")) {
+					try {
+						sys.FileSystem.fullPath(m + ".n");
+					} catch (e:Dynamic) {
+						m;
+					}
+				} else {
 					m;
 				}
-			} else {
-				m;
 			}
 		}
 	}

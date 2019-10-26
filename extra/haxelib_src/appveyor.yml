@@ -4,15 +4,14 @@ services:
   - mysql
 
 install:
-  - npm -g install bower
+  - ps: Set-Service wuauserv -StartupType Manual
   - cinst haxe -y
   - cinst nssm -y
   - cinst curl -y
   - RefreshEnv
-  - haxelib setup %HOME%/haxelib_repo
-  - haxelib install all --always
-  - haxelib install tora
-  - haxelib list
+  - neko run.n setup haxelib_global
+  - haxe libs.hxml
+  - neko run.n list
 
 build: off
 
