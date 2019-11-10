@@ -2,14 +2,18 @@ Source: haxe
 Section: devel
 Priority: optional
 Maintainer: Andy Li <andy@onthewings.net>
-Standards-Version: 4.4.0
+Standards-Version: 4.4.1
 Build-Depends: debhelper (>= 9),
                dh-ocaml,
                ocaml-nox,
                ocaml-findlib,
                camlp5,
                libxml-light-ocaml-dev,
-               neko (>= 2.0.0~),
+               libsedlex-ocaml-dev (>= 2.0),
+               libextlib-ocaml-dev,
+               libptmap-ocaml-dev,
+               libsha-ocaml-dev,
+               neko (>= 2.3.0),
                zlib1g-dev,
                libpcre3-dev,
                bash-completion
