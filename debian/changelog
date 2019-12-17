@@ -1,3 +1,9 @@
+haxe (1:4.0.5-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Andy Li <andy@onthewings.net>  Wed, 18 Dec 2019 03:29:59 +0800
+
 haxe (1:4.0.3-1) unstable; urgency=medium
 
   * New upstream version.
