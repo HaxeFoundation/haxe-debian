@@ -1,4 +1,15 @@
-2019-XX-XX: 4.0.X
+2019-12-17: 4.0.5
+
+	Bugfixes:
+
+	java : fix boolean arguments for `Type.createInstance(cls, args)` (#9025)
+	jvm : fix static overloads (#9034)
+	java/cs : fixed `Reflect.makeVarArgs(fn)` for calls of `fn` without arguments (#9037)
+	js : fix multiple appearances of the first object added to `ObjectMap` is passed to `ObjectMap.set(obj, v)` multiple times (#9026)
+	js : automatically wrap compound expressions with parentheses when passed to `js.Syntax.code()` (#9024)
+	windows : fix adding neko to PATH env var running windows installer (#9021)
+
+2019-11-29: 4.0.3
 
 	General improvements:
 
