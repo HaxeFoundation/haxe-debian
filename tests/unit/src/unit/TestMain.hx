@@ -50,6 +50,7 @@ class TestMain {
 		var classes = [
 			new TestOps(),
 			new TestBasetypes(),
+			new TestExceptions(),
 			new TestBytes(),
 			new TestIO(),
 			new TestLocals(),
@@ -71,6 +72,8 @@ class TestMain {
 			new TestCasts(),
 			new TestSyntaxModule(),
 			new TestNull(),
+			new TestNumericCasts(),
+			new TestHashMap(),
 			#if (!no_http && (!azure || !(php && Windows)))
 			new TestHttp(),
 			#end
@@ -100,7 +103,7 @@ class TestMain {
 			#end
 			new TestInterface(),
 			new TestNaN(),
-			#if ((dce == "full") && !interp && !as3)
+			#if ((dce == "full") && !interp)
 			new TestDCE(),
 			#end
 			new TestMapComprehension(),

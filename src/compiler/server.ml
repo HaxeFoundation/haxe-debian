@@ -12,7 +12,6 @@ open Json
 exception Dirty of path
 exception ServerError of string
 
-let measure_times = ref false
 let prompt = ref false
 let start_time = ref (Timer.get_time())
 
@@ -27,19 +26,10 @@ type context = {
 	mutable has_error : bool;
 }
 
-let s_version with_build =
-	let pre = Option.map_default (fun pre -> "-" ^ pre) "" version_pre in
-	let build =
-		match with_build, Version.version_extra with
-			| true, Some (_,build) -> "+" ^ build
-			| _, _ -> ""
-	in
-	Printf.sprintf "%d.%d.%d%s%s" version_major version_minor version_revision pre build
-
 let check_display_flush ctx f_otherwise = match ctx.com.json_out with
 	| None ->
 		begin match ctx.com.display.dms_kind with
-		| DMDiagnostics global->
+		| DMDiagnostics _->
 			List.iter (fun msg ->
 				let msg,p,kind = match msg with
 					| CMInfo(msg,p) -> msg,p,DisplayTypes.DiagnosticsSeverity.Information
@@ -48,7 +38,7 @@ let check_display_flush ctx f_otherwise = match ctx.com.json_out with
 				in
 				add_diagnostics_message ctx.com msg p DisplayTypes.DiagnosticsKind.DKCompilerError kind
 			) (List.rev ctx.messages);
-			raise (Completion (Diagnostics.print ctx.com global))
+			raise (Completion (Diagnostics.print ctx.com))
 		| _ ->
 			f_otherwise ()
 		end
@@ -132,8 +122,9 @@ let current_stdin = ref None
 
 let parse_file cs com file p =
 	let cc = CommonCache.get_cache cs com in
-	let ffile = Path.unique_full_path file in
-	let is_display_file = ffile = (DisplayPosition.display_position#get).pfile in
+	let ffile = Path.get_full_path file
+	and fkey = Path.UniqueKey.create file in
+	let is_display_file = DisplayPosition.display_position#is_in_file ffile in
 	match is_display_file, !current_stdin with
 	| true, Some stdin when Common.defined com Define.DisplayStdin ->
 		TypeloadParse.parse_file_from_string com file p stdin
@@ -141,23 +132,30 @@ let parse_file cs com file p =
 		let ftime = file_time ffile in
 		let data = Std.finally (Timer.timer ["server";"parser cache"]) (fun () ->
 			try
-				let cfile = cc#find_file ffile in
+				let cfile = cc#find_file fkey in
 				if cfile.c_time <> ftime then raise Not_found;
-				Parser.ParseSuccess(cfile.c_package,cfile.c_decls)
+				Parser.ParseSuccess((cfile.c_package,cfile.c_decls),false,cfile.c_pdi)
 			with Not_found ->
 				let parse_result = TypeloadParse.parse_file com file p in
 				let info,is_unusual = match parse_result with
 					| ParseError(_,_,_) -> "not cached, has parse error",true
-					| ParseDisplayFile _ -> "not cached, is display file",true
-					| ParseSuccess data ->
-						begin try
+					| ParseSuccess(data,is_display_file,pdi) ->
+						if is_display_file then begin
+							if pdi.pd_errors <> [] then
+								"not cached, is display file with parse errors",true
+							else if com.display.dms_per_file then begin
+								cc#cache_file fkey ffile ftime data pdi;
+								"cached, is intact display file",true
+							end else
+								"not cached, is display file",true
+						end else begin try
 							(* We assume that when not in display mode it's okay to cache stuff that has #if display
 							checks. The reasoning is that non-display mode has more information than display mode. *)
 							if not com.display.dms_display then raise Not_found;
-							let ident = Hashtbl.find Parser.special_identifier_files ffile in
+							let ident = Hashtbl.find Parser.special_identifier_files fkey in
 							Printf.sprintf "not cached, using \"%s\" define" ident,true
 						with Not_found ->
-							cc#cache_file ffile ftime data;
+							cc#cache_file fkey ffile ftime data pdi;
 							"cached",false
 						end
 				in
@@ -289,9 +287,9 @@ let check_module sctx ctx m p =
 	let com = ctx.Typecore.com in
 	let cc = CommonCache.get_cache sctx.cs com in
 	let content_changed m file =
-		let ffile = Path.unique_full_path file in
+		let fkey = Path.UniqueKey.create file in
 		try
-			let cfile = cc#find_file ffile in
+			let cfile = cc#find_file fkey in
 			(* We must use the module path here because the file path is absolute and would cause
 				positions in the parsed declarations to differ. *)
 			let new_data = TypeloadParse.parse_module ctx m.m_path p in
@@ -333,7 +331,7 @@ let check_module sctx ctx m p =
 						match load m.m_path p with
 						| None -> loop l
 						| Some _ ->
-							if Path.unique_full_path file <> m.m_extra.m_file then begin
+							if Path.UniqueKey.create file <> Path.UniqueKey.create m.m_extra.m_file then begin
 								if sctx.verbose then print_endline ("Library file was changed for " ^ s_type_path m.m_path); (* TODO *)
 								raise Not_found;
 							end
@@ -365,7 +363,7 @@ let check_module sctx ctx m p =
 					ServerMessage.unchanged_content com "" m.m_extra.m_file;
 				end else begin
 					ServerMessage.not_cached com "" m;
-					if m.m_extra.m_kind = MFake then Hashtbl.remove Typecore.fake_modules m.m_extra.m_file;
+					if m.m_extra.m_kind = MFake then Hashtbl.remove Typecore.fake_modules (Path.UniqueKey.create m.m_extra.m_file);
 					raise Not_found;
 				end
 			end
@@ -499,14 +497,6 @@ let create sctx write params =
 		ServerMessage.defines ctx.com "";
 		ServerMessage.signature ctx.com "" sign;
 		ServerMessage.display_position ctx.com "" (DisplayPosition.display_position#get);
-		(* Special case for diagnostics: It's not treated as a display mode, but we still want to invalidate the
-			current file in order to run diagnostics on it again. *)
-		if ctx.com.display.dms_display || (match ctx.com.display.dms_kind with DMDiagnostics _ -> true | _ -> false) then begin
-			let file = (DisplayPosition.display_position#get).pfile in
-			(* force parsing again : if the completion point have been changed *)
-			cs#remove_files file;
-			cs#taint_modules file;
-		end;
 		try
 			if (Hashtbl.find sctx.class_paths sign) <> ctx.com.class_path then begin
 				ServerMessage.class_paths_changed ctx.com "";
@@ -544,61 +534,78 @@ let cleanup () =
 	| None -> ()
 	end
 
-module Ring = struct
-	type 'a t = {
-		values : 'a array;
-		mutable index : int;
-		mutable num_filled : int;
-	}
-
-	let create len x = {
-		values = Array.make len x;
-		index = 0;
-		num_filled = 0;
-	}
-
-	let push r x =
-		r.values.(r.index) <- x;
-		r.num_filled <- r.num_filled + 1;
-		if r.index = Array.length r.values - 1 then begin
-			r.index <- 0;
-		end else
-			r.index <- r.index + 1
-
-	let iter r f =
-		let len = Array.length r.values in
-		for i = 0 to len - 1 do
-			let off = r.index + i in
-			let off = if off >= len then off - len else off in
-			f r.values.(off)
-		done
-
-	let fold r acc f =
-		let len = Array.length r.values in
-		let rec loop i acc =
-			if i = len then
-				acc
-			else begin
-				let off = r.index + i in
-				let off = if off >= len then off - len else off in
-				loop (i + 1) (f acc r.values.(off))
-			end
-		in
-		loop 0 acc
-
-	let is_filled r =
-		r.num_filled >= Array.length r.values
-
-	let reset_filled r =
-		r.num_filled <- 0
-end
-
 let gc_heap_stats () =
 	let stats = Gc.quick_stat() in
 	stats.major_words,stats.heap_words
 
 let fmt_percent f =
 	int_of_float (f *. 100.)
+
+module Tasks = struct
+	class gc_task (max_working_memory : float) (heap_size : float) = object(self)
+		inherit server_task ["gc"] 100
+
+		method private execute =
+			let t0 = get_time() in
+			let stats = Gc.stat() in
+			let live_words = float_of_int stats.live_words in
+			(* Maximum heap size needed for the last X compilations = sum of what's live + max working memory. *)
+			let needed_max = live_words +. max_working_memory in
+			(* Additional heap percentage needed = what's live / max of what was live. *)
+			let percent_needed = (1. -. live_words /. needed_max) in
+			(* Effective cache size percentage = what's live / heap size. *)
+			let percent_used = live_words /. heap_size in
+			(* Set allowed space_overhead to the maximum of what we needed during the last X compilations. *)
+			let new_space_overhead = int_of_float ((percent_needed +. 0.05) *. 100.) in
+			let old_gc = Gc.get() in
+			Gc.set { old_gc with Gc.space_overhead = new_space_overhead; };
+			(* Compact if less than 80% of our heap words consist of the cache and there's less than 50% overhead. *)
+			let do_compact = percent_used < 0.8 && percent_needed < 0.5 in
+			begin if do_compact then
+				Gc.compact()
+			else
+				Gc.full_major();
+			end;
+			Gc.set old_gc;
+			ServerMessage.gc_stats (get_time() -. t0) stats do_compact new_space_overhead
+	end
+
+	class class_maintenance_task (cs : CompilationServer.t) (c : tclass) = object(self)
+		inherit server_task ["module maintenance"] 70
+
+		method private execute =
+			let rec field cf =
+				(* Unset cf_expr. This holds the optimized version for generators, which we don't need to persist. If
+				   we compile again, the semi-optimized expression will be restored by calling cl_restore(). *)
+				cf.cf_expr <- None;
+				List.iter field cf.cf_overloads
+			in
+			(* What we're doing here at the moment is free, so we can just do it in one task. If this ever gets more expensive,
+			   we should spawn a task per-field. *)
+			List.iter field c.cl_ordered_fields;
+			List.iter field c.cl_ordered_statics;
+			Option.may field c.cl_constructor;
+	end
+
+	class module_maintenance_task (cs : CompilationServer.t) (m : module_def) = object(self)
+		inherit server_task ["module maintenance"] 80
+
+		method private execute =
+			List.iter (fun mt -> match mt with
+				| TClassDecl c ->
+					cs#add_task (new class_maintenance_task cs c)
+				| _ ->
+					()
+			) m.m_types
+	end
+
+	class server_exploration_task (cs : CompilationServer.t) = object(self)
+		inherit server_task ["server explore"] 90
+
+		method private execute =
+			cs#iter_modules (fun m -> cs#add_task (new module_maintenance_task cs m))
+	end
+end
 
 (* The server main loop. Waits for the [accept] call to then process the sent compilation
    parameters through [process_params]. *)
@@ -621,39 +628,16 @@ let wait_loop process_params verbose accept =
 		Ring.push ring words_allocated;
 		if Ring.is_filled ring then begin
 			Ring.reset_filled ring;
-			let t0 = get_time() in
-			let stats = Gc.stat() in
-			let live_words = float_of_int stats.live_words in
 			 (* Maximum working memory for the last X compilations. *)
 			let max = Ring.fold ring 0. (fun m i -> if i > m then i else m) in
-			(* Maximum heap size needed for the last X compilations = sum of what's live + max working memory. *)
-			let needed_max = live_words +. max in
-			(* Additional heap percentage needed = what's live / max of what was live. *)
-			let percent_needed = (1. -. live_words /. needed_max) in
-			(* Effective cache size percentage = what's live / heap size. *)
-			let percent_used = live_words /. heap_size in
-			(* Set allowed space_overhead to the maximum of what we needed during the last X compilations. *)
-			let new_space_overhead = int_of_float ((percent_needed +. 0.05) *. 100.) in
-			let old_gc = Gc.get() in
-			Gc.set { old_gc with Gc.space_overhead = new_space_overhead; };
-			(* Compact if less than 80% of our heap words consist of the cache and there's less than 50% overhead. *)
-			let do_compact = percent_used < 0.8 && percent_needed < 0.5 in
-			begin if do_compact then
-				Gc.compact()
-			else
-				Gc.full_major();
-			end;
-			Gc.set old_gc;
-			ServerMessage.gc_stats (get_time() -. t0) stats do_compact new_space_overhead
+			cs#add_task (new Tasks.gc_task max heap_size)
 		end;
 		heap_stats_start := heap_stats_now;
 	in
 	(* Main loop: accept connections and process arguments *)
 	while true do
-		let read, write, close = accept() in
-		begin try
-			(* Read arguments *)
-			let s = read() in
+		let support_nonblock, read, write, close = accept() in
+		let process s =
 			let t0 = get_time() in
 			let hxml =
 				try
@@ -681,6 +665,24 @@ let wait_loop process_params verbose accept =
 			end;
 			run_delays sctx;
 			ServerMessage.stats stats (get_time() -. t0)
+		in
+		begin try
+			(* Read arguments *)
+			let rec loop block =
+				match read block with
+				| Some data ->
+					process data
+				| None ->
+					if not cs#has_task then
+						(* If there is no pending task, turn into blocking mode. *)
+						loop true
+					else begin
+						(* Otherwise run the task and loop to check if there are more or if there's a request now. *)
+						cs#get_task#run;
+						loop false
+					end;
+			in
+			loop (not support_nonblock)
 		with Unix.Unix_error _ ->
 			ServerMessage.socket_message "Connection Aborted"
 		| e ->
@@ -698,18 +700,55 @@ let wait_loop process_params verbose accept =
 		current_stdin := None;
 		cleanup();
 		update_heap();
+		(* If our connection always blocks, we have to execute all pending tasks now. *)
+		if not support_nonblock then
+			while cs#has_task do cs#get_task#run done
+		else if sctx.was_compilation then
+			cs#add_task (new Tasks.server_exploration_task cs)
 	done
 
-let mk_length_prefixed_communication chin chout =
+let mk_length_prefixed_communication allow_nonblock chin chout =
+	let sin = Unix.descr_of_in_channel chin in
 	let chin = IO.input_channel chin in
 	let chout = IO.output_channel chout in
 
 	let bout = Buffer.create 0 in
 
-	let read = fun () ->
-		let len = IO.read_i32 chin in
-		IO.really_nread_string chin len
+	let block () = Unix.clear_nonblock sin in
+	let unblock () = Unix.set_nonblock sin in
+
+	let read_nonblock _ =
+        let len = IO.read_i32 chin in
+        Some (IO.really_nread_string chin len)
 	in
+	let read = if allow_nonblock then fun do_block ->
+		if do_block then begin
+			block();
+			read_nonblock true;
+		end else begin
+			let c0 =
+				unblock();
+				try
+					Some (IO.read_byte chin)
+				with
+				| Sys_blocked_io
+				(* TODO: We're supposed to catch Sys_blocked_io only, but that doesn't work on my PC... *)
+				| Sys_error _ ->
+					None
+			in
+			begin match c0 with
+			| Some c0 ->
+				block(); (* We got something, make sure we block until we're done. *)
+				let c1 = IO.read_byte chin in
+				let c2 = IO.read_byte chin in
+				let c3 = IO.read_byte chin in
+				let len = c3 lsl 24 + c2 lsl 16 + c1 lsl 8 + c0 in
+				Some (IO.really_nread_string chin len)
+			| None ->
+				None
+			end
+		end
+	else read_nonblock in
 
 	let write = Buffer.add_string bout in
 
@@ -721,19 +760,19 @@ let mk_length_prefixed_communication chin chout =
 
 	fun () ->
 		Buffer.clear bout;
-		read, write, close
+		allow_nonblock, read, write, close
 
 (* The accept-function to wait for a stdio connection. *)
 let init_wait_stdio() =
 	set_binary_mode_in stdin true;
 	set_binary_mode_out stderr true;
-	mk_length_prefixed_communication stdin stderr
+	mk_length_prefixed_communication false stdin stderr
 
 (* Connect to given host/port and return accept function for communication *)
 let init_wait_connect host port =
 	let host = Unix.inet_addr_of_string host in
 	let chin, chout = Unix.open_connection (Unix.ADDR_INET (host,port)) in
-	mk_length_prefixed_communication chin chout
+	mk_length_prefixed_communication true chin chout
 
 (* The accept-function to wait for a socket connection. *)
 let init_wait_socket host port =
@@ -771,10 +810,10 @@ let init_wait_socket host port =
 					read_loop (count + 1);
 				end
 		in
-		let read = fun() -> (let s = read_loop 0 in Unix.clear_nonblock sin; s) in
+		let read = fun _ -> (let s = read_loop 0 in Unix.clear_nonblock sin; Some s) in
 		let write s = ssend sin (Bytes.unsafe_of_string s) in
 		let close() = Unix.close sin in
-		read, write, close
+		false, read, write, close
 	) in
 	accept
 
@@ -782,8 +821,19 @@ let init_wait_socket host port =
 let do_connect host port args =
 	let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
 	(try Unix.connect sock (Unix.ADDR_INET (Unix.inet_addr_of_string host,port)) with _ -> failwith ("Couldn't connect on " ^ host ^ ":" ^ string_of_int port));
+	let rec display_stdin args =
+		match args with
+		| [] -> ""
+		| "-D" :: ("display_stdin" | "display-stdin") :: _ ->
+			let accept = init_wait_stdio() in
+			let _, read, _, _ = accept() in
+			Option.default "" (read true)
+		| _ :: args ->
+			display_stdin args
+	in
 	let args = ("--cwd " ^ Unix.getcwd()) :: args in
-	ssend sock (Bytes.of_string (String.concat "" (List.map (fun a -> a ^ "\n") args) ^ "\000"));
+	let s = (String.concat "" (List.map (fun a -> a ^ "\n") args)) ^ (display_stdin args) in
+	ssend sock (Bytes.of_string (s ^ "\000"));
 	let has_error = ref false in
 	let rec print line =
 		match (if line = "" then '\x00' else line.[0]) with

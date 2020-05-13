@@ -11,15 +11,15 @@
 		"platforms": ["flash"]
 	},
 	{
+		"name": "AnalyzerOptimize",
+		"define": "analyzer_optimize",
+		"doc": "Perform advanced optimizations."
+	},
+	{
 		"name": "AnnotateSource",
 		"define": "annotate_source",
 		"doc": "Add additional comments to generated source code.",
 		"platforms": ["cpp"]
-	},
-	{
-		"name": "As3",
-		"define": "as3",
-		"doc": "Defined when outputting flash9 as3 source code."
 	},
 	{
 		"name": "CheckXmlProxy",
@@ -164,6 +164,11 @@
 		"platforms": ["eval"]
 	},
 	{
+		"name": "FilterTimes",
+		"define": "filter_times",
+		"doc": "Record per-filter execution times upon --times."
+	},
+	{
 		"name": "FastCast",
 		"define": "fast_cast",
 		"doc": "Enables an experimental casts cleanup on C# and Java.",
@@ -232,6 +237,13 @@
 		"name": "Haxe",
 		"define": "haxe",
 		"doc": "The current Haxe version value in SemVer format."
+	},
+	{
+		"name": "HlVer",
+		"define": "hl_ver",
+		"doc": "The HashLink version to target. (default: 1.10.0)",
+		"platforms": ["hl"],
+		"params": ["version"]
 	},
 	{
 		"name": "HxcppApiLevel",
@@ -652,5 +664,10 @@
 		"name": "WarnVarShadowing",
 		"define": "warn_var_shadowing",
 		"doc": "Warn about shadowing variable declarations."
+	},
+	{
+		"name": "NoTre",
+		"define": "no_tre",
+		"doc": "Disable tail recursion elimination."
 	}
 ]
