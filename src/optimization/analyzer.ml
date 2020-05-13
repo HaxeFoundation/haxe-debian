@@ -129,7 +129,7 @@ module Ssa = struct
 						add_ssa_edge ctx.graph v' bb true i;
 						{e with eexpr = TLocal v'}
 					| _ ->
-						assert false
+						die "" __LOC__
 				) el edge.cfg_to.bb_incoming in
 				let ephi = {ecall with eexpr = TCall(ephi,el)} in
 				set_var_value ctx.graph v0 bb true i;
@@ -302,7 +302,7 @@ module DataFlow (M : DataFlowApi) = struct
 				match e.eexpr with
 					| TBinop(OpAssign,{eexpr = TLocal v},{eexpr = TCall({eexpr = TConst (TString "phi")},el)}) ->
 						set_lattice_cell v (visit_phi bb v el)
-					| _ -> assert false
+					| _ -> die "" __LOC__
 			) bb.bb_phi
 		in
 		let rec loop () = match !cfg_work_list,!ssa_work_list with
@@ -517,7 +517,7 @@ end)
 (*
 	Propagates local variables to other local variables.
 
-	Respects scopes on targets where it matters (all except JS and As3).
+	Respects scopes on targets where it matters (all except JS).
 *)
 module CopyPropagation = DataFlow(struct
 	open BasicBlock
@@ -1005,7 +1005,7 @@ module Run = struct
 				in
 				(try loop tf.tf_expr with Exit -> mk (TCall(e,[])) tf.tf_type e.epos)
 			| _ ->
-				assert false
+				die "" __LOC__
 		end in
 		e
 
@@ -1081,7 +1081,7 @@ module Run = struct
 				let e = run_on_expr actx e in
 				let e = match e.eexpr with
 					| TFunction tf -> tf.tf_expr
-					| _ -> assert false
+					| _ -> die "" __LOC__
 				in
 				c.cl_init <- Some e
 		end
@@ -1098,9 +1098,9 @@ module Run = struct
 		let com = ctx.Typecore.com in
 		let config = get_base_config com in
 		with_timer config.detail_times ["other"] (fun () ->
-			let cfl = if config.optimize && config.purity_inference then with_timer config.detail_times ["optimize";"purity-inference"] (fun () -> Purity.infer com) else [] in
-			List.iter (run_on_type ctx config) types;
-			List.iter (fun cf -> cf.cf_meta <- List.filter (fun (m,_,_) -> m <> Meta.Pure) cf.cf_meta) cfl
+			if config.optimize && config.purity_inference then
+				with_timer config.detail_times ["optimize";"purity-inference"] (fun () -> Purity.infer com);
+			List.iter (run_on_type ctx config) types
 		)
 end
 ;;

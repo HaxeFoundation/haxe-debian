@@ -7,6 +7,9 @@ import haxe.io.*;
 using StringTools;
 
 class Lua {
+	static var miscLuaDir(get,never):String;
+	static inline function get_miscLuaDir() return miscDir + 'lua/';
+
 	static public function getLuaDependencies(){
 		switch (systemName){
 			case "Linux":
@@ -62,7 +65,7 @@ class Lua {
 			// Note: don't use a user config
 			// runCommand("luarocks", ["config", "--user-config"], false, true);
 
-			installLib("haxe-deps", "0.0.1-1");
+			installLib("haxe-deps", "0.0.1-2");
 
 			changeDirectory(unitDir);
 			runCommand("haxe", ["compile-lua.hxml"].concat(args));
@@ -74,6 +77,9 @@ class Lua {
 
 			changeDirectory(miscDir + "luaDeadCode/stringReflection");
 			runCommand("haxe", ["compile.hxml"]);
+
+			changeDirectory(miscLuaDir);
+			runCommand("haxe", ["run.hxml"]);
 		}
 	}
 }

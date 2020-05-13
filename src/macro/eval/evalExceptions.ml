@@ -112,7 +112,7 @@ let build_exception_stack ctx env =
 			List.rev acc
 		else match env'.env_parent with
 			| Some env -> loop acc env
-			| None -> assert false
+			| None -> die "" __LOC__
 	in
 	let d = match eval.env with
 	| Some env -> loop [] env
@@ -142,7 +142,7 @@ let catch_exceptions ctx ?(final=(fun() -> ())) f p =
 		Option.may (build_exception_stack ctx) env;
 		eval.env <- env;
 		if is v key_haxe_macro_Error then begin
-			let v1 = field v key_message in
+			let v1 = field v key_exception_message in
 			let v2 = field v key_pos in
 			GlobalState.get_ctx_ref := prev;
 			final();

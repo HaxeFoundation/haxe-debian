@@ -5,10 +5,12 @@ open Type
 open Define
 
 type cached_file = {
+	c_file_path : string;
 	c_time : float;
 	c_package : string list;
 	c_decls : type_decl list;
 	mutable c_module_name : string option;
+	mutable c_pdi : Parser.parser_display_information;
 }
 
 type cached_directory = {
@@ -22,7 +24,7 @@ type cached_native_lib = {
 }
 
 class context_cache (index : int) = object(self)
-	val files : (string,cached_file) Hashtbl.t = Hashtbl.create 0
+	val files : (Path.UniqueKey.t,cached_file) Hashtbl.t = Hashtbl.create 0
 	val modules : (path,module_def) Hashtbl.t = Hashtbl.create 0
 	val removed_files = Hashtbl.create 0
 	val mutable json = JNull
@@ -33,14 +35,15 @@ class context_cache (index : int) = object(self)
 	method find_file key =
 		Hashtbl.find files key
 
-	method cache_file key time data =
-		Hashtbl.replace files key { c_time = time; c_package = fst data; c_decls = snd data; c_module_name = None }
+	method cache_file key path time data pdi =
+		Hashtbl.replace files key { c_file_path = path; c_time = time; c_package = fst data; c_decls = snd data; c_module_name = None; c_pdi = pdi }
 
 	method remove_file key =
-		if Hashtbl.mem files key then begin
+		try
+			let f = Hashtbl.find files key in
 			Hashtbl.remove files key;
-			Hashtbl.replace removed_files key ()
-		end
+			Hashtbl.replace removed_files key f.c_file_path
+		with Not_found -> ()
 
 	(* Like remove_file, but doesn't keep track of the file *)
 	method remove_file_for_real key =
@@ -77,12 +80,24 @@ let create_directory path mtime = {
 	c_mtime = mtime;
 }
 
+class virtual server_task (id : string list) (priority : int) = object(self)
+	method private virtual execute : unit
+
+	method run : unit =
+		let t = Timer.timer ("server" :: "task" :: id) in
+		Std.finally t (fun () -> self#execute) ()
+
+	method get_priority = priority
+	method get_id = id
+end
+
 class cache = object(self)
 	val contexts : (string,context_cache) Hashtbl.t = Hashtbl.create 0
 	val mutable context_list = []
 	val haxelib : (string list, string list) Hashtbl.t = Hashtbl.create 0
 	val directories : (string, cached_directory list) Hashtbl.t = Hashtbl.create 0
 	val native_libs : (string,cached_native_lib) Hashtbl.t = Hashtbl.create 0
+	val mutable tasks : (server_task PriorityQueue.t) = PriorityQueue.Empty
 
 	(* contexts *)
 
@@ -131,6 +146,13 @@ class cache = object(self)
 
 	(* modules *)
 
+	method iter_modules f =
+		Hashtbl.iter (fun _ cc ->
+			Hashtbl.iter (fun _ m ->
+				f m
+			) cc#get_modules
+		) contexts
+
 	method get_modules =
 		Hashtbl.fold (fun _ cc acc ->
 			Hashtbl.fold (fun _ m acc ->
@@ -138,10 +160,10 @@ class cache = object(self)
 			) cc#get_modules acc
 		) contexts []
 
-	method taint_modules file =
+	method taint_modules file_key =
 		Hashtbl.iter (fun _ cc ->
 			Hashtbl.iter (fun _ m ->
-				if m.m_extra.m_file = file then m.m_extra.m_dirty <- Some m.m_path
+				if Path.UniqueKey.create m.m_extra.m_file = file_key then m.m_extra.m_dirty <- Some m.m_path
 			) cc#get_modules
 		) contexts
 
@@ -193,6 +215,36 @@ class cache = object(self)
 		try Some (Hashtbl.find native_libs key)
 		with Not_found -> None
 
+	(* tasks *)
+
+	method add_task (task : server_task) : unit =
+		tasks <- PriorityQueue.insert tasks task#get_priority task
+
+	method has_task =
+		not (PriorityQueue.is_empty tasks)
+
+	method get_task =
+		let (_,task,queue) = PriorityQueue.extract tasks in
+		tasks <- queue;
+		task
+
+	method run_tasks recursive f =
+		let rec loop acc =
+			let current = tasks in
+			tasks <- Empty;
+			let f (ran_task,acc) prio task =
+				if f task then begin
+					task#run;
+					(true,acc)
+				end else
+					ran_task,PriorityQueue.insert acc prio task
+			in
+			let ran_task,folded = PriorityQueue.fold current f (false,acc) in
+			if recursive && ran_task then loop folded
+			else folded
+		in
+		tasks <- PriorityQueue.merge tasks (loop PriorityQueue.Empty);
+
 	(* Pointers for memory inspection. *)
 	method get_pointers : unit array =
 		[|Obj.magic contexts;Obj.magic haxelib;Obj.magic directories;Obj.magic native_libs|]
@@ -219,7 +271,7 @@ let get () =
 let runs () =
 	!instance <> None
 
-let force () = match !instance with None -> assert false | Some i -> i
+let force () = match !instance with None -> die "" __LOC__ | Some i -> i
 
 let get_module_name_of_cfile file cfile = match cfile.c_module_name with
 	| None ->

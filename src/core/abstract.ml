@@ -1,5 +1,8 @@
 open Meta
-open Type
+open TType
+open TFunctions
+open TPrinting
+open TUnification
 open Error
 
 let build_abstract a = match a.a_impl with
@@ -53,7 +56,7 @@ let rec get_underlying_type ?(return_first=false) a pl =
 	let maybe_recurse t =
 		let rec loop t = match t with
 			| TMono r ->
-				(match !r with
+				(match r.tm_type with
 				| Some t -> loop t
 				| _ -> t)
 			| TLazy f ->
@@ -98,5 +101,13 @@ let rec get_underlying_type ?(return_first=false) a pl =
 let rec follow_with_abstracts t = match follow t with
 	| TAbstract(a,tl) when not (Meta.has Meta.CoreType a.a_meta) ->
 		follow_with_abstracts (get_underlying_type a tl)
+	| t ->
+		t
+
+let rec follow_with_abstracts_without_null t = match follow_without_null t with
+	| TAbstract({a_path = [],"Null"},_) ->
+		t
+	| TAbstract(a,tl) when not (Meta.has Meta.CoreType a.a_meta) ->
+		follow_with_abstracts_without_null (get_underlying_type a tl)
 	| t ->
 		t
