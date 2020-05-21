@@ -1,8 +1,9 @@
 haxe (1:4.1.0-1) unstable; urgency=medium
 
   * New upstream version.
+  * Add version.ml.diff patch to avoid usage of git during build.
 
- -- Andy Li <andy@onthewings.net>  Thu, 14 May 2020 07:42:17 +0800
+ -- Andy Li <andy@onthewings.net>  Thu, 21 May 2020 09:41:40 +0800
 
 haxe (1:4.0.5-1) unstable; urgency=medium
 
