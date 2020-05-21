@@ -2,8 +2,10 @@ haxe (1:4.1.0-1) unstable; urgency=medium
 
   * New upstream version.
   * Add version.ml.diff patch to avoid usage of git during build.
+  * Update d/rules.
+  * Bump debhelper compat to 10.
 
- -- Andy Li <andy@onthewings.net>  Thu, 21 May 2020 09:41:40 +0800
+ -- Andy Li <andy@onthewings.net>  Thu, 21 May 2020 09:57:13 +0800
 
 haxe (1:4.0.5-1) unstable; urgency=medium
 

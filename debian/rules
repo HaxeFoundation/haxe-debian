@@ -4,20 +4,10 @@
 include /usr/share/ocaml/ocamlvars.mk
 include /usr/share/dpkg/pkg-info.mk
 
-# bytecompile everything if ocamlopt doesn't exists
-ifneq ($(OCAML_HAVE_OCAMLOPT),yes)
-	BYTECODE = "BYTECODE=1"
-endif
-
 %:
-	dh $@ --with ocaml,bash-completion
+	dh $@ --with ocaml,bash-completion --no-parallel
 
 override_dh_auto_configure:
-
-override_dh_auto_build:
-	dh_auto_build -- $(BYTECODE)
-	# Compile haxelib to neko
-	dh_auto_build -- tools
 
 override_dh_auto_install:
 
