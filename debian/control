@@ -2,8 +2,8 @@ Source: haxe
 Section: devel
 Priority: optional
 Maintainer: Andy Li <andy@onthewings.net>
-Standards-Version: 4.4.1
-Build-Depends: debhelper (>= 9),
+Standards-Version: 4.5.0
+Build-Depends: debhelper (>= 10),
                dh-ocaml,
                ocaml-nox,
                ocaml-findlib,

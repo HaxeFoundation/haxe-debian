@@ -1,8 +1,17 @@
-haxe (1:4.1.0-1.1) UNRELEASED; urgency=medium
+haxe (1:4.1.1-1.1) UNRELEASED; urgency=medium
 
   * Set d/compat back to 9.
 
- -- Andy Li <andy@onthewings.net>  Thu, 21 May 2020 11:26:11 +0800
+ -- Andy Li <andy@onthewings.net>  Mon, 25 May 2020 12:07:48 +0800
+
+haxe (1:4.1.1-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Remove version.ml.diff patch, which was integrated in this
+    version already.
+  * Bump Standards-Version to 4.5.0 (no changes).
+
+ -- Andy Li <andy@onthewings.net>  Mon, 25 May 2020 11:43:10 +0800
 
 haxe (1:4.1.0-1) unstable; urgency=medium
 
