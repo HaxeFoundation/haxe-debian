@@ -346,8 +346,7 @@ let needs_dereferencing for_assignment expr =
 			(* some of `php.Syntax` methods *)
 			| TCall ({ eexpr = TField (_, FStatic ({ cl_path = syntax_type_path }, { cf_name = name })) }, _) ->
 				(match name with
-					| "codeDeref" -> for_assignment
-					| "coalesce" -> for_assignment
+					| "codeDeref" | "coalesce" | "assocDecl" | "arrayDecl" -> for_assignment
 					| _ -> false
 				)
 			| _ -> false
@@ -432,7 +431,7 @@ let is_assignment_binop op =
 *)
 let is_php_global expr =
 	match expr.eexpr with
-		| TField (_, FStatic ({ cl_extern = true; cl_meta = meta }, _)) -> Meta.has Meta.PhpGlobal meta
+		| TField (_, FStatic (c, _)) when c.cl_extern -> c.cl_path = ([],"") || Meta.has Meta.PhpGlobal c.cl_meta
 		| _ -> false
 
 (**
@@ -1259,6 +1258,10 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 		method use ?prefix (type_path:path) =
 			if type_path = hx_type_path then
 				php_name
+			else if get_type_name type_path = "" then
+				match get_module_path type_path with
+				| [] -> "\\"
+				| _ -> "\\" ^ (String.concat "\\" (get_real_path (fst type_path))) ^ "\\"
 			else begin
 				let orig_type_path = type_path in
 				let type_path = match type_path with (pack, name) -> (pack, get_real_name name) in
@@ -1411,11 +1414,16 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			Check if currently generated expression is located in a left part of assignment.
 		*)
 		method is_in_write_context =
+			let is_in_ref_arg current types args =
+				try List.exists2 (fun (_,_,t) arg -> arg == current && is_ref t) types args
+				with Invalid_argument _ -> false
+			in
 			let rec traverse current parents =
 				match parents with
 					| { eexpr = TBinop(OpAssign, left_expr, _) } :: _
 					| { eexpr = TBinop(OpAssignOp _, left_expr, _) } :: _ -> left_expr == current
 					| { eexpr = TUnop(op, _, _) } :: _ -> is_modifying_unop op
+					| { eexpr = TCall({ etype = TFun(types,_) }, args) } :: _ when is_in_ref_arg current types args -> true
 					| [] -> false
 					| parent :: rest -> traverse parent rest
 			in
@@ -1430,45 +1438,23 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			```
 		*)
 		method dereference expr =
-			let deref_field = PMap.find "deref" ctx.pgc_boot.cl_statics in
+			let deref expr =
+				{ expr with eexpr = TCall (
+					{ expr with eexpr = TField (
+						{ expr with eexpr = TTypeExpr (TClassDecl ctx.pgc_boot) },
+						FStatic (ctx.pgc_boot, PMap.find "deref" ctx.pgc_boot.cl_statics)
+					) },
+					[ expr ]
+				) }
+			in
 			match expr.eexpr with
 				| TField (target_expr, access) ->
 					{
-						expr with eexpr = TField (
-							{
-								target_expr with eexpr = TCall (
-									{
-										target_expr with eexpr = TField (
-											{
-												target_expr with eexpr = TTypeExpr (TClassDecl ctx.pgc_boot)
-											},
-											FStatic (ctx.pgc_boot, deref_field)
-										)
-									},
-									[ target_expr ]
-								)
-							},
-							access
-						)
+						expr with eexpr = TField (deref target_expr, access)
 					}
 				| TArray (target_expr, access_expr) ->
 					{
-						expr with eexpr = TArray (
-							{
-								target_expr with eexpr = TCall (
-									{
-										target_expr with eexpr = TField (
-											{
-												target_expr with eexpr = TTypeExpr (TClassDecl ctx.pgc_boot)
-											},
-											FStatic (ctx.pgc_boot, deref_field)
-										)
-									},
-									[ target_expr ]
-								)
-							},
-							access_expr
-						)
+						expr with eexpr = TArray (deref target_expr, access_expr)
 					}
 				| _ -> fail self#pos __LOC__
 		(**
@@ -2227,6 +2213,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 					| _ -> self#write_expr expr
 			and operator =
 				match (reveal_expr expr).eexpr with
+					| TTypeExpr (TClassDecl { cl_extern = true; cl_path = (_,"") }) -> ""
 					| TTypeExpr _ -> "::"
 					| _ -> "->"
 			in
@@ -2604,7 +2591,10 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 		*)
 		method write_expr_php_global target_expr =
 			match target_expr.eexpr with
-				| TField (_, FStatic (_, field)) -> self#write (field_name field)
+				| TField (_, FStatic (_, field)) ->
+					let name = field_name field in
+					if namespace <> [] && not (is_keyword name) then self#write "\\";
+					self#write name
 				| _ -> fail self#pos __LOC__
 		(**
 			Writes access to PHP class constant
