@@ -1,8 +1,14 @@
-haxe (1:4.1.3-1.1) unstable; urgency=medium
+haxe (1:4.1.4-1.1) unstable; urgency=medium
 
   * Set d/compat back to 9.
 
- -- Andy Li <andy@onthewings.net>  Fri, 24 Jul 2020 14:18:43 +0800
+ -- Andy Li <andy@onthewings.net>  Mon, 21 Sep 2020 12:02:49 +0800
+
+haxe (1:4.1.4-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Andy Li <andy@onthewings.net>  Sun, 20 Sep 2020 23:24:55 +0800
 
 haxe (1:4.1.3-1) unstable; urgency=medium
 
