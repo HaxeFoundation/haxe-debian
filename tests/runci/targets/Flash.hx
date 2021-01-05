@@ -76,8 +76,12 @@ class Flash {
 				if (commandResult("brew", ["cask", "list", "flash-player-debugger"]).exitCode == 0) {
 					return;
 				}
+				// runCommand("brew", ["uninstall", "openssl@1.0.2t"]);
+				// runCommand("brew", ["uninstall", "python@2.7.17"]);
+				// runCommand("brew", ["untap", "local/openssl"]);
+				// runCommand("brew", ["untap", "local/python2"]);
 				runCommand("brew", ["update"]);
-				runCommand("brew", ["cask", "install", "flash-player-debugger"]);
+				runCommand("brew", ["install", "--cask", "flash-player-debugger"]);
 
 				// Disable the "application downloaded from Internet" warning
 				runCommand("xattr", ["-d", "-r", "com.apple.quarantine", "/Applications/Flash Player Debugger.app"]);
