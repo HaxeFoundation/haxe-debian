@@ -57,6 +57,14 @@ let copy_file src dst =
 	copy_loop ();
 	Unix.close fd_in;
 	Unix.close fd_out
+(**
+	Splits `"path/to/file"` into `["path"; "to"; "file"]`
+*)
+let split_file_path path =
+	if Globals.is_windows then
+		(Str.split (Str.regexp "[/\\]") path)
+	else
+		(Str.split (Str.regexp "/") path)
 
 type used_type = {
 	ut_alias : string;
@@ -180,6 +188,15 @@ let is_native_array_type t = match follow t with TAbstract ({ a_path = tp }, _) 
 	Otherwise this method returns another string, which can be used instead of `name`
 *)
 let get_real_name name = if is_keyword name then name ^ "_hx" else name
+
+(**
+	Returns local variable name free of risk to collide with superglobals like $_SERVER or $_GET
+*)
+let vname name =
+	match name with
+	| "GLOBALS" | "_SERVER" | "_GET" | "_POST" | "_FILES" | "_COOKIE"
+	| "_SESSION" | "_REQUEST" | "_ENV" -> name ^ "_hx_"
+	| _ -> name
 
 (**
 	If `path` contains some reserved in PHP words, they will be replaced with allowed words.
@@ -540,6 +557,42 @@ let rec write_args (str_writer:string->unit) arg_writer (args:'a list) =
 			write_args str_writer arg_writer rest
 
 (**
+	PHP 8 doesn't allow mandatory arguments after optional arguments.
+	This function makes optional arguments mandatory from left to right
+	unless there are no more mandatory arguments left to the end of args list.
+
+	E.g `(a:String = null, b:Int, c:Bool = false)` is changed into `(a:String, b:Int, c:Bool = false)`
+*)
+let fix_optional_args is_optional to_mandatory args =
+	let rec find_last_mandatory args i result =
+		match args with
+		| [] ->
+			result
+		| a :: args ->
+			find_last_mandatory args (i + 1) (if is_optional a then result else i)
+	in
+	let last_mandatory = find_last_mandatory args 0 (-1) in
+	List.mapi (fun i a -> if i <= last_mandatory && is_optional a then to_mandatory a else a ) args
+
+let fix_tfunc_args args =
+	fix_optional_args
+		(fun a -> Option.is_some (snd a))
+		(fun (v,_) -> (v,None))
+		args
+
+let fix_tsignature_args args =
+	fix_optional_args
+		(fun (_,optional,_) -> optional)
+		(fun (name,_,t) -> (name,false,t))
+		args
+
+(**
+	Escapes all "$" chars and encloses `str` into double quotes
+*)
+let quote_string str =
+	"\"" ^ (Str.global_replace (Str.regexp "\\$") "\\$" (String.escaped str)) ^ "\""
+
+(**
 	Check if specified field is a var with non-constant expression
 *)
 let is_var_with_nonconstant_expr (field:tclass_field) =
@@ -606,6 +659,18 @@ let is_constant expr =
 	match expr.eexpr with
 		| TConst _ -> true
 		| _ -> false
+
+(**
+	Check if `expr` is a constant zero
+*)
+let is_constant_zero expr =
+	try
+		match expr.eexpr with
+			| TConst (TInt i) when i = Int32.zero -> true
+			| TConst (TFloat s) when float_of_string s = 0.0 -> true
+			| _ -> false
+	with _ ->
+		false
 
 (**
 	Check if `expr` is a concatenation
@@ -1546,8 +1611,8 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			(match expr.eexpr with
 				| TConst const -> self#write_expr_const const
 				| TLocal var ->
-					vars#used var.v_name;
-					self#write ("$" ^ var.v_name)
+					vars#used (vname var.v_name);
+					self#write ("$" ^ (vname var.v_name))
 				| TArray (target, index) -> self#write_expr_array_access target index
 				| TBinop (OpAssign, { eexpr = TArray (target, index) }, value) when is_array_type target.etype ->
 					self#write_expr_set_array_item target index value
@@ -1700,8 +1765,8 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			Writes TVar to output buffer
 		*)
 		method write_expr_var var expr =
-			vars#declared var.v_name;
-			self#write ("$" ^ var.v_name ^ " = ");
+			vars#declared (vname var.v_name);
+			self#write ("$" ^ (vname var.v_name) ^ " = ");
 			match expr with
 				| None -> self#write "null"
 				| Some expr -> self#write_expr expr
@@ -1716,7 +1781,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 		method write_closure_declaration func write_arg =
 			vars#dive;
 			self#write "function (";
-			write_args self#write write_arg func.tf_args;
+			write_args self#write write_arg (fix_tfunc_args func.tf_args);
 			self#write ")";
 			(* Generate closure body to separate buffer *)
 			let original_buffer = buffer in
@@ -1884,8 +1949,8 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			let rec traverse = function
 				| [] -> ()
 				| (v,body) :: rest ->
-					self#write (" catch(" ^ (self#use_t v.v_type) ^ " $" ^ v.v_name ^ ") ");
-					vars#declared v.v_name;
+					self#write (" catch(" ^ (self#use_t v.v_type) ^ " $" ^ (vname v.v_name) ^ ") ");
+					vars#declared (vname v.v_name);
 					self#write_as_block body;
 					traverse rest
 			in
@@ -2081,6 +2146,8 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 					write_method ((self#use boot_type_path) ^ "::shiftRightUnsigned")
 				| OpGt | OpGte | OpLt | OpLte ->
 					compare (" " ^ (Ast.s_binop operation) ^ " ")
+				| OpDiv when is_constant_zero (reveal_expr_with_parenthesis expr2) ->
+					write_method ((self#use boot_type_path) ^ "::divByZero")
 				| _ ->
 					write_binop (" " ^ (Ast.s_binop operation) ^ " ")
 		(**
@@ -2525,7 +2592,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 					if add_parentheses then self#write "(";
 					self#write_expr collection;
 					if add_parentheses then self#write ")";
-					self#write (" as $" ^ key.v_name ^ " => $" ^ value.v_name ^ ") ");
+					self#write (" as $" ^ (vname key.v_name) ^ " => $" ^ (vname value.v_name) ^ ") ");
 					self#write_as_block ~unset_locals:true { body with eexpr = TBlock body_exprs };
 				| _ ->
 					fail self#pos __LOC__
@@ -2767,9 +2834,9 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 		method write_function_arg arg =
 			match arg with
 				| ({ v_name = arg_name; v_type = arg_type }, default_value) ->
-					vars#declared arg_name;
+					vars#declared (vname arg_name);
 					if is_ref arg_type then self#write "&";
-					self#write ("$" ^ arg_name);
+					self#write ("$" ^ (vname arg_name));
 					match default_value with
 						| None -> ()
 						| Some expr ->
@@ -3042,7 +3109,7 @@ class virtual type_builder ctx (wrapper:type_wrapper) =
 		method private write_constructor_declaration func =
 			if self#extends_no_constructor then writer#extends_no_constructor;
 			writer#write ("function __construct (");
-			write_args writer#write writer#write_function_arg func.tf_args;
+			write_args writer#write writer#write_function_arg (fix_tfunc_args func.tf_args);
 			writer#write ") {\n";
 			writer#indent_more;
 			self#write_instance_initialization;
@@ -3063,7 +3130,7 @@ class virtual type_builder ctx (wrapper:type_wrapper) =
 				else
 					func.tf_args
 			in
-			write_args writer#write writer#write_function_arg args;
+			write_args writer#write writer#write_function_arg (fix_tfunc_args args);
 			writer#write ") ";
 			if not (self#write_body_if_special_method name) then
 				writer#write_expr (inject_defaults ctx func)
@@ -3180,7 +3247,7 @@ class enum_builder ctx (enm:tenum) =
 			writer#indent 1;
 			self#write_doc (DocMethod (args, TEnum (enm, []), (gen_doc_text_opt field.ef_doc)));
 			writer#write_with_indentation ("static public function " ^ name ^ " (");
-			write_args writer#write (writer#write_arg true) args;
+			write_args writer#write (writer#write_arg true) (fix_tsignature_args args);
 			writer#write ") {\n";
 			writer#indent_more;
 			let index_str = string_of_int field.ef_index in
@@ -3650,7 +3717,7 @@ class class_builder ctx (cls:tclass) =
 				| None ->
 					if is_static then writer#write "static ";
 					writer#write ("function " ^ (field_name field) ^ " (");
-					write_args writer#write (writer#write_arg true) args;
+					write_args writer#write (writer#write_arg true) (fix_tsignature_args args);
 					writer#write ")";
 					writer#write " ;\n"
 				| Some { eexpr = TFunction fn } ->
@@ -3673,11 +3740,11 @@ class class_builder ctx (cls:tclass) =
 			(match field.cf_expr with
 				| None -> (* interface *)
 					writer#write " (";
-					write_args writer#write (writer#write_arg true) args;
+					write_args writer#write (writer#write_arg true) (fix_tsignature_args args);
 					writer#write ");\n";
 				| Some { eexpr = TFunction fn } -> (* normal class *)
 					writer#write " (";
-					write_args writer#write writer#write_function_arg fn.tf_args;
+					write_args writer#write writer#write_function_arg (fix_tfunc_args fn.tf_args);
 					writer#write ")\n";
 					writer#write_line "{";
 					writer#indent_more;
@@ -3830,11 +3897,18 @@ class generator (ctx:php_generator_context) =
 				| None -> ()
 				| Some (uses, entry_point) ->
 					let filename = Common.defined_value_safe ~default:"index.php" ctx.pgc_common Define.PhpFront in
+					let front_dirs = split_file_path (Filename.dirname filename) in
+					if front_dirs <> [] then
+						ignore(create_dir_recursive (root_dir :: front_dirs));
+					let lib_path =
+						(String.concat "" (List.fold_left (fun acc s -> if s <> "." then "../" :: acc else acc) [] front_dirs))
+						^ (String.concat "/" self#get_lib_path)
+					in
 					let channel = open_out (root_dir ^ "/" ^ filename) in
 					output_string channel "<?php\n";
 					output_string channel uses;
 					output_string channel "\n";
-					output_string channel ("set_include_path(get_include_path().PATH_SEPARATOR.__DIR__.'/" ^ (String.concat "/" self#get_lib_path) ^ "');\n");
+					output_string channel ("set_include_path(get_include_path().PATH_SEPARATOR.__DIR__.'/" ^ lib_path ^ "');\n");
 					output_string channel "spl_autoload_register(\n";
 					output_string channel "	function($class){\n";
 					output_string channel "		$file = stream_resolve_include_path(str_replace('\\\\', '/', $class) .'.php');\n";
@@ -3862,7 +3936,7 @@ class generator (ctx:php_generator_context) =
 		*)
 		method private get_lib_path : string list =
 			let path = Common.defined_value_safe ~default:"lib" ctx.pgc_common Define.PhpLib in
-			(Str.split (Str.regexp "/")  path)
+			split_file_path path
 		(**
 			Returns PHP code for entry point
 		*)
