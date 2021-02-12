@@ -2,7 +2,7 @@
 
 (env
 	(_
-		(flags (:standard -w -3 -thread))
+		(flags (:standard -w -3 -w -23 -thread))
 	)
 )
 
@@ -13,6 +13,7 @@
 		json
 		unix str threads dynlink
 		xml-light extlib ptmap sha
+		luv
 	)
 	(modules (:standard \ haxe))
 	(preprocess (per_module

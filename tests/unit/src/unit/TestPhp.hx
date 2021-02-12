@@ -45,6 +45,18 @@ class TestPhp extends Test
 		t(result);
 	}
 
+	function testCustomArrayDecl() {
+		var a = Syntax.customArrayDecl([1 => 'hello', 'world' => true]);
+		var keys:Array<Dynamic> = [];
+		var values:Array<Dynamic> = [];
+		for(k => v in a) {
+			keys.push(k);
+			values.push(v);
+		}
+		aeq(([1, 'world']:Array<Dynamic>), keys);
+		aeq((['hello', true]:Array<Dynamic>), values);
+	}
+
 	function testIssue1828() {
 		var x = try {
 			throw "foo";
@@ -198,8 +210,8 @@ class TestPhp extends Test
 	}
 
 	function testClosureComparison() {
-		var fn1:Void->Void;
-		var fn2:Void->Void;
+		var fn1:()->Void;
+		var fn2:()->Void;
 		eq(ClosureDummy.testStatic, ClosureDummy.testStatic);
 		//Waiting for a fix: https://github.com/HaxeFoundation/haxe/issues/6719
 		// t(ClosureDummy.testStatic == ClosureDummy.testStatic);
@@ -370,7 +382,7 @@ enum Annotation {
 	Const(i:String);
 }
 
-private typedef Func = Void->Void;
+private typedef Func = ()->Void;
 
 private abstract FunctionCaller(Func->Void) to Func->Void {
 	public function new(f:Func->Void) this = f;

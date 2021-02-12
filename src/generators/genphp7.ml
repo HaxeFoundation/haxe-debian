@@ -80,8 +80,23 @@ type php_generator_context = {
 	(** php.Boot *)
 	pgc_boot : tclass;
 	(** see type_name_used_in_namespace *)
-	pgc_namespaces_types_cache : (string list, string) Hashtbl.t
+	pgc_namespaces_types_cache : (string list, string) Hashtbl.t;
+	(**
+		List of anon structures declarations found during generating current php file.
+		The key is a list of fields names.
+		The value is an auto-generated name for the class representing that anon.
+	*)
+	pgc_anons : (string list, string) Hashtbl.t;
+	(** a buffer to write to the bottom of the current php file (but before "Boot::registerClass()" and "::_hx_init()" calls) *)
+	pgc_bottom_buffer : Buffer.t;
 }
+
+(**
+	Reset the state of the context between before a generating a php file.
+*)
+let reset_context ctx =
+	Buffer.clear ctx.pgc_bottom_buffer;
+	Hashtbl.clear ctx.pgc_anons
 
 (**
 	Get list of keys in Hashtbl
@@ -92,6 +107,11 @@ let hashtbl_keys tbl = Hashtbl.fold (fun key _ lst -> key :: lst) tbl []
 	@return List of items in `list1` which `list2` does not contain
 *)
 let diff_lists list1 list2 = List.filter (fun x -> not (List.mem x list2)) list1
+
+(**
+	@return List of items in `list1` which `list2` does contain too
+*)
+let intersect_lists list1 list2 = List.filter (fun x -> List.mem x list2) list1
 
 (**
 	Type path of `php.Boot`
@@ -297,6 +317,11 @@ let is_string expr = ExtType.is_string (follow expr.etype)
 let is_array_type t = match follow t with TInst ({ cl_path = ([], "Array") }, _) -> true | _ -> false
 
 (**
+	Check if specified type is haxe.Rest
+*)
+let is_rest_type t = ExtType.is_rest (Type.follow t)
+
+(**
 	Check if specified type represents a function
 *)
 let is_function_type t = match follow t with TFun _ -> true | _ -> false
@@ -351,10 +376,8 @@ let need_parenthesis_for_binop current parent =
 	Check if specified expression may require dereferencing if used as "temporary expression"
 *)
 let needs_dereferencing for_assignment expr =
-	let rec is_create target_expr =
-		match (reveal_expr target_expr).eexpr with
-			| TParenthesis e -> is_create e
-			| TCast (e, _) -> is_create e
+	let is_create target_expr =
+		match (reveal_expr_with_parenthesis target_expr).eexpr with
 			| TNew _ -> for_assignment
 			| TArrayDecl _ -> for_assignment
 			| TObjectDecl _ -> for_assignment
@@ -399,13 +422,7 @@ let get_function_signature (field:tclass_field) : (string * bool * Type.t) list 
 let is_sure_scalar (target:Type.t) =
 	match follow target with
 		| TInst ({ cl_path = ([], "String") }, _) -> true
-		| TAbstract (abstr, _) ->
-			(match abstr.a_path with
-				| ([],"Int") -> true
-				| ([],"Float") -> true
-				| ([],"Bool") -> true
-				| _ -> false
-			)
+		| TAbstract ({ a_path = ([], ("Int" | "Float" | "Bool"))}, _) -> true
 		| _ -> false
 
 (**
@@ -448,7 +465,7 @@ let is_assignment_binop op =
 *)
 let is_php_global expr =
 	match expr.eexpr with
-		| TField (_, FStatic (c, _)) when c.cl_extern -> c.cl_path = ([],"") || Meta.has Meta.PhpGlobal c.cl_meta
+		| TField (_, FStatic (c, _)) when (has_class_flag c CExtern) -> c.cl_path = ([],"") || Meta.has Meta.PhpGlobal c.cl_meta
 		| _ -> false
 
 (**
@@ -456,7 +473,7 @@ let is_php_global expr =
 *)
 let is_php_class_const expr =
 	match expr.eexpr with
-		| TField (_, FStatic ({ cl_extern = true }, { cf_meta = meta; cf_kind = Var _ })) ->
+		| TField (_, FStatic (c, { cf_meta = meta; cf_kind = Var _ })) when (has_class_flag c CExtern) ->
 			Meta.has Meta.PhpClassConst meta
 		| _ -> false
 
@@ -475,17 +492,9 @@ let is_enum_constructor_with_args (constructor:tenum_field) =
 let rec sure_extends_extern (target:Type.t) =
 	match follow target with
 		| TInst ({ cl_path = ([], "String") }, _) -> false
-		| TInst ({ cl_extern = true }, _) -> true
+		| TInst (c, _) when (has_class_flag c CExtern) -> true
 		| TInst ({ cl_super = Some (tsuper, params) }, _) -> sure_extends_extern (TInst (tsuper,params))
 		| _ -> false
-
-(**
-	@return `opt` value or `default` if `opt` is None
-*)
-let get_option_value (opt:'a option) default =
-	match opt with
-		| None -> default
-		| Some value -> value
 
 (**
 	@param path Something like [ "/some/path/first_dir_to_create"; "nested_level1"; "nested_level2" ]
@@ -532,12 +541,12 @@ let get_full_type_name ?(escape=false) ?(omit_first_slash=false) (type_path:path
 (**
 	@return Short type name. E.g. returns "Test" for (["example"], "Test")
 *)
-let get_type_name (type_path:path) = match type_path with (_, type_name) -> type_name
+let get_type_name (type_path:path) = snd type_path
 
 (**
 	@return E.g. returns ["example"] for (["example"], "Test")
 *)
-let get_module_path (type_path:path) = match type_path with (module_path, _) -> module_path
+let get_module_path (type_path:path) = fst type_path
 
 (**
 	@return PHP visibility keyword.
@@ -585,6 +594,25 @@ let fix_tsignature_args args =
 		(fun (_,optional,_) -> optional)
 		(fun (name,_,t) -> (name,false,t))
 		args
+
+(**
+	Inserts `null`s if there are missing optional args before empty rest arguments.
+*)
+let fix_call_args callee_type exprs =
+	match follow callee_type with
+	| TFun (args,_) ->
+		(match List.rev args with
+		| (_,_,t) :: args_rev when is_rest_type t && List.length args_rev > List.length exprs ->
+			let rec loop args exprs =
+				match args, exprs with
+				| [], _ | [_], _ -> exprs
+				| (_,_,t) :: args, [] -> (mk (TConst TNull) t null_pos) :: loop args exprs
+				| _ :: args, e :: exprs -> e :: loop args exprs
+			in
+			loop args exprs
+		| _ -> exprs
+		)
+	| _ -> exprs
 
 (**
 	Escapes all "$" chars and encloses `str` into double quotes
@@ -695,11 +723,7 @@ let is_binop expr = match expr.eexpr with TBinop _ -> true | _ -> false
 *)
 let is_binop_assign expr =
 	match expr.eexpr with
-		| TBinop (operation, _, _) ->
-			(match operation with
-				| OpAssign | OpAssignOp _ -> true
-				| _ -> false
-			)
+		| TBinop ((OpAssign | OpAssignOp _), _, _) -> true
 		| _ -> false
 
 (**
@@ -708,6 +732,15 @@ let is_binop_assign expr =
 let is_access expr =
 	match expr.eexpr with
 		| TField _ | TArray _ -> true
+		| _ -> false
+
+(**
+	Check if specified field access is an access to the field `Array.arr`
+	It's a private field of the php-specific implementation of Haxe Array.
+*)
+let is_array_arr faccess =
+	match faccess with
+		| FInstance ({ cl_path = [],"Array" }, _, { cf_name = "arr" }) -> true
 		| _ -> false
 
 (**
@@ -916,14 +949,14 @@ class virtual type_wrapper (type_path:path) (meta:metadata) (needs_generation:bo
 *)
 class class_wrapper (cls) =
 	object (self)
-		inherit type_wrapper cls.cl_path cls.cl_meta (not cls.cl_extern)
+		inherit type_wrapper cls.cl_path cls.cl_meta (not (has_class_flag cls CExtern))
 		(**
 			Indicates if class initialization method should be executed upon class loaded
 		*)
 		method needs_initialization =
 			(* Interfaces may need initialization only for RTTI meta data.
 				But that meta is written in `class_wrapper#write_rtti_meta` *)
-			if cls.cl_interface then
+			if (has_class_flag cls CInterface) then
 				false
 			else
 				match cls.cl_init with
@@ -958,7 +991,7 @@ class class_wrapper (cls) =
 			If current type requires some additional type to be generated
 		*)
 		method get_service_type : module_type option =
-			if not cls.cl_extern then
+			if not (has_class_flag cls CExtern) then
 				None
 			else
 				match cls.cl_init with
@@ -970,16 +1003,15 @@ class class_wrapper (cls) =
 						in
 						let additional_cls = {
 							cls with
-								cl_extern =  false;
 								cl_path = path;
 								cl_fields  = PMap.create (fun a b -> 0);
 								cl_statics  = PMap.create (fun a b -> 0);
 								cl_ordered_fields  = [];
 								cl_ordered_statics  = [];
 								cl_constructor = None;
-								cl_overrides = [];
 								cl_init = Some body
 						} in
+						remove_class_flag additional_cls CExtern;
 						Some (TClassDecl additional_cls)
 	end
 
@@ -1044,64 +1076,40 @@ class abstract_wrapper (abstr) =
 	end
 
 (**
+	type_wrapper from table
+*)
+let get_stored_wrapper tbl wrap key : type_wrapper =
+	try
+		let wrapper = Hashtbl.find tbl key in
+		wrapper
+	with Not_found ->
+		let wrapper = wrap key in
+		Hashtbl.add tbl key wrapper;
+		wrapper
+
+(**
 	type_wrapper for classes
 *)
 let classes = Hashtbl.create 1000
-let get_class_wrapper cls  : type_wrapper =
-	try
-		let wrapper = Hashtbl.find classes cls in
-		wrapper
-	with
-		| Not_found ->
-			let wrapper = new class_wrapper cls in
-			Hashtbl.add classes cls wrapper;
-			wrapper
-		| e -> raise e
+let get_class_wrapper = get_stored_wrapper classes (fun cls -> new class_wrapper cls)
 
 (**
 	type_wrapper for enums
 *)
 let enums = Hashtbl.create 200
-let get_enum_wrapper enm : type_wrapper=
-	try
-		let wrapper = Hashtbl.find enums enm in
-		wrapper
-	with
-		| Not_found ->
-			let wrapper = new enum_wrapper enm in
-			Hashtbl.add enums enm wrapper;
-			wrapper
-		| e -> raise e
+let get_enum_wrapper = get_stored_wrapper enums (fun enm -> new enum_wrapper enm)
 
 (**
 	type_wrapper for typedefs
 *)
 let typedefs = Hashtbl.create 200
-let get_typedef_wrapper typedef : type_wrapper =
-	try
-		let wrapper = Hashtbl.find typedefs typedef in
-		wrapper
-	with
-		| Not_found ->
-			let wrapper = new typedef_wrapper typedef in
-			Hashtbl.add typedefs typedef wrapper;
-			wrapper
-		| e -> raise e
+let get_typedef_wrapper = get_stored_wrapper typedefs (fun typedef -> new typedef_wrapper typedef)
 
 (**
 	type_wrapper for abstracts
 *)
 let abstracts = Hashtbl.create 200
-let get_abstract_wrapper abstr : type_wrapper =
-	try
-		let wrapper = Hashtbl.find abstracts abstr in
-		wrapper
-	with
-		| Not_found ->
-			let wrapper = new abstract_wrapper abstr in
-			Hashtbl.add abstracts abstr wrapper;
-			wrapper
-		| e -> raise e
+let get_abstract_wrapper = get_stored_wrapper abstracts (fun abstr -> new abstract_wrapper abstr)
 
 (**
 	Returns wrapper for module_type.
@@ -1141,19 +1149,6 @@ let type_name_used_in_namespace ctx type_path as_name namespace =
 	in
 	List.mem as_name types
 	&& (namespace, as_name) <> type_path
-
-(**
-	Simple list intersection implementation.
-	@return A list of values existing in each of source lists.
-*)
-let rec list_intersect list1 list2 =
-	match list2 with
-		| [] -> []
-		| item :: rest ->
-			if List.mem item list1 then
-				item :: (list_intersect list1 rest)
-			else
-				list_intersect list1 rest
 
 (**
 	Class to simplify collecting lists of declared and used local vars.
@@ -1199,7 +1194,7 @@ class local_vars =
 							used_locals <- rest_used;
 							declared_locals <- rest_declared;
 							List.iter self#used higher_vars;
-							let captured_vars = list_intersect declared_vars (hashtbl_keys captured_locals) in
+							let captured_vars = intersect_lists declared_vars (hashtbl_keys captured_locals) in
 							List.iter (fun name -> Hashtbl.remove captured_locals name) declared_vars;
 							(higher_vars, declared_vars, captured_vars)
 		(**
@@ -1312,6 +1307,11 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 		*)
 		method get_indentation = String.length indentation
 		(**
+			Set indentation level (starting from zero for no indentation)
+		*)
+		method set_indentation level =
+			indentation <- String.make level '\t'
+		(**
 			Specify local var name declared in current scope
 		*)
 		method declared_local_var name = vars#declared name
@@ -1326,7 +1326,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			else if get_type_name type_path = "" then
 				match get_module_path type_path with
 				| [] -> "\\"
-				| _ -> "\\" ^ (String.concat "\\" (get_real_path (fst type_path))) ^ "\\"
+				| module_path -> "\\" ^ (String.concat "\\" (get_real_path module_path)) ^ "\\"
 			else begin
 				let orig_type_path = type_path in
 				let type_path = match type_path with (pack, name) -> (pack, get_real_name name) in
@@ -1380,16 +1380,17 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			Extracts type path from Type.t value and execute self#use on it
 			@return Unique alias for specified type.
 		*)
-		method use_t (t_inst:Type.t) =
+		method use_t ?(for_doc=false) (t_inst:Type.t) =
 			match follow t_inst with
 				| TEnum (tenum, _) -> self#use tenum.e_path
-				| TInst (tcls, _) ->
+				| TInst (tcls, params) ->
 					(match tcls.cl_kind with
 						| KTypeParameter _ -> "mixed"
 						| _ ->
-							(match tcls.cl_path with
-								| ([], "String") -> "string"
-								| _ -> self#use ~prefix:(not tcls.cl_extern) tcls.cl_path
+							(match tcls.cl_path, params with
+								| ([], "String"), _ -> "string"
+								| ([], "Array"), [param] when for_doc -> (self#use_t param) ^ "[]|" ^ (self#use tcls.cl_path)
+								| _ -> self#use ~prefix:(not (has_class_flag tcls CExtern)) tcls.cl_path
 							)
 					)
 				| TFun _ -> self#use ~prefix:false ([], "Closure")
@@ -1409,7 +1410,12 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 						| ([],"Bool") -> "bool"
 						| ([],"Void") -> "void"
 						| ([],"Enum") -> "Enum"
-						| ([], "Class") -> "Class"
+						| ([],"Class") -> "Class"
+						| (["php"],"NativeArray") when for_doc ->
+							(match Type.follow t_inst with
+								| TAbstract ({ a_path = ["php"],"NativeIndexedArray" }, [param]) -> (self#use_t param) ^ "[]"
+								| _ -> "array"
+							)
 						| _ when Meta.has Meta.CoreType abstr.a_meta -> "mixed"
 						| _ -> self#use_t abstr.a_this
 		(**
@@ -1475,6 +1481,30 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			match self#parent_expr with
 				| Some { eexpr = TCall _ } -> true
 				| _ -> false
+		(**
+			Indicates if current expression is passed to `php.Ref<T>`
+		*)
+		method current_expr_is_for_ref =
+			match expr_hierarchy with
+				| [] -> false
+				| current :: _ ->
+					match self#parent_expr with
+						| Some { eexpr = TCall (target, params) } when current != (reveal_expr target) ->
+							(match follow target.etype with
+								| TFun (args,_) ->
+									let rec check args params =
+										match args, params with
+										| (_, _, t) :: _, param :: _ when current == (reveal_expr param) ->
+											is_ref t
+										| _, [] | [], _ ->
+											false
+										| _ :: args, _ :: params ->
+											check args params
+									in
+									check args params
+								| _ -> false
+							)
+						| _ -> false
 		(**
 			Check if currently generated expression is located in a left part of assignment.
 		*)
@@ -1593,12 +1623,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 				| None ->
 					self#write_expr value_expr;
 				| Some key_str ->
-					let key_str =
-						Str.global_replace (Str.regexp "\\$")
-						"\\$"
-						(String.escaped key_str)
-					in
-					self#write ("\"" ^ key_str ^ "\" => ");
+					self#write ((quote_string key_str) ^ " => ");
 					self#write_expr value_expr
 			);
 			if separate_line then self#write ",\n"
@@ -1619,6 +1644,8 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 				| TBinop (operation, expr1, expr2) when needs_dereferencing (is_assignment_binop operation) expr1 ->
 					self#write_expr { expr with eexpr = TBinop (operation, self#dereference expr1, expr2) }
 				| TBinop (operation, expr1, expr2) -> self#write_expr_binop operation expr1 expr2
+				| TField ({ eexpr = TArrayDecl exprs }, faccess) when is_array_arr faccess && not self#current_expr_is_for_ref ->
+					self#write_native_array_decl exprs
 				| TField (fexpr, access) when is_php_global expr -> self#write_expr_php_global expr
 				| TField (fexpr, access) when is_php_class_const expr -> self#write_expr_php_class_const expr
 				| TField (fexpr, access) when needs_dereferencing (self#is_in_write_context) expr -> self#write_expr (self#dereference expr)
@@ -1700,16 +1727,27 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 						| _ ->
 							decl()
 					)
-				| [expr] ->
-					self#write ((self#use array_type_path) ^ "::wrap([");
-					self#write_expr expr;
-					self#write "])"
 				| _ ->
-					self#write ((self#use array_type_path) ^ "::wrap([\n");
+					self#write ((self#use array_type_path) ^ "::wrap(");
+					self#write_native_array_decl exprs;
+					self#write ")"
+		(**
+			Writes native array declaration to output buffer
+		*)
+		method write_native_array_decl exprs =
+			match exprs with
+				| [] ->
+					self#write "[]";
+				| [expr] ->
+					self#write "[";
+					self#write_expr expr;
+					self#write "]"
+				| _ ->
+					self#write "[\n";
 					self#indent_more;
 					List.iter (fun expr -> self#write_array_item ~separate_line:true expr) exprs;
 					self#indent_less;
-					self#write_with_indentation "])"
+					self#write_with_indentation "]"
 		(**
 			Write associative array declaration
 		*)
@@ -2062,7 +2100,9 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 					match (reveal_expr expr).eexpr with
 					| TConst TNull -> self#write "'null'"
 					| TBinop _ | TUnop _ -> self#write_expr (parenthesis expr)
-					| TParenthesis { eexpr = (TBinop _ | TUnop _) } -> self#write_expr expr
+					| TParenthesis { eexpr = (TBinop _ | TUnop _) }
+					| TCall ({ eexpr = TField (_, FStatic ({ cl_path = ([],"Std") }, { cf_name = "string" })) }, [_]) ->
+						self#write_expr expr
 					| _ ->
 						self#write "(";
 						self#write_expr expr;
@@ -2161,6 +2201,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 				| Postfix ->
 					self#write_expr expr;
 					self#write (Ast.s_unop operation)
+
 		method private write_expr_for_field_access expr access_str field_str =
 			let access_str = ref access_str in
 			(match (reveal_expr expr).eexpr with
@@ -2264,7 +2305,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 				| FInstance (_, _, ({ cf_kind = Method _ } as field))
 				| FClosure (_, ({ cf_kind = Method _ } as field)) ->
 					self#write ((self#use hxstring_type_path) ^ "::" ^ (field_name field) ^ "(");
-					write_args self#write self#write_expr (expr :: args);
+					write_args self#write self#write_expr (fix_call_args field.cf_type (expr :: args));
 					self#write ")"
 				| _ ->
 					let msg =
@@ -2281,7 +2322,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 					| _ -> self#write_expr expr
 			and operator =
 				match (reveal_expr expr).eexpr with
-					| TTypeExpr (TClassDecl { cl_extern = true; cl_path = (_,"") }) -> ""
+					| TTypeExpr (TClassDecl ({ cl_path = (_,"") } as c)) when (has_class_flag c CExtern) -> ""
 					| TTypeExpr _ -> "::"
 					| _ -> "->"
 			in
@@ -2342,11 +2383,59 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 		*)
 		method write_expr_object_declaration fields =
 			match fields with
-				| [] ->  self#write ("new " ^ (self#use hxanon_type_path) ^ "()")
+				| [] -> self#write ("new " ^ (self#use hxanon_type_path) ^ "()")
 				| _ ->
-					self#write ("new " ^ (self#use hxanon_type_path)  ^ "(");
-					self#write_assoc_array_decl fields;
-					self#write ")"
+					let inits,args_exprs,args_names =
+						List.fold_left (fun (inits,args_exprs,args_names) ((name,p,quotes), e) ->
+							let field,arg_name =
+								if quotes = NoQuotes then name,name
+								else "{" ^ (quote_string name) ^ "}", "_hx_" ^ (string_of_int (List.length args_exprs))
+							in
+							(field,mk (TIdent ("$"^arg_name)) e.etype p) :: inits, e :: args_exprs, arg_name :: args_names
+						) ([],[],[]) fields
+					in
+					let anon_name, declare_class =
+						let key = List.map (fun ((name,_,_),_) -> name) fields in
+						try
+							Hashtbl.find ctx.pgc_anons key, false
+						with Not_found ->
+							let name = "_HxAnon_" ^ self#get_name ^ (string_of_int (Hashtbl.length ctx.pgc_anons)) in
+							Hashtbl.add ctx.pgc_anons key name;
+							name, true
+					in
+					self#write ("new " ^ anon_name ^ "(");
+					write_args self#write self#write_expr (List.rev args_exprs);
+					self#write ")";
+					if declare_class then begin
+						(* save writer's state *)
+						let original_buffer = buffer
+						and original_indentation = self#get_indentation in
+						let sm_pointer_before_body = get_sourcemap_pointer sourcemap in
+						(* generate a class for this anon *)
+						buffer <- ctx.pgc_bottom_buffer;
+						self#set_indentation 0;
+						self#write ("\nclass " ^ anon_name ^ " extends " ^ (self#use hxanon_type_path) ^ " {\n");
+						self#indent_more;
+						self#write_with_indentation "function __construct(";
+						write_args self#write (fun name -> self#write ("$" ^ name)) (List.rev args_names);
+						self#write ") {\n";
+						self#indent_more;
+						List.iter (fun (field,e) ->
+							self#write_with_indentation "$this->";
+							self#write field;
+							self#write " = ";
+							self#write_expr e;
+							self#write ";\n";
+						) (List.rev inits);
+						self#indent_less;
+						self#write_line "}";
+						self#indent_less;
+						self#write_with_indentation "}\n";
+						(* restore writer's state *)
+						buffer <- original_buffer;
+						self#set_indentation original_indentation;
+						set_sourcemap_pointer sourcemap sm_pointer_before_body
+					end
 		(**
 			Writes specified type to output buffer depending on type of expression.
 		*)
@@ -2613,7 +2702,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			if not !no_call then
 				begin
 					self#write "(";
-					write_args self#write self#write_expr args;
+					write_args self#write self#write_expr (fix_call_args target_expr.etype args);
 					self#write ")"
 				end
 		(**
@@ -2676,8 +2765,13 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			Writes TNew to output buffer
 		*)
 		method write_expr_new inst_class args =
-			let needs_php_prefix = not inst_class.cl_extern in
+			let needs_php_prefix = not (has_class_flag inst_class CExtern) in
 			self#write ("new " ^ (self#use ~prefix:needs_php_prefix inst_class.cl_path) ^ "(");
+			let args =
+				match inst_class.cl_constructor with
+				| Some field -> fix_call_args field.cf_type args
+				| None -> args
+			in
 			write_args self#write self#write_expr args;
 			self#write ")"
 		(**
@@ -2827,7 +2921,9 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			Writes argument for function declarations or calls
 		*)
 		method write_arg with_optionals (arg_name, optional, (arg_type:Type.t)) =
-			self#write ("$" ^ arg_name ^ (if with_optionals && optional then " = null" else ""))
+			let rest = if is_rest_type arg_type then "..." else ""
+			and opt = if with_optionals && optional then " = null" else "" in
+			self#write (rest ^ "$" ^ arg_name ^ opt);
 		(**
 			Writes argument with optional value for function declarations
 		*)
@@ -2835,6 +2931,7 @@ class code_writer (ctx:php_generator_context) hx_type_path php_name =
 			match arg with
 				| ({ v_name = arg_name; v_type = arg_type }, default_value) ->
 					vars#declared (vname arg_name);
+					if is_rest_type arg_type then self#write "...";
 					if is_ref arg_type then self#write "&";
 					self#write ("$" ^ (vname arg_name));
 					match default_value with
@@ -2955,27 +3052,31 @@ class virtual type_builder ctx (wrapper:type_wrapper) =
 				if wrapper#needs_initialization then self#write_hx_init;
 				writer#indent 0;
 				writer#write_line "}"; (** closing bracket for a class *)
-				writer#write_empty_lines;
-				let boot_class = writer#use boot_type_path in
-				(* Boot initialization *)
-				if boot_type_path = self#get_type_path then begin
-					writer#write_statement ("require_once __DIR__.'/" ^ polyfills_file ^ "'");
-					writer#write_statement (boot_class ^ "::__hx__init()")
-				end;
-				let haxe_class = match wrapper#get_type_path with (path, name) -> String.concat "." (path @ [name]) in
-				writer#write_statement (boot_class ^ "::registerClass(" ^ (self#get_name) ^ "::class, '" ^ haxe_class ^ "')");
-				self#write_rtti_meta;
-				self#write_pre_hx_init;
-				(* Current class initialization *)
-				if wrapper#needs_initialization && boot_type_path <> self#get_type_path then
-					writer#write_statement (self#get_name ^ "::__hx__init()");
 				let body = writer#get_contents in
+				writer#clear_contents;
+				let footer =
+					writer#write "\n";
+					let boot_class = writer#use boot_type_path in
+					(* Boot initialization *)
+					if boot_type_path = self#get_type_path then begin
+						writer#write_statement ("require_once __DIR__.'/" ^ polyfills_file ^ "'");
+						writer#write_statement (boot_class ^ "::__hx__init()")
+					end;
+					let haxe_class = match wrapper#get_type_path with (path, name) -> String.concat "." (path @ [name]) in
+					writer#write_statement (boot_class ^ "::registerClass(" ^ (self#get_name) ^ "::class, '" ^ haxe_class ^ "')");
+					self#write_rtti_meta;
+					self#write_pre_hx_init;
+					(* Current class initialization *)
+					if wrapper#needs_initialization && boot_type_path <> self#get_type_path then
+						writer#write_statement (self#get_name ^ "::__hx__init()");
+					writer#get_contents
+				in
 				Option.may (fun smap -> smap#rewind) self#get_sourcemap_generator;
 				writer#clear_contents;
 				self#write_header;
 				writer#write "\n";
 				let header = writer#get_contents in
-				contents <- header ^ body;
+				contents <- header ^ body ^ (Buffer.contents ctx.pgc_bottom_buffer) ^ footer
 			end;
 			contents
 		(**
@@ -3050,11 +3151,11 @@ class virtual type_builder ctx (wrapper:type_wrapper) =
 			let write_arg arg =
 				match arg with
 					| (arg_name, is_optional, arg_type) ->
-						writer#write_line (" * @param " ^ (writer#use_t arg_type) ^ " $" ^ arg_name)
+						writer#write_line (" * @param " ^ (writer#use_t ~for_doc:true arg_type) ^ " $" ^ arg_name)
 			in
 			List.iter write_arg args;
 			if List.length args > 0 then writer#write_line " * ";
-			writer#write_line (" * @return " ^ (writer#use_t return_type));
+			writer#write_line (" * @return " ^ (writer#use_t ~for_doc:true return_type));
 			writer#write_line " */"
 		(**
 			Writes rtti meta to output buffer
@@ -3099,10 +3200,10 @@ class virtual type_builder ctx (wrapper:type_wrapper) =
 		(**
 			Writes method to output buffer
 		*)
-		method private write_method name func is_static =
+		method private write_method name func is_static is_abstract =
 			match name with
 				| "__construct" -> self#write_constructor_declaration func
-				| _ -> self#write_method_declaration name func is_static
+				| _ -> self#write_method_declaration name func is_static is_abstract
 		(**
 			Writes constructor declaration (except visibility and `static` keywords) to output buffer
 		*)
@@ -3120,7 +3221,8 @@ class virtual type_builder ctx (wrapper:type_wrapper) =
 		(**
 			Writes method declaration (except visibility keywords) to output buffer
 		*)
-		method private write_method_declaration name func is_static =
+		method private write_method_declaration name func is_static is_abstract =
+			if is_abstract then writer#write "abstract ";
 			if is_static then writer#write "static ";
 			let by_ref = if is_ref func.tf_type then "&" else "" in
 			writer#write ("function " ^ by_ref ^ name ^ " (");
@@ -3351,7 +3453,7 @@ class class_builder ctx (cls:tclass) =
 			Indicates if type should be declared as `final`
 		*)
 		method is_final =
-			if not cls.cl_final then
+			if not (has_class_flag cls CFinal) then
 				false
 			else begin
 				let hacked = ref false in
@@ -3438,7 +3540,8 @@ class class_builder ctx (cls:tclass) =
 		method private write_declaration =
 			self#write_doc (DocClass (gen_doc_text_opt cls.cl_doc));
 			if self#is_final then writer#write "final ";
-			writer#write (if cls.cl_interface then "interface " else "class ");
+			if has_class_flag cls CAbstract then writer#write "abstract ";
+			writer#write (if (has_class_flag cls CInterface) then "interface " else "class ");
 			writer#write self#get_name;
 			(
 				match cls.cl_super with
@@ -3448,7 +3551,7 @@ class class_builder ctx (cls:tclass) =
 						writer#write (" extends " ^ super_name)
 			);
 			if List.length cls.cl_implements > 0 then begin
-				writer#write (if cls.cl_interface then " extends " else " implements ");
+				writer#write (if (has_class_flag cls CInterface) then " extends " else " implements ");
 				let use_interface iface =
 					match iface with
 						| (i, params) -> writer#use_t (TInst (i, params))
@@ -3530,7 +3633,7 @@ class class_builder ctx (cls:tclass) =
 				self#write_php_prefix ();
 				at_least_one_field_written := true
 			end;
-		 	if not cls.cl_interface then begin
+		 	if not (has_class_flag cls CInterface) then begin
 		 		(* Inlined statc vars (constants) *)
 				PMap.iter (write_if_constant) cls.cl_statics;
 				if !at_least_one_field_written then writer#write_empty_lines;
@@ -3555,7 +3658,7 @@ class class_builder ctx (cls:tclass) =
 			self#write_toString_if_required
 		method private write_toString_if_required =
 			if PMap.exists "toString" cls.cl_fields then
-				if (not cls.cl_interface) && (not (PMap.exists "__toString" cls.cl_statics)) && (not (PMap.exists "__toString" cls.cl_fields)) then
+				if (not (has_class_flag cls CInterface)) && (not (PMap.exists "__toString" cls.cl_statics)) && (not (PMap.exists "__toString" cls.cl_fields)) then
 					begin
 						writer#write_empty_lines;
 						writer#indent 1;
@@ -3569,7 +3672,7 @@ class class_builder ctx (cls:tclass) =
 			Check if this class requires constructor to be generated even if there is no user-defined one
 		*)
 		method private constructor_is_required =
-			if cls.cl_interface || List.length self#get_namespace > 0 then
+			if (has_class_flag cls CInterface) || List.length self#get_namespace > 0 then
 				false
 			else begin
 				let required = ref false in
@@ -3669,7 +3772,7 @@ class class_builder ctx (cls:tclass) =
 		*)
 		method private write_var field is_static =
 			writer#indent 1;
-			self#write_doc (DocVar (writer#use_t field.cf_type, (gen_doc_text_opt field.cf_doc)));
+			self#write_doc (DocVar (writer#use_t ~for_doc:true field.cf_type, (gen_doc_text_opt field.cf_doc)));
 			writer#write_indentation;
 			if is_static then writer#write "static ";
 			let visibility = get_visibility field.cf_meta in
@@ -3712,6 +3815,7 @@ class class_builder ctx (cls:tclass) =
 			self#write_doc (DocMethod (args, return_type, (gen_doc_text_opt field.cf_doc)));
 			writer#write_indentation;
 			if self#is_final_field field then writer#write "final ";
+			if has_class_field_flag field CfAbstract then writer#write "abstract ";
 			writer#write ((get_visibility field.cf_meta) ^ " ");
 			match field.cf_expr with
 				| None ->
@@ -3722,7 +3826,7 @@ class class_builder ctx (cls:tclass) =
 					writer#write " ;\n"
 				| Some { eexpr = TFunction fn } ->
 					let name = if field.cf_name = "new" then "__construct" else (field_name field) in
-					self#write_method name fn is_static;
+					self#write_method name fn is_static (has_class_field_flag field CfAbstract);
 					writer#write "\n"
 				| _ -> fail field.cf_pos __LOC__
 		(**
@@ -3843,6 +3947,7 @@ class generator (ctx:php_generator_context) =
 			Generates php file for specified type
 		*)
 		method generate (builder:type_builder) =
+			reset_context ctx;
 			let namespace = builder#get_namespace
 			and name = builder#get_name in
 			let filename = (create_dir_recursive (build_dir :: namespace)) ^ "/" ^ name ^ ".php" in
@@ -3979,7 +4084,9 @@ let generate (com:context) =
 			pgc_skip_line_directives = Common.defined com Define.RealPosition;
 			pgc_prefix = Str.split (Str.regexp "\\.") (Common.defined_value_safe com Define.PhpPrefix);
 			pgc_boot = get_boot com;
-			pgc_namespaces_types_cache = Hashtbl.create 512
+			pgc_namespaces_types_cache = Hashtbl.create 512;
+			pgc_anons = Hashtbl.create 0;
+			pgc_bottom_buffer = Buffer.create 0
 		}
 	in
 	let gen = new generator ctx in

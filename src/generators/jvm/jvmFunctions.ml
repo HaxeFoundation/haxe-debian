@@ -3,14 +3,14 @@ open JvmSignature
 open NativeSignatures
 
 type signature_classification =
+	| CBool
 	| CByte
 	| CChar
-	| CDouble
-	| CFloat
+	| CShort
 	| CInt
 	| CLong
-	| CShort
-	| CBool
+	| CFloat
+	| CDouble
 	| CObject
 
 type method_signature = {
@@ -122,15 +122,18 @@ class typed_functions = object(self)
 		end;
 		meth
 
-	method make_forward_method
+	method make_forward_method_jsig
 		(jc : JvmClass.builder)
 		(jm : JvmMethod.builder)
-		(meth_from : method_signature)
-		(meth_to : method_signature)
+		(name : string)
+		(args_from : jsignature list)
+		(ret_from : jsignature option)
+		(args_to : jsignature list)
+		(ret_to : jsignature option)
 	=
 		let args = List.mapi (fun i jsig ->
 			jm#add_local (Printf.sprintf "arg%i" i) jsig VarArgument
-		) meth_from.dargs in
+		) args_from in
 		jm#finalize_arguments;
 		jm#load_this;
 		let rec loop loads jsigs = match loads,jsigs with
@@ -146,9 +149,9 @@ class typed_functions = object(self)
 			| _,[] ->
 				Globals.die "" __LOC__
 		in
-		loop args meth_to.dargs;
-		jm#invokevirtual jc#get_this_path meth_to.name (method_sig meth_to.dargs meth_to.dret);
-		begin match meth_from.dret,meth_to.dret with
+		loop args args_to;
+		jm#invokevirtual jc#get_this_path name (method_sig args_to ret_to);
+		begin match ret_from,ret_to with
 		| None,None ->
 			()
 		| Some jsig,Some _ ->
@@ -159,6 +162,14 @@ class typed_functions = object(self)
 			jm#load_default_value jsig;
 		end;
 		jm#return;
+
+	method make_forward_method
+		(jc : JvmClass.builder)
+		(jm : JvmMethod.builder)
+		(meth_from : method_signature)
+		(meth_to : method_signature)
+	=
+		self#make_forward_method_jsig jc jm meth_to.name meth_from.dargs meth_from.dret meth_to.dargs meth_to.dret
 
 	method generate_invoke_dynamic (jc : JvmClass.builder) =
 		let array_sig = TArray(object_sig,None) in
@@ -214,7 +225,7 @@ class typed_functions = object(self)
 		let jc = new JvmClass.builder (["haxe";"jvm"],"VarArgs") haxe_function_path in
 		jc#add_access_flag 1; (* public *)
 		let jm_ctor = jc#spawn_method "<init>" (method_sig [haxe_function_sig] None) [MPublic] in
-		jm_ctor#add_argument_and_field "func" haxe_function_sig;
+		jm_ctor#add_argument_and_field "func" haxe_function_sig [FdPublic;FdFinal];
 		jm_ctor#finalize_arguments;
 		jm_ctor#load_this;
 		jm_ctor#call_super_ctor ConstructInit (method_sig [] None);
@@ -307,7 +318,14 @@ module JavaFunctionalInterfaces = struct
 				jpath = juf,"BiConsumer";
 				jname = "accept";
 				jparams = ["T";"U"]
-			}
+			};
+			{
+				jargs = [tp "T"];
+				jret = Some (tp "R");
+				jpath = juf,"Function";
+				jname = "apply";
+				jparams = ["T";"R"]
+			};
 		]
 
 	let unify jfi args ret =
@@ -351,6 +369,7 @@ module JavaFunctionalInterfaces = struct
 end
 
 open JavaFunctionalInterfaces
+open JvmGlobals
 
 class typed_function
 	(functions : typed_functions)
@@ -362,11 +381,6 @@ class typed_function
 = object(self)
 
 	val jc_closure =
-		let patch_name name = match name with
-			| "<init>" -> "new"
-			| "<clinit>" -> "__init__"
-			| name -> name
-		in
 		let name = match kind with
 			| FuncLocal ->
 				Printf.sprintf "Closure_%s_%i" (patch_name host_method#get_name) host_method#get_next_closure_id
@@ -385,7 +399,7 @@ class typed_function
 		let context_sigs = List.map snd context in
 		let jm_ctor = jc_closure#spawn_method "<init>" (method_sig context_sigs None) (if public then [MPublic] else []) in
 		List.iter (fun (name,jsig) ->
-			jm_ctor#add_argument_and_field name jsig;
+			jm_ctor#add_argument_and_field name jsig [FdPublic;FdFinal];
 		) context;
 		jm_ctor#load_this;
 		jm_ctor#call_super_ctor ConstructInit (method_sig [] None);

@@ -58,7 +58,6 @@ type lexer_file = {
 	mutable lmaxline : int;
 	mutable llines : (int * int) list;
 	mutable lalines : (int * int) array;
-	mutable lstrings : int list;
 	mutable llast : int;
 	mutable llastindex : int;
 }
@@ -70,7 +69,6 @@ let make_file file =
 		lmaxline = 1;
 		llines = [0,1];
 		lalines = [|0,1|];
-		lstrings = [];
 		llast = max_int;
 		llastindex = 0;
 	}
@@ -128,37 +126,6 @@ let newline lexbuf =
 	let cur = !cur in
 	cur.lline <- cur.lline + 1;
 	cur.llines <- (lexeme_end lexbuf,cur.lline) :: cur.llines
-
-let fmt_pos p =
-	p.pmin + (p.pmax - p.pmin) * 1000000
-
-let add_fmt_string p =
-	let file = (try
-		Hashtbl.find all_files p.pfile
-	with Not_found ->
-		let f = make_file p.pfile in
-		Hashtbl.replace all_files p.pfile f;
-		f
-	) in
-	file.lstrings <- (fmt_pos p) :: file.lstrings
-
-let fast_add_fmt_string p =
-	let cur = !cur in
-	cur.lstrings <- (fmt_pos p) :: cur.lstrings
-
-let is_fmt_string p =
-	try
-		let file = Hashtbl.find all_files p.pfile in
-		List.mem (fmt_pos p) file.lstrings
-	with Not_found ->
-		false
-
-let remove_fmt_string p =
-	try
-		let file = Hashtbl.find all_files p.pfile in
-		file.lstrings <- List.filter ((<>) (fmt_pos p)) file.lstrings
-	with Not_found ->
-		()
 
 let find_line p f =
 	(* rebuild cache if we have a new line *)
@@ -316,6 +283,20 @@ let sharp_ident = [%sedlex.regexp?
 	)
 ]
 
+let is_whitespace = function
+	| ' ' | '\n' | '\r' | '\t' -> true
+	| _ -> false
+
+let string_is_whitespace s =
+	try
+		for i = 0 to String.length s - 1 do
+			if not (is_whitespace (String.unsafe_get s i)) then
+				raise Exit
+		done;
+		true
+	with Exit ->
+		false
+
 let idtype = [%sedlex.regexp? Star '_', 'A'..'Z', Star ('_' | 'a'..'z' | 'A'..'Z' | '0'..'9')]
 
 let integer = [%sedlex.regexp? ('1'..'9', Star ('0'..'9')) | '0']
@@ -374,7 +355,7 @@ let rec token lexbuf =
 	| "||" -> mk lexbuf (Binop OpBoolOr)
 	| "<<" -> mk lexbuf (Binop OpShl)
 	| "->" -> mk lexbuf Arrow
-	| "..." -> mk lexbuf (Binop OpInterval)
+	| "..." -> mk lexbuf Spread
 	| "=>" -> mk lexbuf (Binop OpArrow)
 	| "!" -> mk lexbuf (Unop Not)
 	| "<" -> mk lexbuf (Binop OpLt)
@@ -417,9 +398,7 @@ let rec token lexbuf =
 		let pmin = lexeme_start lexbuf in
 		let pmax = (try string2 lexbuf with Exit -> error Unterminated_string pmin) in
 		let str = (try unescape (contents()) with Invalid_escape_sequence(c,i,msg) -> error (Invalid_escape (c,msg)) (pmin + i)) in
-		let t = mk_tok (Const (String(str,SSingleQuotes))) pmin pmax in
-		fast_add_fmt_string (snd t);
-		t
+		mk_tok (Const (String(str,SSingleQuotes))) pmin pmax;
 	| "~/" ->
 		reset();
 		let pmin = lexeme_start lexbuf in
@@ -544,9 +523,8 @@ and code_string lexbuf open_braces =
 	| "'" ->
 		add "'";
 		let pmin = lexeme_start lexbuf in
-		let pmax = (try string2 lexbuf with Exit -> error Unterminated_string pmin) in
+		(try ignore(string2 lexbuf) with Exit -> error Unterminated_string pmin);
 		add "'";
-		fast_add_fmt_string { pfile = !cur.lfile; pmin = pmin; pmax = pmax };
 		code_string lexbuf open_braces
 	| "/*" ->
 		let pmin = lexeme_start lexbuf in
@@ -634,6 +612,11 @@ let rec sharp_token lexbuf =
 	| Plus (Chars " \t") -> sharp_token lexbuf
 	| "\r\n" -> newline lexbuf; sharp_token lexbuf
 	| '\n' | '\r' -> newline lexbuf; sharp_token lexbuf
+	| "/*" ->
+		reset();
+		let pmin = lexeme_start lexbuf in
+		ignore(try comment lexbuf with Exit -> error Unclosed_comment pmin);
+		sharp_token lexbuf
 	| _ -> token lexbuf
 
 let lex_xml p lexbuf =

@@ -198,12 +198,12 @@ class TestStrict {
 	}
 
 	static function call_onNullableValue_shouldFail() {
-		var fn:Null<Void->Void> = null;
+		var fn:Null<()->Void> = null;
 		shouldFail(fn());
 	}
 
 	static function call_onNotNullableValue_shouldPass() {
-		var fn:Void->Void = function() {}
+		var fn:()->Void = function() {}
 		fn();
 	}
 
@@ -235,6 +235,13 @@ class TestStrict {
 		var v:Null<String> = null;
 		shouldFail(var s:String = v);
 		shouldFail(var s:String = null);
+	}
+
+	static function unsafeNullableVar_assignedToNonNullablePlases_shouldPass() {
+		var @:nullSafety(Off) n:Null<String> = null;
+		var s:String = n;
+		function test(s:String) {}
+		test(n);
 	}
 
 	static function assign_nullableValueToNotNullable_shouldFail() {
@@ -747,8 +754,8 @@ class TestStrict {
 	}
 
 	static function functionWithNullableReturnType_toVoidFunction_shouldPass() {
-		var n:Void->Null<String> = () -> null;
-		var f:Void->Void = n;
+		var n:()->Null<String> = () -> null;
+		var f:()->Void = n;
 	}
 
 	static public function tryBlock_couldNotBeDeadEndForOuterBlock() {
@@ -817,7 +824,7 @@ class TestStrict {
 			recursive(() -> a.length);
 		}
 	}
-	static function recursive(cb:Void->Int) {
+	static function recursive(cb:()->Int) {
 		if(Std.random(10) == 0) {
 			recursive(cb);
 		} else {
@@ -937,6 +944,12 @@ class TestStrict {
 		var x:NullFloat = null;
 		var y:Float = x.val();
 		x += x;
+	}
+
+	static function issue9649_nullCheckedAbstractShouldUnify_shouldPass() {
+		var x:NullFloat = null;
+		var y:Float = 0.0;
+		if(x!=null) y = x;
 	}
 
 	static function issue8443_nullPassedToInline_shouldPass() {
