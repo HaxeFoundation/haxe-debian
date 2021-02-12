@@ -311,15 +311,15 @@ module InterferenceReport = struct
 			(* vars *)
 			| TLocal v ->
 				set_var_read ir v;
-				if v.v_capture then set_state_read ir;
+				if has_var_flag v VCaptured then set_state_read ir;
 			| TBinop(OpAssign,{eexpr = TLocal v},e2) ->
 				set_var_write ir v;
-				if v.v_capture then set_state_write ir;
+				if has_var_flag v VCaptured then set_state_write ir;
 				loop e2
 			| TBinop(OpAssignOp _,{eexpr = TLocal v},e2) ->
 				set_var_read ir v;
 				set_var_write ir v;
-				if v.v_capture then begin
+				if has_var_flag v VCaptured then begin
 					set_state_read ir;
 					set_state_write ir;
 				end;
@@ -589,7 +589,7 @@ module Fusion = struct
 			let num_writes = state#get_writes v in
 			let can_be_used_as_value = can_be_used_as_value com e in
 			let is_compiler_generated = match v.v_kind with VUser _ | VInlined -> false | _ -> true in
-			let has_type_params = match v.v_extra with Some (tl,_) when tl <> [] -> true | _ -> false in
+			let has_type_params = match v.v_extra with Some ve when ve.v_params <> [] -> true | _ -> false in
 			let b = num_uses <= 1 &&
 			        num_writes = 0 &&
 			        can_be_used_as_value &&
@@ -651,7 +651,7 @@ module Fusion = struct
 				end
 			| {eexpr = TVar(v1,Some e1)} :: el when config.optimize && config.local_dce && state#get_reads v1 = 0 && state#get_writes v1 = 0 ->
 				fuse acc (e1 :: el)
-			| ({eexpr = TVar(v1,None)} as ev) :: el when not v1.v_capture ->
+			| ({eexpr = TVar(v1,None)} as ev) :: el when not (has_var_flag v1 VCaptured) ->
 				let found = ref false in
 				let rec replace deep e = match e.eexpr with
 					| TBinop(OpAssign,{eexpr = TLocal v2},e2) when v1 == v2 ->
@@ -748,7 +748,7 @@ module Fusion = struct
 							found := true;
 							if type_change_ok com v1.v_type e1.etype then e1 else mk (TCast(e1,None)) v1.v_type e.epos
 						| TLocal v ->
-							if has_var_write ir v || ((v.v_capture || ExtType.has_reference_semantics v.v_type) && (has_state_write ir)) then raise Exit;
+							if has_var_write ir v || ((has_var_flag v VCaptured || ExtType.has_reference_semantics v.v_type) && (has_state_write ir)) then raise Exit;
 							e
 						| TBinop(OpAssign,({eexpr = TLocal v} as e1),e2) ->
 							let e2 = replace e2 in
@@ -1179,7 +1179,7 @@ module Purity = struct
 					apply_to_class com c
 				with Purity_conflict(impure,p) ->
 					com.error "Impure field overrides/implements field which was explicitly marked as @:pure" impure.pn_field.cf_pos;
-					Error.error "Pure field is here" p;
+					Error.error (Error.compl_msg "Pure field is here") p;
 				end
 			| _ -> ()
 		) com.types;

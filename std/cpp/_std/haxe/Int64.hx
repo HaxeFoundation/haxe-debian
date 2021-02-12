@@ -28,7 +28,6 @@ import haxe.Int64Helper;
 @:include("cpp/Int64.h")
 @:native("cpp::Int64Struct")
 private extern class ___Int64 {
-	function get():cpp.Int64;
 
 	@:native("_hx_int64_make")
 	static function make(high:Int32, low:Int32):__Int64;
@@ -136,12 +135,23 @@ private extern class ___Int64 {
 private typedef __Int64 = ___Int64;
 
 @:coreApi
+@:transitive
 abstract Int64(__Int64) from __Int64 to __Int64 {
 	public #if !cppia inline #end function copy():Int64
 		return this;
 
 	public static #if !cppia inline #end function make(high:Int32, low:Int32):Int64 {
 		return __Int64.make(high, low);
+	}
+
+	@:to
+	#if !cppia inline #end function toInt64():cpp.Int64 {
+		return cast this;
+	}
+
+	@:from
+	static #if !cppia inline #end function ofInt64(x:cpp.Int64):Int64 {
+		return cast x;
 	}
 
 	@:from

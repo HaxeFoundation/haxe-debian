@@ -67,7 +67,7 @@ class Flash {
 					File.saveContent(mmcfgPath, "ErrorReportingEnable=1\nTraceOutputFileEnable=1");
 				}
 				switch (ci) {
-					case AzurePipelines:
+					case GithubActions:
 						runCommand("xvfb-run", ["-a", playerCmd, "-v"]);
 					case _:
 						runCommand(playerCmd, ["-v"]);
@@ -76,10 +76,10 @@ class Flash {
 				if (commandResult("brew", ["cask", "list", "flash-player-debugger"]).exitCode == 0) {
 					return;
 				}
-				// runCommand("brew", ["uninstall", "openssl@1.0.2t"]);
-				// runCommand("brew", ["uninstall", "python@2.7.17"]);
-				// runCommand("brew", ["untap", "local/openssl"]);
-				// runCommand("brew", ["untap", "local/python2"]);
+				runCommand("brew", ["uninstall", "openssl@1.0.2t"], false, true);
+				runCommand("brew", ["uninstall", "python@2.7.17"], false, true);
+				runCommand("brew", ["untap", "local/openssl"], false, true);
+				runCommand("brew", ["untap", "local/python2"], false, true);
 				runCommand("brew", ["update"]);
 				runCommand("brew", ["install", "--cask", "flash-player-debugger"]);
 
@@ -108,7 +108,7 @@ class Flash {
 		switch (systemName) {
 			case "Linux":
 				switch (ci) {
-					case AzurePipelines:
+					case GithubActions:
 						new Process("xvfb-run", ["-a", playerCmd, swf]);
 					case _:
 						new Process(playerCmd, [swf]);
