@@ -1,3 +1,9 @@
+haxe (1:4.2.0-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Andy Li <andy@onthewings.net>  Fri, 12 Feb 2021 12:57:25 +0800
+
 haxe (1:4.1.5-1) unstable; urgency=medium
 
   * New upstream version.
