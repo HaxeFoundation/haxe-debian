@@ -593,6 +593,9 @@ let rec type_constant_value basic (e,p) =
 	| _ ->
 		error "Constant value expected" p
 
+let is_constant_value basic e =
+	try (ignore (type_constant_value basic e); true) with Error (Custom _,_) -> false
+
 let for_remap basic v e1 e2 p =
 	let v' = alloc_var v.v_kind v.v_name e1.etype e1.epos in
 	let ev' = mk (TLocal v') e1.etype e1.epos in
@@ -766,8 +769,8 @@ let collect_captured_vars e =
 	let accesses_this = ref false in
 	let declare v = Hashtbl.add known v.v_id () in
 	let rec loop e = match e.eexpr with
-		| TLocal ({v_capture = true; v_id = id} as v) when not (Hashtbl.mem known id) ->
-			Hashtbl.add known id ();
+		| TLocal v when has_var_flag v VCaptured &&  not (Hashtbl.mem known v.v_id) ->
+			Hashtbl.add known v.v_id ();
 			unknown := v :: !unknown
 		| TConst (TThis | TSuper) ->
 			accesses_this := true;

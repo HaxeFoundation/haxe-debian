@@ -339,6 +339,7 @@ let rec unfold_null t =
 	match t with
 		| TMono r -> (match r.tm_type with None -> t | Some t -> unfold_null t)
 		| TAbstract ({ a_path = ([],"Null") }, [t]) -> unfold_null t
+		| TAbstract (abstr,tl) when not (Meta.has Meta.CoreType abstr.a_meta) -> unfold_null (apply_params abstr.a_params tl abstr.a_this)
 		| TLazy f -> unfold_null (lazy_type f)
 		| TType (t,tl) -> unfold_null (apply_params t.t_params tl t.t_type)
 		| _ -> t
@@ -1073,6 +1074,7 @@ class expr_checker mode immediate_execution report =
 		*)
 		method can_pass_expr expr to_type p =
 			match expr.eexpr, to_type with
+				| TLocal v, _ when contains_unsafe_meta v.v_meta -> true
 				| TObjectDecl fields, TAnon to_type ->
 					List.for_all
 						(fun ((name, _, _), field_expr) ->
@@ -1389,19 +1391,20 @@ class expr_checker mode immediate_execution report =
 				| TNew (cls, params, args) ->
 					let ctor =
 						try
-							Some (get_constructor (fun ctor -> apply_params cls.cl_params params ctor.cf_type) cls)
+							Some (get_constructor cls)
 						with
 							| Not_found -> None
 					in
 					(match ctor with
 						| None ->
 							List.iter self#check_expr args
-						| Some (ctor_type, _) ->
+						| Some cf ->
 							let rec traverse t =
 								match follow t with
 									| TFun (types, _) -> self#check_args e_new args types
 									| _ -> fail ~msg:"Unexpected constructor type." e_new.epos __POS__
 							in
+							let ctor_type = apply_params cls.cl_params params cf.cf_type in
 							traverse ctor_type
 					)
 				| _ -> fail ~msg:"TNew expected" e_new.epos __POS__
@@ -1484,7 +1487,7 @@ class class_checker cls immediate_execution report =
 		*)
 		method check =
 			validate_safety_meta report cls_meta;
-			if is_safe_class && (not cls.cl_extern) && (not cls.cl_interface) then
+			if is_safe_class && (not (has_class_flag cls CExtern)) && (not (has_class_flag cls CInterface)) then
 				self#check_var_fields;
 			let check_field is_static f =
 				validate_safety_meta report f.cf_meta;

@@ -28,7 +28,7 @@ let collect_statistics ctx pos_filters with_expressions =
 			try
 				Hashtbl.find paths path
 			with Not_found ->
-				let unique = Path.UniqueKey.create path in
+				let unique = ctx.com.file_keys#get path in
 				Hashtbl.add paths path unique;
 				unique
 		)
@@ -55,29 +55,27 @@ let collect_statistics ctx pos_filters with_expressions =
 			Hashtbl.replace symbols p kind;
 		end
 	in
-	let collect_overrides c =
-		List.iter (fun cf ->
-			let rec loop c = match c.cl_super with
-				| Some (c,_) ->
-					begin try
-						let cf' = PMap.find cf.cf_name c.cl_fields in
-						add_relation cf'.cf_name_pos (Overridden,cf.cf_name_pos)
-					with Not_found ->
-						()
-					end;
-					loop c
-				| _ ->
+	let check_override c cf =
+		let rec loop c = match c.cl_super with
+			| Some (c,_) ->
+				begin try
+					let cf' = PMap.find cf.cf_name c.cl_fields in
+					add_relation cf'.cf_name_pos (Overridden,cf.cf_name_pos)
+				with Not_found ->
 					()
-			in
-			loop c
-		) c.cl_overrides
+				end;
+				loop c
+			| _ ->
+				()
+		in
+		loop c
 	in
 	let collect_implementations c =
 		let memo = Hashtbl.create 0 in
 		let rec loop c1 =
 			if not (Hashtbl.mem memo c1.cl_path) then begin
 				Hashtbl.add memo c1.cl_path true;
-				if c1.cl_interface then
+				if (has_class_flag c1 CInterface) then
 					add_relation c.cl_name_pos (Extended,c1.cl_name_pos)
 				else begin
 					add_relation c.cl_name_pos (Implemented,c1.cl_name_pos);
@@ -224,7 +222,7 @@ let collect_statistics ctx pos_filters with_expressions =
 	let f = function
 		| TClassDecl c ->
 			check_module c.cl_module;
-			declare (if c.cl_interface then (SKInterface c) else (SKClass c)) c.cl_name_pos;
+			declare (if (has_class_flag c CInterface) then (SKInterface c) else (SKClass c)) c.cl_name_pos;
 			begin match c.cl_super with
 				| None -> ()
 				| Some (c',_) ->
@@ -234,8 +232,7 @@ let collect_statistics ctx pos_filters with_expressions =
 					in
 					loop c'
 			end;
-			collect_overrides c;
-			if c.cl_interface then
+			if (has_class_flag c CInterface) then
 				collect_implementations c;
 			let field cf =
 				if cf.cf_pos.pmin > c.cl_name_pos.pmin then declare (SKField (cf,Some c.cl_path)) cf.cf_name_pos;
@@ -245,7 +242,10 @@ let collect_statistics ctx pos_filters with_expressions =
 				end
 			in
 			Option.may field c.cl_constructor;
-			List.iter field c.cl_ordered_fields;
+			List.iter (fun cf ->
+				if has_class_field_flag cf CfOverride then check_override c cf;
+				field cf;
+			) c.cl_ordered_fields;
 			List.iter field c.cl_ordered_statics;
 		| TEnumDecl en ->
 			check_module en.e_module;
