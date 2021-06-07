@@ -80,13 +80,18 @@ let rec unify_call_args ctx el args r callp inline force_inline in_overload =
 		skipped := (name,ul,p) :: !skipped;
 		default_value name t
 	in
-	(* let force_inline, is_extern = match cf with Some(TInst(c,_),f) -> is_forced_inline (Some c) f, (has_class_flag c CExtern) | _ -> false, false in *)
-	let type_against name t e =
+	let handle_errors fn =
 		try
-			let e = type_expr ctx e (WithType.with_argument t name) in
-			!cast_or_unify_raise_ref ctx t e e.epos
+			fn()
 		with Error(l,p) when (match l with Call_error _ | Module_not_found _ -> false | _ -> true) ->
 			raise (WithTypeError (l,p))
+	in
+	(* let force_inline, is_extern = match cf with Some(TInst(c,_),f) -> is_forced_inline (Some c) f, (has_class_flag c CExtern) | _ -> false, false in *)
+	let type_against name t e =
+		handle_errors (fun() ->
+			let e = type_expr ctx e (WithType.with_argument t name) in
+			!cast_or_unify_raise_ref ctx t e e.epos
+		)
 	in
 	let rec loop el args = match el,args with
 		| [],[] ->
@@ -120,11 +125,8 @@ let rec unify_call_args ctx el args r callp inline force_inline in_overload =
 						| _ when ExtType.is_mono (follow arg_t) ->
 							(try
 								let el = type_rest mk_mono in
-								try
-									Type.unify arg_t (unify_min ctx el);
-									el
-								with Unify_error _ ->
-									die ~p:callp "Unexpected unification error" __LOC__
+								unify ctx (unify_min ctx el) arg_t (punion_el (List.map (fun e -> ((),e.epos)) el));
+								el
 							with WithTypeError(ul,p) ->
 								arg_error ul name false p)
 						| _ ->
@@ -222,6 +224,32 @@ type overload_kind =
 	| OverloadMeta (* @:overload(function() {}) *)
 	| OverloadNone
 
+(**
+	Unifies `el_typed` against the types from `args` list starting at the beginning
+	of `args` list.
+
+	Returns a tuple of a part of `args` covered by `el_typed`, and a part of `args`
+	not used for `el_typed` unification.
+*)
+let unify_typed_args ctx tmap args el_typed call_pos =
+	let rec loop acc_args tmap args el =
+		match args,el with
+		| [], _ :: _ ->
+			let call_error = Call_error(Too_many_arguments) in
+			raise(Error(call_error,call_pos))
+		| _, [] ->
+			List.rev acc_args,args
+		| ((_,opt,t0) as arg) :: args,e :: el ->
+			begin try
+				unify_raise ctx (tmap e.etype) t0 e.epos;
+			with Error(Unify _ as msg,p) ->
+				let call_error = Call_error(Could_not_unify msg) in
+				raise(Error(call_error,p))
+			end;
+			loop (arg :: acc_args) (fun t -> t) args el
+	in
+	loop [] tmap args el_typed
+
 let unify_field_call ctx fa el_typed el p inline =
 	let expand_overloads cf =
 		cf :: cf.cf_overloads
@@ -300,22 +328,7 @@ let unify_field_call ctx fa el_typed el p inline =
 		let t = map (apply_params cf.cf_params monos cf.cf_type) in
 		match follow t with
 		| TFun(args,ret) ->
-			let rec loop acc_el acc_args tmap args el_typed = match args,el_typed with
-				| ((_,opt,t0) as arg) :: args,e :: el_typed ->
-					begin try
-						unify_raise ctx (tmap e.etype) t0 e.epos;
-					with Error(Unify _ as msg,p) ->
-						let call_error = Call_error(Could_not_unify msg) in
-						raise(Error(call_error,p))
-					end;
-					loop (e :: acc_el) (arg :: acc_args) (fun t -> t) args el_typed
-				| [],_ :: _ ->
-					let call_error = Call_error(Too_many_arguments) in
-					raise(Error(call_error,p))
-				| _ ->
-					List.rev acc_el,List.rev acc_args,args
-			in
-			let el_typed,args_typed,args = loop [] [] tmap args el_typed in
+			let args_typed,args = unify_typed_args ctx tmap args el_typed p in
 			let el,_ =
 				try
 					unify_call_args ctx el args ret p inline is_forced_inline in_overload
@@ -347,7 +360,7 @@ let unify_field_call ctx fa el_typed el p inline =
 			| [] -> [],[]
 			| cf :: candidates ->
 				let known_monos = List.map (fun (m,_) ->
-					m,m.tm_type,m.tm_constraints
+					m,m.tm_type,m.tm_down_constraints
 				) ctx.monomorphs.perfunction in
 				let current_monos = ctx.monomorphs.perfunction in
 				begin try
@@ -361,7 +374,7 @@ let unify_field_call ctx fa el_typed el p inline =
 				with Error ((Call_error cerr as err),p) ->
 					List.iter (fun (m,t,constr) ->
 						if t != m.tm_type then m.tm_type <- t;
-						if constr != m.tm_constraints then m.tm_constraints <- constr;
+						if constr != m.tm_down_constraints then m.tm_down_constraints <- constr;
 					) known_monos;
 					ctx.monomorphs.perfunction <- current_monos;
 					maybe_raise_unknown_ident cerr p;
@@ -515,22 +528,24 @@ object(self)
 
 	(* Calls `e` with arguments `el`. Does not inspect the callee expression, so it should only be
 	   used with actual expression calls and not with something like field calls. *)
-	method expr_call (e : texpr) (el : expr list) =
+	method expr_call (e : texpr) (el_typed : texpr list) (el : expr list) =
 		check_assign();
 		let rec loop t = match follow t with
 		| TFun (args,r) ->
-			let el, tfunc = unify_call_args ctx el args r p false false false in
+			let args_typed,args_left = unify_typed_args ctx (fun t -> t) args el_typed p in
+			let el, tfunc = unify_call_args ctx el args_left r p false false false in
+			let el = el_typed @ el in
 			let r = match tfunc with TFun(_,r) -> r | _ -> die "" __LOC__ in
 			mk (TCall (e,el)) r p
 		| TAbstract(a,tl) when Meta.has Meta.Callable a.a_meta ->
 			loop (Abstract.get_underlying_type a tl)
 		| TMono _ ->
 			let t = mk_mono() in
-			let el = List.map (fun e -> type_expr ctx e WithType.value) el in
+			let el = el_typed @ List.map (fun e -> type_expr ctx e WithType.value) el in
 			unify ctx (tfun (List.map (fun e -> e.etype) el) t) e.etype e.epos;
 			mk (TCall (e,el)) t p
 		| t ->
-			let el = List.map (fun e -> type_expr ctx e WithType.value) el in
+			let el = el_typed @ List.map (fun e -> type_expr ctx e WithType.value) el in
 			let t = if t == t_dynamic then
 				t_dynamic
 			else if ctx.untyped then
@@ -602,7 +617,7 @@ object(self)
 			| AccCall ->
 				self#accessor_call fa el_typed el
 			| _ ->
-				self#expr_call (FieldAccess.get_field_expr fa FCall) el
+				self#expr_call (FieldAccess.get_field_expr fa FCall) el_typed el
 			end
 end
 
