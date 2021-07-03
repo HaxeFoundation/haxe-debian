@@ -1,8 +1,23 @@
+2021-01-01 4.2.3:
+
+	General improvements:
+
+	all : analyzer optimizations
+	macro : support maps in `haxe.macro.Context.makeExpr` (#10259)
+	js : added `-D js-global=globalThis` to customize global object name (#10282)
+	php : added externs for `quoted_printable_decode`, `quoted_printable_encode`, `Attribute`, `NumberFormat`, `IntlCalendar` and other `Intl*` classes
+
+	Bugfixes:
+
+	all : fixed compiler crash on some unreachable code blocks (#10261)
+	jvm : fixed `@:native` (#10280)
+	jvm : fixed `--xml` generation (#10279)
+
 2021-05-14 4.2.2:
 
 	Bugfixes:
 
-	all : fixed piping stdin/stdout in `--cmd` (#4660, #6726)
+	all : fixed piping stdin/stdout in `--cmd` (#4669, #6726)
 	all : fixed rest args typing for overloaded functions (#10143)
 	all : fixed using `var` fields as static extensions (#10144)
 	all : fixed completion for a type in `expr is Type` (#10167)
