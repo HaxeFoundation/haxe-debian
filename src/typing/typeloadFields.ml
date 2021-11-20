@@ -853,11 +853,6 @@ module TypeBinding = struct
 					let e = if ctx.com.display.dms_display && ctx.com.display.dms_error_policy <> EPCollect then
 						e
 					else begin
-						let e = Optimizer.reduce_loop ctx (maybe_run_analyzer e) in
-						let e = (match Optimizer.make_constant_expression ctx e with
-							| Some e -> e
-							| None -> e
-						) in
 						let rec check_this e = match e.eexpr with
 							| TConst TThis ->
 								display_error ctx "Cannot access this or other member field in variable initialization" e.epos;
@@ -1049,9 +1044,12 @@ let check_abstract (ctx,cctx,fctx) c cf fd t ret p =
 							| TMono _ when (match t with TFun(_,r) -> r == t_dynamic | _ -> false) -> t_dynamic
 							| m -> m
 					in
+					let is_multitype_cast = Meta.has Meta.MultiType a.a_meta && not fctx.is_abstract_member in
+					if is_multitype_cast && not (Meta.has Meta.MultiType cf.cf_meta) then
+						cf.cf_meta <- (Meta.MultiType,[],null_pos) :: cf.cf_meta;
 					let r = exc_protect ctx (fun r ->
 						r := lazy_processing (fun () -> t);
-						let args = if Meta.has Meta.MultiType a.a_meta then begin
+						let args = if is_multitype_cast then begin
 							let ctor = try
 								PMap.find "_new" c.cl_statics
 							with Not_found ->
