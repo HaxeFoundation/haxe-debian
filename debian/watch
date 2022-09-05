@@ -1,3 +1,3 @@
-version=3
-opts="uversionmangle=s/-/~/g"\
+version=4
+opts="uversionmangle=s/-/~/g" \
  https://github.com/HaxeFoundation/haxe/releases/latest .*/archive/refs/tags/(\d\S*)\.tar\.gz

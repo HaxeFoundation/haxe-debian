@@ -22,5 +22,5 @@ get-orig-source:
 	# create tar manually from git, in order to get submodules
 	git clone --branch $(DEB_VERSION_UPSTREAM) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
 	cd orig-source && \
-		python $(CURDIR)/debian/git-archive-all ../../haxe_$(DEB_VERSION_UPSTREAM).orig.tar.gz
+		python3 $(CURDIR)/debian/git-archive-all ../../haxe_$(DEB_VERSION_UPSTREAM).orig.tar.gz
 	rm -rf orig-source

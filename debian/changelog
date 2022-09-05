@@ -1,3 +1,13 @@
+haxe (1:4.2.5-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Update d/rules get-orig-source to use python3.
+  * Update d/copyright about extlib(-leftovers) and xml-light (removed).
+  * Update d/watch to version 4.
+  * Bump Standards-Version to 4.6.1 (no changes).
+
+ -- Andy Li <andy@onthewings.net>  Mon, 05 Sep 2022 21:44:54 +0800
+
 haxe (1:4.2.4-1) unstable; urgency=medium
 
   * New upstream version.

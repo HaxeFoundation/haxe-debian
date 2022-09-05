@@ -20,46 +20,14 @@ Files: libs/*
 Copyright: 2004-2008, Nicolas Cannasse
 License: GPL-2+
 
-Files: libs/extlib/*
+Files: libs/extlib-leftovers/*
 Copyright: 201, 2003, 2004, 2012, Nicolas Cannasse
 License: LGPL-2.1+
 
-Files: libs/extlib/dllist.ml
-  libs/extlib/dllist.mli
-Copyright: 2004, Brian Hurt, Jesse Guardiani
-License: LGPL-2.1+
-
-Files: libs/extlib/dynArray.ml
-  libs/extlib/dynArray.mli
-  libs/extlib/extList.ml
-  libs/extlib/extList.mli
-Copyright: 2003, Nicolas Cannasse
-  2003, Brian Hurt
-License: LGPL-2.1+
-
-Files: libs/extlib/extArray.ml
-  libs/extlib/extArray.mli
-Copyright: 2005, Richard W.M. Jones (rich @ annexia.org)
-License: LGPL-2.1+
-
-Files: libs/extlib/optParse.ml
-  libs/extlib/optParse.mli
-Copyright: 2004, Bardur Arantsson
-License: LGPL-2.1+
-
-Files: libs/extlib/pMap.ml
-  libs/extlib/pMap.mli
-Copyright: 1996-2003, Xavier Leroy, Nicolas Cannasse, Markus Mottl
-License: LGPL-2.1+
-
-Files: libs/extlib/std.ml
-Copyright: 2003, Nicolas Cannasse and Markus Mottl
-License: LGPL-2.1+
-
-Files: libs/extlib/uChar.ml
-  libs/extlib/uChar.mli
-  libs/extlib/uTF8.ml
-  libs/extlib/uTF8.mli
+Files: libs/extlib-leftovers/uCharExt.ml
+  libs/extlib-leftovers/uCharExt.mli
+  libs/extlib-leftovers/uTF8.ml
+  libs/extlib-leftovers/uTF8.mli
 Copyright: 2002, 2003, Yamagata Yoriyuki
 License: LGPL-2.1+
 
@@ -69,20 +37,6 @@ License: GPL-2+
 
 Files: libs/neko/ncompile.ml
 Copyright: 2005, Motion-Twin
-License: LGPL-2.1+
-
-Files: libs/xml-light/*
-Copyright: 2003, Nicolas Cannasse (ncannasse@motion-twin.com)
-License: LGPL-2.1+
-
-Files: libs/xml-light/xml.mli
-Copyright: 2003, Nicolas Cannasse (ncannasse@motion-twin.com)
-  2002, 2003, Nicolas Cannasse}
-License: LGPL-2.1+
-
-Files: libs/xml-light/xmlParser.ml
-Copyright: 2003, Nicolas Cannasse (ncannasse@motion-twin.com)
-  2003, Jacques Garrigue
 License: LGPL-2.1+
 
 Files: libs/pcre/*
