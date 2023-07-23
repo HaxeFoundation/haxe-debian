@@ -30,6 +30,19 @@ type module_check_policy =
 	| CheckFileContentModification
 	| NoCheckDependencies
 	| NoCheckShadowing
+	| Retype
+
+type module_skip_reason =
+	| DependencyDirty of path * module_skip_reason
+	| Tainted of string
+	| FileChanged of string
+	| Shadowed of string
+	| LibraryChanged
+
+type module_cache_state =
+	| MSGood
+	| MSBad of module_skip_reason
+	| MSUnknown
 
 type t =
 	| TMono of tmono
@@ -38,7 +51,7 @@ type t =
 	| TType of tdef * tparams
 	| TFun of tsignature
 	| TAnon of tanon
-	| TDynamic of t
+	| TDynamic of t option
 	| TLazy of tlazy ref
 	| TAbstract of tabstract * tparams
 
@@ -77,7 +90,13 @@ and tsignature = (string * bool * t) list * t
 
 and tparams = t list
 
-and type_params = (string * t) list
+and typed_type_param = {
+	ttp_name : string;
+	ttp_type : t;
+	ttp_default : t option;
+}
+
+and type_params = typed_type_param list
 
 and tconstant =
 	| TInt of int32
@@ -107,6 +126,7 @@ and tvar_kind =
 	| VInlined
 	| VInlinedConstructorVariable
 	| VExtractorVariable
+	| VAbstractThis
 
 and tvar = {
 	mutable v_id : int;
@@ -193,7 +213,7 @@ and tclass_field = {
 	mutable cf_kind : field_kind;
 	mutable cf_params : type_params;
 	mutable cf_expr : texpr option;
-	mutable cf_expr_unoptimized : tfunc option;
+	mutable cf_expr_unoptimized : texpr option;
 	mutable cf_overloads : tclass_field list;
 	mutable cf_flags : int;
 }
@@ -221,6 +241,7 @@ and tinfos = {
 	mutable mt_meta : metadata;
 	mt_params : type_params;
 	mutable mt_using : (tclass * pos) list;
+	mutable mt_restore : unit -> unit;
 }
 
 and tclass = {
@@ -233,6 +254,7 @@ and tclass = {
 	mutable cl_meta : metadata;
 	mutable cl_params : type_params;
 	mutable cl_using : (tclass * pos) list;
+	mutable cl_restore : unit -> unit;
 	(* do not insert any fields above *)
 	mutable cl_kind : tclass_kind;
 	mutable cl_flags : int;
@@ -248,7 +270,6 @@ and tclass = {
 	mutable cl_init : texpr option;
 
 	mutable cl_build : unit -> build_state;
-	mutable cl_restore : unit -> unit;
 	(*
 		These are classes which directly extend or directly implement this class.
 		Populated automatically in post-processing step (Filters.run)
@@ -277,6 +298,7 @@ and tenum = {
 	mutable e_meta : metadata;
 	mutable e_params : type_params;
 	mutable e_using : (tclass * pos) list;
+	mutable e_restore : unit -> unit;
 	(* do not insert any fields above *)
 	e_type : tdef;
 	mutable e_extern : bool;
@@ -294,6 +316,7 @@ and tdef = {
 	mutable t_meta : metadata;
 	mutable t_params : type_params;
 	mutable t_using : (tclass * pos) list;
+	mutable t_restore : unit -> unit;
 	(* do not insert any fields above *)
 	mutable t_type : t;
 }
@@ -308,6 +331,7 @@ and tabstract = {
 	mutable a_meta : metadata;
 	mutable a_params : type_params;
 	mutable a_using : (tclass * pos) list;
+	mutable a_restore : unit -> unit;
 	(* do not insert any fields above *)
 	mutable a_ops : (Ast.binop * tclass_field) list;
 	mutable a_unops : (Ast.unop * unop_flag * tclass_field) list;
@@ -320,6 +344,7 @@ and tabstract = {
 	mutable a_array : tclass_field list;
 	mutable a_read : tclass_field option;
 	mutable a_write : tclass_field option;
+	mutable a_call : tclass_field option;
 	a_enum : bool;
 }
 
@@ -349,11 +374,11 @@ and module_def_extra = {
 	m_display : module_def_display;
 	mutable m_check_policy : module_check_policy list;
 	mutable m_time : float;
-	mutable m_dirty : path option;
+	mutable m_cache_state : module_cache_state;
 	mutable m_added : int;
-	mutable m_mark : int;
-	mutable m_deps : (int,module_def) PMap.t;
+	mutable m_checked : int;
 	mutable m_processed : int;
+	mutable m_deps : (int,module_def) PMap.t;
 	mutable m_kind : module_kind;
 	mutable m_binded_res : (string, string) PMap.t;
 	mutable m_if_feature : (string *(tclass * tclass_field * bool)) list;
@@ -392,6 +417,7 @@ type flag_tclass =
 	| CFinal
 	| CInterface
 	| CAbstract
+	| CFunctionalInterface
 
 type flag_tclass_field =
 	| CfPublic
@@ -405,6 +431,13 @@ type flag_tclass_field =
 	| CfImpl
 	| CfEnum
 	| CfGeneric
+	| CfDefault (* Interface field with default implementation (only valid on Java) *)
+	| CfPostProcessed (* Marker to indicate the field has been post-processed *)
+
+(* Order has to match declaration for printing*)
+let flag_tclass_field_names = [
+	"CfPublic";"CfStatic";"CfExtern";"CfFinal";"CfModifiesThis";"CfOverride";"CfAbstract";"CfOverload";"CfImpl";"CfEnum";"CfGeneric";"CfDefault"
+]
 
 type flag_tvar =
 	| VCaptured
@@ -412,3 +445,4 @@ type flag_tvar =
 	| VUsed (* used by the analyzer *)
 	| VAssigned
 	| VCaught
+	| VStatic

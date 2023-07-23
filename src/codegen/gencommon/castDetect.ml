@@ -185,7 +185,9 @@ let rec type_eq gen param a b =
 			) l1 l2
 		with
 			Unify_error l -> Type.error (cannot_unify a b :: l))
-	| TDynamic a , TDynamic b ->
+	| TDynamic None , TDynamic None ->
+		()
+	| TDynamic (Some a) , TDynamic (Some b) ->
 		type_eq gen param a b
 	| TAnon a1, TAnon a2 ->
 		(try
@@ -625,22 +627,24 @@ let choose_ctor gen cl tparams etl maybe_empty_t p =
 		match arglist, elist with
 		| [], [] -> true
 		| [(_,_,t)], elist when ExtType.is_rest (follow t) ->
-			let is_rest_array arg_t =
-				Type.fast_eq (Abstract.follow_with_abstracts t) (Abstract.follow_with_abstracts arg_t)
-			in
-			(match elist with
-			| [arg_t] when is_rest_array arg_t -> true
-			| _ ->
-				match follow t with
-				| TAbstract ({ a_path = ["haxe"],"Rest" }, [t1]) ->
-					let t1 = run_follow gen t1 in
-					(try
-						List.iter (fun et -> unify et t1) elist;
-						true
-					with Unify_error _ ->
-						false
-					)
-				| _ -> die "" __LOC__
+			(match follow t with
+			| TAbstract ({ a_path = ["haxe"],"Rest" } as a, [t1]) ->
+				let is_rest_array arg_t =
+					let boxed = TAbstract (a, [get_boxed gen t1]) in
+					Type.fast_eq (Abstract.follow_with_abstracts boxed) (Abstract.follow_with_abstracts arg_t)
+				in
+				(match elist with
+				| [arg_t] when is_rest_array arg_t -> true
+				| _ ->
+						let t1 = run_follow gen t1 in
+						(try
+							List.iter (fun et -> unify et t1) elist;
+							true
+						with Unify_error _ ->
+							false
+						)
+				)
+			| _ -> die "" __LOC__
 			)
 		| (_,_,t) :: arglist, et :: elist ->
 			(try
@@ -648,7 +652,6 @@ let choose_ctor gen cl tparams etl maybe_empty_t p =
 				unify et t;
 				check_arg arglist elist
 			with Unify_error el ->
-				(* List.iter (fun el -> gen.gcon.warning (Error.unify_error_msg (print_context()) el) p) el; *)
 				false
 			)
 		| _ ->
@@ -739,7 +742,7 @@ let handle_type_parameter gen e e1 ef ~clean_ef ~overloads_cast_to_base f elist 
 
 	(* this function will receive the original function argument, the applied function argument and the original function parameters. *)
 	(* from this info, it will infer the applied tparams for the function *)
-	let infer_params pos (original_args:((string * bool * t) list * t)) (applied_args:((string * bool * t) list * t)) (params:(string * t) list) calls_parameters_explicitly : tparams =
+	let infer_params pos (original_args:((string * bool * t) list * t)) (applied_args:((string * bool * t) list * t)) (params:typed_type_param list) calls_parameters_explicitly : tparams =
 		match params with
 		| [] -> []
 		| _ ->
@@ -766,12 +769,12 @@ let handle_type_parameter gen e e1 ef ~clean_ef ~overloads_cast_to_base f elist 
 						| [Cannot_unify (b, TAbstract(a,params))] ->
 							let a = apply_params a.a_params params a.a_this in
 							if not (shallow_eq a b) then
-								gen.gcon.warning ("This expression may be invalid") pos
+								gen.gwarning WGenerator ("This expression may be invalid") pos
 						| _ ->
-							gen.gcon.warning ("This expression may be invalid") pos
+							gen.gwarning WGenerator ("This expression may be invalid") pos
 						)
 				| Invalid_argument _ ->
-						gen.gcon.warning ("This expression may be invalid") pos
+						gen.gwarning WGenerator ("This expression may be invalid") pos
 			);
 
 			List.map (fun t ->
@@ -823,7 +826,7 @@ let handle_type_parameter gen e e1 ef ~clean_ef ~overloads_cast_to_base f elist 
 						(* f,f.cf_type, false *)
 						select_overload gen e1.etype ((f.cf_type,f) :: List.map (fun f -> f.cf_type,f) f.cf_overloads) [] [], true
 					| _ ->
-						gen.gcon.warning "Overloaded classfield typed as anonymous" ecall.epos;
+						gen.gwarning WGenerator "Overloaded classfield typed as anonymous" ecall.epos;
 						(cf, actual_t, true), true
 				in
 
@@ -846,7 +849,7 @@ let handle_type_parameter gen e e1 ef ~clean_ef ~overloads_cast_to_base f elist 
 					end;
 					{ cf_orig with cf_name = cf.cf_name },actual_t,false
 				| None ->
-					gen.gcon.warning "Cannot find matching overload" ecall.epos;
+					gen.gwarning WGenerator "Cannot find matching overload" ecall.epos;
 					cf, actual_t, true
 				else
 					cf,actual_t,error
@@ -928,7 +931,7 @@ let handle_type_parameter gen e e1 ef ~clean_ef ~overloads_cast_to_base f elist 
 							elist);
 					}, elist
 				with Invalid_argument _ ->
-					gen.gcon.warning ("This expression may be invalid" ) ecall.epos;
+					gen.gwarning WGenerator ("This expression may be invalid" ) ecall.epos;
 					{ ecall with eexpr = TCall({ e1 with eexpr = TField(!ef, f) }, elist) }, elist
 				in
 				let new_ecall = if fparams <> [] then gen.gparam_func_call new_ecall { e1 with eexpr = TField(!ef, f) } fparams elist else new_ecall in
@@ -958,7 +961,7 @@ let handle_type_parameter gen e e1 ef ~clean_ef ~overloads_cast_to_base f elist 
 		*)
 			| _ ->
 				let pt = match e with | None -> real_type | Some _ -> snd (get_fun e1.etype) in
-				let _params = match follow pt with | TEnum(_, p) -> p | _ -> gen.gcon.warning (debug_expr e1) e1.epos; die "" __LOC__ in
+				let _params = match follow pt with | TEnum(_, p) -> p | _ -> gen.gwarning WGenerator (debug_expr e1) e1.epos; die "" __LOC__ in
 				let args, ret = get_fun efield.ef_type in
 				let actual_t = TFun(List.map (fun (n,o,t) -> (n,o,gen.greal_type t)) args, gen.greal_type ret) in
 				(*
@@ -1142,7 +1145,7 @@ let configure gen ?(overloads_cast_to_base = false) maybe_empty_t calls_paramete
 				let base_type = match follow et with
 					| TInst({ cl_path = ([], "Array") } as cl, bt) -> gen.greal_type_param (TClassDecl cl) bt
 					| _ ->
-						gen.gcon.warning (debug_type et) e.epos;
+						gen.gwarning WGenerator (debug_type et) e.epos;
 						(match gen.gcurrent_class with
 							| Some cl -> print_endline (s_type_path cl.cl_path)
 							| _ -> ());
@@ -1186,7 +1189,7 @@ let configure gen ?(overloads_cast_to_base = false) maybe_empty_t calls_paramete
 					) (wrap_rest_args gen (TFun (args,rt)) eparams e.epos) args in
 					{ e with eexpr = TCall(ef, eparams) }
 				with | Not_found ->
-					gen.gcon.warning "No overload found for this constructor call" e.epos;
+					gen.gwarning WGenerator "No overload found for this constructor call" e.epos;
 					{ e with eexpr = TCall(ef, List.map run eparams) })
 			| TCall (ef, eparams) ->
 				(match ef.etype with
@@ -1214,7 +1217,7 @@ let configure gen ?(overloads_cast_to_base = false) maybe_empty_t calls_paramete
 				) (wrap_rest_args gen (TFun (args,rt)) eparams e.epos) args in
 				{ e with eexpr = TNew(cl, tparams, eparams) }
 			with | Not_found ->
-				gen.gcon.warning "No overload found for this constructor call" e.epos;
+				gen.gwarning WGenerator "No overload found for this constructor call" e.epos;
 				{ e with eexpr = TNew(cl, tparams, List.map run eparams) })
 			| TUnop((Increment | Decrement) as op, flag, ({ eexpr = TArray (arr, idx) } as e2))
 				when (match follow arr.etype with TInst({ cl_path = ["cs"],"NativeArray" },_) -> true | _ -> false) ->

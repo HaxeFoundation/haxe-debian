@@ -123,12 +123,15 @@ let create com api is_macro =
 		(* eval *)
 		toplevel = 	vobject {
 			ofields = [||];
-			oproto = fake_proto key_eval_toplevel;
+			oproto = OProto (fake_proto key_eval_toplevel);
 		};
 		eval = eval;
 		evals = evals;
 		exception_stack = [];
 		max_stack_depth = int_of_string (Common.defined_value_safe ~default:"1000" com Define.EvalCallStackDepth);
+		max_print_depth = int_of_string (Common.defined_value_safe ~default:"5" com Define.EvalPrintDepth);
+		print_indentation = match Common.defined_value_safe com Define.EvalPrettyPrint
+			with | "" -> None | "1" -> Some "  " | indent -> Some indent;
 	} in
 	if debug.support_debugger && not !GlobalState.debugger_initialized then begin
 		(* Let's wait till the debugger says we're good to continue. This allows it to finish configuration.
@@ -148,7 +151,16 @@ let create com api is_macro =
 		| _ ->
 			let msg =
 				match ex with
-				| Error.Error (err,_) -> Error.error_msg err
+				| Error.Error (err,p,_) ->
+						(* TODO hook global error reporting *)
+						(match (extract_located (Error.error_msg p err)) with
+						| [] -> ""
+						| (s,_) :: [] -> s
+						| (s,_) :: stack ->
+							List.fold_left (fun acc (s,p) ->
+								Printf.sprintf "%s%s\n" acc (Lexer.get_error_pos (Printf.sprintf "%s:%d: ") p)
+							) (s ^ "\n") stack
+						);
 				| _ -> Printexc.to_string ex
 			in
 			Printf.eprintf "%s\n" msg;
@@ -398,24 +410,42 @@ let set_error ctx b =
 let add_types ctx types ready =
 	if not ctx.had_error then ignore(catch_exceptions ctx (fun () -> ignore(add_types ctx types ready)) null_pos)
 
-let compiler_error msg pos =
+let make_runtime_error msg pos =
 	let vi = encode_instance key_haxe_macro_Error in
 	match vi with
 	| VInstance i ->
-		let msg = EvalString.create_unknown msg in
-		set_instance_field i key_exception_message msg;
+		let s = EvalString.create_unknown msg in
+		set_instance_field i key_exception_message s;
 		set_instance_field i key_pos (encode_pos pos);
-		set_instance_field i key_native_exception msg;
-		let ctx = get_ctx() in
-		let eval = get_eval ctx in
-		(match eval.env with
-		| Some _ ->
-			let stack = EvalStackTrace.make_stack_value (call_stack eval) in
-			set_instance_field i key_native_stack stack;
-		| None -> ());
-		exc vi
+		set_instance_field i key_native_exception s;
+		vi
 	| _ ->
 		die "" __LOC__
+
+let compiler_error msg =
+	let pos = extract_located_pos msg in
+	let items = extract_located msg in
+		let vi = make_runtime_error (fst (List.hd items)) pos in
+		match vi with
+		| VInstance i ->
+			(match items with
+			| [] | _ :: [] ->
+				let ctx = get_ctx() in
+				let eval = get_eval ctx in
+				(match eval.env with
+				| Some _ ->
+					let stack = EvalStackTrace.make_stack_value (call_stack eval) in
+					set_instance_field i key_native_stack stack;
+				| None -> ());
+
+			| (hd :: stack) ->
+				let stack = List.map (fun (s,p) -> make_runtime_error s p) stack in
+				set_instance_field i key_child_errors (encode_array stack);
+			);
+
+			exc vi
+		| _ ->
+			die "" __LOC__
 
 let rec value_to_expr v p =
 	let path i =
@@ -424,7 +454,7 @@ let rec value_to_expr v p =
 			let rec loop = function
 				| [] -> die "" __LOC__
 				| [name] -> (EConst (Ident name),p)
-				| name :: l -> (EField (loop l,name),p)
+				| name :: l -> (efield (loop l,name),p)
 			in
 			let t = t_infos t in
 			loop (List.rev (if t.mt_module.m_path = t.mt_path then fst t.mt_path @ [snd t.mt_path] else fst t.mt_module.m_path @ [snd t.mt_module.m_path;snd t.mt_path]))
@@ -439,7 +469,7 @@ let rec value_to_expr v p =
 	| VNull -> (EConst (Ident "null"),p)
 	| VTrue -> (EConst (Ident "true"),p)
 	| VFalse -> (EConst (Ident "false"),p)
-	| VInt32 i -> (EConst (Int (Int32.to_string i)),p)
+	| VInt32 i -> (EConst (Int (Int32.to_string i,None)),p)
 	| VFloat f -> haxe_float f p
 	| VString s -> (EConst (String(s.sstring,SDoubleQuotes)),p)
 	| VArray va -> (EArrayDecl (List.map (fun v -> value_to_expr v p) (EvalArray.to_list va)),p)
@@ -459,7 +489,7 @@ let rec value_to_expr v p =
 				| PEnum names -> fst (List.nth names e.eindex)
 				| _ -> die "" __LOC__
 			in
-			(EField (expr, name), p)
+			(efield (expr, name), p)
 		in
 		begin
 			match e.eargs with
@@ -470,7 +500,7 @@ let rec value_to_expr v p =
 		end
 	| VInstance {ikind = IIntMap m} ->
 		let el = IntHashtbl.fold (fun k v acc ->
-			let e_key = (EConst (Int (string_of_int k)),p) in
+			let e_key = (EConst (Int (string_of_int k, None)),p) in
 			(make_map_entry e_key v) :: acc
 		) m [] in
 		(EArrayDecl el,p)
@@ -555,7 +585,7 @@ let handle_decoding_error f v t =
 				| _ -> error "expected Bool" v
 			end
 		| TType(t,tl) ->
-			loop tabs (apply_params t.t_params tl t.t_type) v
+			loop tabs (apply_typedef t tl) v
 		| TAbstract({a_path=["haxe";"macro"],"Position"},_) ->
 			begin match v with
 				| VInstance {ikind=IPos _} -> f "#pos"
