@@ -523,8 +523,6 @@ let build_module_def ctx mt meta fvars context_init fbuild =
 	let f_enum = match mt with
 		| TClassDecl ({cl_kind = KAbstractImpl a} as c) when a.a_enum ->
 			Some (fun () ->
-				(* if p <> null_pos && not (Define.is_haxe3_compat ctx.com.defines) then
-					warning ctx WDeprecated "`@:enum abstract` is deprecated in favor of `enum abstract`" p; *)
 				context_init#run;
 				let e = build_enum_abstract ctx c a (fvars()) a.a_name_pos in
 				fbuild e;
@@ -596,7 +594,7 @@ let create_typer_context_for_class ctx cctx p =
 	} in
 	ctx
 
-let create_field_context cctx cff is_display_file display_modifier =
+let create_field_context ctx cctx cff is_display_file display_modifier =
 	let is_static = List.mem_assoc AStatic cff.cff_access in
 	let is_static,is_abstract_member = if cctx.abstract <> None && not is_static then true,true else is_static,false in
 	let is_extern = ref (List.mem_assoc AExtern cff.cff_access) in
@@ -606,11 +604,11 @@ let create_field_context cctx cff is_display_file display_modifier =
 		match m with
 		| Meta.Final ->
 			is_final := true;
-			(* if p <> null_pos && not (Define.is_haxe3_compat ctx.com.defines) then
-				warning ctx WDeprecated "`@:final` is deprecated in favor of `final`" p; *)
+			if p <> null_pos then
+				warning ctx WDeprecated "`@:final` is deprecated in favor of `final`" p;
 		| Meta.Extern ->
-			(* if not (Define.is_haxe3_compat ctx.com.defines) then
-				warning ctx WDeprecated "`@:extern` on fields is deprecated in favor of `extern`" (pos cff.cff_name); *)
+			if p <> null_pos then
+				warning ctx WDeprecated "`@:extern` is deprecated in favor of `extern`" p;
 			is_extern := true;
 		| _ ->
 			()
@@ -656,7 +654,7 @@ let create_field_context cctx cff is_display_file display_modifier =
 	fctx
 
 let create_typer_context_for_field ctx cctx fctx cff =
-	DeprecationCheck.check_is ctx.com (fst cff.cff_name) cff.cff_meta (snd cff.cff_name);
+	DeprecationCheck.check_is ctx.com ctx.curclass.cl_meta cff.cff_meta (fst cff.cff_name) cff.cff_meta (snd cff.cff_name);
 	let ctx = {
 		ctx with
 		pass = PBuildClass; (* will be set later to PTypeExpr *)
@@ -1655,7 +1653,7 @@ let init_field (ctx,cctx,fctx) f =
 		delay ctx PTypeField (fun() -> InheritDoc.build_class_field_doc ctx (Some c) cf);
 	cf
 
-let check_overload ctx f fs =
+let check_overload ctx f fs is_extern_class =
 	try
 		let f2 =
 			List.find (fun f2 ->
@@ -1667,8 +1665,7 @@ let check_overload ctx f fs =
 		display_error ~depth:1 ctx.com (compl_msg "The second field is declared here") f2.cf_pos;
 		false
 	with Not_found -> try
-		(* OVERLOADTODO: generalize this and respect whether or not we actually generate the functions *)
-		if ctx.com.platform <> Java then raise Not_found;
+		if ctx.com.platform <> Java || is_extern_class then raise Not_found;
 		let get_vmtype = ambiguate_funs in
 		let f2 =
 			List.find (fun f2 ->
@@ -1676,6 +1673,8 @@ let check_overload ctx f fs =
 				Overloads.same_overload_args ~get_vmtype f.cf_type f2.cf_type f f2
 			) fs
 		in
+		(* Don't bother checking this on externs and assume the users know what they're doing (issue #11131) *)
+		if has_class_field_flag f CfExtern && has_class_field_flag f2 CfExtern then raise Not_found;
 		display_error ctx.com (
 			"Another overloaded field of similar signature was already declared : " ^
 			f.cf_name ^
@@ -1688,10 +1687,11 @@ let check_overload ctx f fs =
 
 let check_overloads ctx c =
 	(* check if field with same signature was declared more than once *)
+	let is_extern = has_class_flag c CExtern in
 	let check_field f =
 		if has_class_field_flag f CfOverload then begin
 			let all = f :: f.cf_overloads in
-			ignore(List.fold_left (fun b f -> b && check_overload ctx f all) true all)
+			ignore(List.fold_left (fun b f -> b && check_overload ctx f all is_extern) true all)
 		end
 	in
 	List.iter check_field c.cl_ordered_fields;
@@ -1785,7 +1785,7 @@ let init_class ctx c p context_init herits fields =
 		let p = f.cff_pos in
 		try
 			let display_modifier = Typeload.check_field_access ctx f in
-			let fctx = create_field_context cctx f ctx.is_display_file display_modifier in
+			let fctx = create_field_context ctx cctx f ctx.is_display_file display_modifier in
 			let ctx = create_typer_context_for_field ctx cctx fctx f in
 			if fctx.is_field_debug then print_endline ("Created field context: " ^ dump_field_context fctx);
 			let cf = init_field (ctx,cctx,fctx) f in

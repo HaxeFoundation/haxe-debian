@@ -244,6 +244,18 @@ module Setup = struct
 
 end
 
+let check_defines com =
+	if is_next com then begin
+		PMap.iter (fun k _ ->
+			try
+				let reason = Hashtbl.find Define.deprecation_lut k in
+				let p = { pfile = "-D " ^ k; pmin = -1; pmax = -1 } in
+				com.warning WDeprecatedDefine [] reason p
+			with Not_found ->
+				()
+		) com.defines.values
+	end
+
 (** Creates the typer context and types [classes] into it. *)
 let do_type ctx tctx actx =
 	let com = tctx.Typecore.com in
@@ -253,6 +265,7 @@ let do_type ctx tctx actx =
 	com.stage <- CInitMacrosStart;
 	List.iter (MacroContext.call_init_macro tctx) (List.rev actx.config_macros);
 	com.stage <- CInitMacrosDone;
+	check_defines ctx.com;
 	CommonCache.lock_signature com "after_init_macros";
 	com.callbacks#run com.callbacks#get_after_init_macros;
 	run_or_diagnose ctx (fun () ->
@@ -409,7 +422,10 @@ let process_actx ctx actx =
 	DisplayProcessing.process_display_arg ctx actx;
 	List.iter (fun s ->
 		ctx.com.warning WDeprecated [] s null_pos
-	) actx.deprecations
+	) actx.deprecations;
+	if defined ctx.com NoDeprecationWarnings then begin
+		ctx.com.warning_options <- [{wo_warning = WDeprecated; wo_mode = WMDisable}] :: ctx.com.warning_options
+	end
 
 let compile_ctx callbacks ctx =
 	let run ctx =
