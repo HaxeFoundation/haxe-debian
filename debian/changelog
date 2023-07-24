@@ -318,7 +318,7 @@ haxe (1:2.4-2) unstable; urgency=low
 haxe (1:2.4-1) unstable; urgency=low
 
   * New upstream version (CVS 2009-08-01).
-  * Removed obsolete parts of the copyright file now that ExtLib is 
+  * Removed obsolete parts of the copyright file now that ExtLib is
     not included anymore.
   * Included patch for Ubuntu location of zlib, thanks to Alessio Treglia.
     (Closes: #533159)
@@ -555,7 +555,7 @@ haxe (20070106-1) experimental; urgency=low
   * New upstream release (~1.10).
   * Updated manpages.
   * Include haxe-mode for Emacs.
-  
+
  -- Jens Peter Secher <jps@debian.org>  Sat,  6 Jan 2007 19:01:42 +0100
 
 haxe (20061201-1) experimental; urgency=low
@@ -574,7 +574,7 @@ haxe (20061106-1bpo1) stable; urgency=low
 haxe (20061106-1) experimental; urgency=low
 
   * New upstream release (~1.08).
-     - Fixes flash6 code generation. 
+     - Fixes flash6 code generation.
        (Closes: #396141)
   * Use neko to build haxelib and haxedoc executables, both of which
     searches for the libneko.so by use of -rpath in /usr/lib/neko since we
@@ -603,7 +603,7 @@ haxe (20060715-2) unstable; urgency=low
     thanks to Samuel Mimram and Paul Wise.
     (Closes: #378373)
   * Fixed misspelling in package description.
-    (Closes: #378631)  
+    (Closes: #378631)
   * Updated manual page.
 
  -- Jens Peter Secher <jps@debian.org>  Sat, 22 Jul 2006 10:39:48 +0200
