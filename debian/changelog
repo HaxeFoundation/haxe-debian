@@ -1,3 +1,11 @@
+haxe (1:4.3.2-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Fix d/watch.
+  * Set upstream metadata fields: Bug-Database, Bug-Submit, Repository-Browse.
+
+ -- Andy Li <andy@onthewings.net>  Sat, 16 Sep 2023 11:00:21 +0000
+
 haxe (1:4.3.1-1) unstable; urgency=medium
 
   * New upstream version.
