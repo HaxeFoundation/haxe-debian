@@ -34,8 +34,7 @@ let make_call ctx e params t ?(force_inline=false) p =
 				raise Exit
 		in
 		if not force_inline then begin
-			let is_extern_class = match cl with Some c -> (has_class_flag c CExtern) | _ -> false in
-			if not (Inline.needs_inline ctx is_extern_class f) then raise Exit;
+			if not (needs_inline ctx cl f) then raise Exit;
 		end else begin
 			match cl with
 			| None ->
@@ -191,7 +190,10 @@ let rec acc_get ctx g =
 	in
 	let dispatcher p = new call_dispatcher ctx MGet WithType.value p in
 	match g with
-	| AKNo(_,p) -> typing_error ("This expression cannot be accessed for reading") p
+	| AKNo(acc,p) ->
+		if not (Common.ignore_error ctx.com) then
+			typing_error ("This expression cannot be accessed for reading") p
+		else acc_get ctx acc;
 	| AKExpr e -> e
 	| AKSafeNav sn ->
 		(* generate null-check branching for the safe navigation chain *)
