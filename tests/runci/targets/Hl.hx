@@ -52,7 +52,7 @@ class Hl {
 			"-DWITH_OPENAL=OFF",
 			"-DWITH_SDL=OFF",
 			"-DWITH_SQLITE=ON",
-			"-DWITH_SSL=OFF",
+			"-DWITH_SSL=ON",
 			"-DWITH_UI=OFF",
 			"-DWITH_UV=OFF",
 			"-DWITH_VIDEO=OFF",
@@ -65,6 +65,7 @@ class Hl {
 
 		runCommand(hlBinary, ["--version"]);
 		addToPATH(hlBuildBinDir);
+		addToLIBPATH(hlBuildBinDir);
 
 		haxelibDev("hashlink", '$hlSrc/other/haxelib/');
 	}
@@ -72,16 +73,25 @@ class Hl {
 	static public function run(args:Array<String>) {
 		getHlDependencies();
 
-		switch (systemName) {
-			case "Windows":
-				runCommand("haxe", ["compile-hl.hxml"].concat(args));
-			case _:
-				runCommand("haxe", [
-					"compile-hl.hxml",
-					"-D", "no_http", // hl's ssl.hdll is only built on Windows
-				].concat(args));
-		}
+		runCommand("haxe", ["compile-hl.hxml"].concat(args));
 		runCommand(hlBinary, ["bin/unit.hl"]);
+
+		runCommand("haxe", ["compile-hlc.hxml"].concat(args));
+		switch (systemName) {
+			case "Linux" if (isCi()):
+				runCommand("gcc", [
+					"-o", "bin/hlc/main",
+					"bin/hlc/main.c",
+					"-Ibin/hlc/",
+					'-I$hlSrc/src',
+					'$hlBuildBinDir/fmt.hdll',
+					"-lm",
+					'-L$hlBuildBinDir', "-lhl"
+				]);
+				runCommand("bin/hlc/main", []);
+			case _:
+				// TODO hl/c for mac/windows
+		}
 
 		changeDirectory(threadsDir);
 		runCommand("haxe", ["build.hxml", "-hl", "export/threads.hl"]);
@@ -95,6 +105,16 @@ class Hl {
 		runCommand("haxe", ["build-hl.hxml"]);
 		// TODO: check output like misc tests do
 		runCommand(hlBinary, ["eventLoop.hl"]);
+
+		changeDirectory(getMiscSubDir("hl/reserved-keywords"));
+		runCommand("haxe", ["compile.hxml"]);
+		switch (systemName) {
+			case "Linux" if (isCi()):
+				runCommand("gcc", ["-o", "bin/test", "bin/test.c", "-Ibin/", '-I$hlSrc/src', '-L$hlBuildBinDir', "-lhl"]);
+				runCommand("bin/test", []);
+			case _:
+				// TODO hl/c for mac/windows
+		}
 
 		changeDirectory(miscHlDir);
 		runCommand("haxe", ["run.hxml"]);
