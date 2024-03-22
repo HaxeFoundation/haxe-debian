@@ -40,7 +40,7 @@ let process_args arg_spec =
 
 let parse_args com =
 	let usage = Printf.sprintf
-		"Haxe Compiler %s - (C)2005-2023 Haxe Foundation\nUsage: haxe%s <target> [options] [hxml files and dot paths...]\n"
+		"Haxe Compiler %s - (C)2005-2024 Haxe Foundation\nUsage: haxe%s <target> [options] [hxml files and dot paths...]\n"
 		s_version_full (if Sys.os_type = "Win32" then ".exe" else "")
 	in
 	let actx = {
@@ -158,7 +158,7 @@ let parse_args com =
 				let all,max_length = Define.get_user_documentation_list com.user_defines in
 				let all = List.map (fun (n,doc) -> Printf.sprintf " %-*s: %s" max_length n (limit_string doc (max_length + 3))) all in
 				List.iter (fun msg -> com.print (msg ^ "\n")) all;
-				exit 0
+				raise Abort
 			)
 		),"","print help for all user defines");
 		("Miscellaneous",["--help-metas"],[], Arg.Unit (fun() ->
@@ -173,7 +173,7 @@ let parse_args com =
 				let all,max_length = Meta.get_user_documentation_list com.user_metas in
 				let all = List.map (fun (n,doc) -> Printf.sprintf " %-*s: %s" max_length n (limit_string doc (max_length + 3))) all in
 				List.iter (fun msg -> com.print (msg ^ "\n")) all;
-				exit 0
+				raise Abort
 			)
 		),"","print help for all user metadatas");
 	] in

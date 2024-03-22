@@ -367,7 +367,11 @@ module Pattern = struct
 			| ECall(e1,el) ->
 				let e1 = type_expr ctx e1 (WithType.with_type t) in
 				begin match e1.eexpr,follow e1.etype with
-					| TField(_, FEnum(en,ef)),TFun(_,TEnum(_,tl)) ->
+					| TField(_, FEnum(en,ef)),TFun(_,tr) ->
+						let tl = match follow tr with
+							| TEnum(_,tl) -> tl
+							| _ -> fail()
+						in
 						let map = apply_params en.e_params tl in
 						let monos = Monomorph.spawn_constrained_monos map ef.ef_params in
 						let map t = map (apply_params ef.ef_params monos t) in
@@ -548,7 +552,7 @@ module Pattern = struct
 				ignore(TyperDisplay.handle_edisplay ctx e (display_mode()) MGet (WithType.with_type t));
 				pat
 			| EMeta((Meta.StoredTypedExpr,_,_),e1) ->
-				let e1 = MacroContext.type_stored_expr ctx e1 in
+				let e1 = TyperBase.type_stored_expr ctx e1 in
 				loop (TExprToExpr.convert_expr e1)
 			| _ ->
 				fail()

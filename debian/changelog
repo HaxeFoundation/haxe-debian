@@ -1,8 +1,14 @@
-haxe (1:4.3.3-1~bpo22.04.1) jammy; urgency=medium
+haxe (1:4.3.4-1~bpo22.04.1) jammy; urgency=medium
 
   * Add camlp-streams to Build-Depends.
 
- -- Andy Li <andy@onthewings.net>  Sat, 18 Nov 2023 18:23:11 +0000
+ -- Andy Li <andy@onthewings.net>  Fri, 22 Mar 2024 22:54:36 +0000
+
+haxe (1:4.3.4-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Andy Li <andy@onthewings.net>  Fri, 22 Mar 2024 17:30:43 +0000
 
 haxe (1:4.3.3-1) unstable; urgency=medium
 
