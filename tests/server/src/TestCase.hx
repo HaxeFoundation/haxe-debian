@@ -6,6 +6,7 @@ import haxeserver.HaxeServerRequestResult;
 import haxe.display.JsonModuleTypes;
 import haxe.display.Display;
 import haxe.display.Protocol;
+import haxe.display.Diagnostic;
 import haxe.Json;
 import haxeserver.process.HaxeServerProcessNode;
 import haxeserver.HaxeServerAsync;
@@ -17,7 +18,12 @@ using StringTools;
 using Lambda;
 
 @:autoBuild(utils.macro.BuildHub.build())
+#if haxe_next
+interface ITestCase {}
+class TestCase implements ITest implements ITestCase {
+#else
 class TestCase implements ITest {
+#end
 	static public var debugLastResult:{
 		hasError:Bool,
 		stdout:String,
@@ -167,6 +173,11 @@ class TestCase implements ITest {
 
 	function parseGotoDefintion():GotoDefinitionResult {
 		return haxe.Json.parse(lastResult.stderr).result;
+	}
+
+	function parseDiagnostics():Array<Diagnostic<Any>> {
+		var result = haxe.Json.parse(lastResult.stderr)[0];
+		return if (result == null) [] else result.diagnostics;
 	}
 
 	function parseGotoDefinitionLocations():Array<Location> {
