@@ -15,9 +15,6 @@ override_dh_strip:
 	# haxelib is the neko vm appended with neko bytecode. It should not be stripped
 	dh_strip --exclude=haxelib
 
-override_dh_missing:
-	dh_missing --fail-missing
-
 get-orig-source:
 	# create tar manually from git, in order to get submodules
 	git clone --branch $(DEB_VERSION_UPSTREAM) --depth 1 --recursive https://github.com/HaxeFoundation/haxe.git orig-source
