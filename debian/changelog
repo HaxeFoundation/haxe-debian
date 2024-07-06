@@ -1,3 +1,9 @@
+haxe (1:4.3.4-2) unstable; urgency=medium
+
+  * Add mbedtls3.patch from upstream (Closes: #1075827).
+
+ -- Andy Li <andy@onthewings.net>  Sat, 06 Jul 2024 08:52:59 +0100
+
 haxe (1:4.3.4-1) unstable; urgency=medium
 
   * New upstream version.
