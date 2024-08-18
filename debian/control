@@ -3,7 +3,7 @@ Section: devel
 Priority: optional
 Maintainer: Andy Li <andy@onthewings.net>
 Standards-Version: 4.6.2
-Build-Depends: debhelper (>= 10),
+Build-Depends: debhelper-compat (= 13),
                dh-ocaml,
                ocaml-nox,
                ocaml-findlib,
