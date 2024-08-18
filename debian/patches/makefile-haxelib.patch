@@ -1,0 +1,11 @@
+--- a/Makefile
++++ b/Makefile
+@@ -114,7 +114,7 @@
+ 	cd $(CURDIR)/extra/haxelib_src && \
+ 	HAXE_STD_PATH=$(CURDIR)/std $(CURDIR)/$(HAXE_OUTPUT) client.hxml && \
+ 	nekotools boot -c run.n
+-	$(CC) $(CURDIR)/extra/haxelib_src/run.c -o $(HAXELIB_OUTPUT) -lneko $(HAXELIB_LFLAGS)
++	$(CC) $(CPPFLAGS) $(CFLAGS) $(CURDIR)/extra/haxelib_src/run.c $(LDFLAGS) -lneko $(HAXELIB_LFLAGS) -o $(HAXELIB_OUTPUT)
+ 
+ # haxelib should depends on haxe, but we don't want to do that...
+ ifeq ($(SYSTEM_NAME),Windows)

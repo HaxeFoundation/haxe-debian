@@ -18,6 +18,7 @@ Build-Depends: debhelper (>= 10),
                libuv1-dev,
                libmbedtls-dev,
                neko (>= 2.3.0),
+               neko-dev (>= 2.3.0),
                zlib1g-dev,
                libpcre2-dev,
                bash-completion

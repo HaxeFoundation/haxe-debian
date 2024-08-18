@@ -1,3 +1,11 @@
+haxe (1:4.3.6-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Add makefile-haxelib.patch to build haxelib with proper flags.
+  * Strip haxelib, which is now a proper binary.
+
+ -- Andy Li <andy@onthewings.net>  Sun, 18 Aug 2024 05:59:19 +0100
+
 haxe (1:4.3.4-2) unstable; urgency=medium
 
   * Add mbedtls3.patch from upstream (Closes: #1075827).
