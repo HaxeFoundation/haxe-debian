@@ -3,6 +3,7 @@ haxe (1:4.3.6-1) unstable; urgency=medium
   * New upstream version.
   * Add makefile-haxelib.patch to build haxelib with proper flags.
   * Strip haxelib, which is now a proper binary.
+  * Bump Standards-Version to 4.7.0 (no changes).
 
  -- Andy Li <andy@onthewings.net>  Sun, 18 Aug 2024 05:59:19 +0100
 
