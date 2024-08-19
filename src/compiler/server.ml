@@ -18,15 +18,7 @@ let has_error ctx =
 	ctx.has_error || ctx.com.Common.has_error
 
 let check_display_flush ctx f_otherwise = match ctx.com.json_out with
-	| None ->
-		if is_diagnostics ctx.com then begin
-			List.iter (fun cm ->
-				add_diagnostics_message ~depth:cm.cm_depth ctx.com (located cm.cm_message cm.cm_pos) cm.cm_kind cm.cm_severity
-			) (List.rev ctx.messages);
-			raise (Completion (Diagnostics.print ctx.com))
-		end else
-			f_otherwise ()
-	| Some api ->
+	| Some api when not (is_diagnostics ctx.com) ->
 		if has_error ctx then begin
 			let errors = List.map (fun cm ->
 				JObject [
@@ -37,6 +29,17 @@ let check_display_flush ctx f_otherwise = match ctx.com.json_out with
 			) (List.rev ctx.messages) in
 			api.send_error errors
 		end
+	| _ ->
+		if is_diagnostics ctx.com then begin
+			List.iter (fun cm ->
+				add_diagnostics_message ~depth:cm.cm_depth ctx.com (located cm.cm_message cm.cm_pos) cm.cm_kind cm.cm_severity
+			) (List.rev ctx.messages);
+			(match ctx.com.report_mode with
+			| RMDiagnostics _ -> ()
+			| RMLegacyDiagnostics _ -> raise (Completion (Diagnostics.print ctx.com))
+			| _ -> die "" __LOC__)
+		end else
+			f_otherwise ()
 
 let current_stdin = ref None
 
@@ -46,7 +49,7 @@ let parse_file cs com file p =
 	and fkey = com.file_keys#get file in
 	let is_display_file = DisplayPosition.display_position#is_in_file (com.file_keys#get ffile) in
 	match is_display_file, !current_stdin with
-	| true, Some stdin when Common.defined com Define.DisplayStdin ->
+	| true, Some stdin when (com.file_contents <> [] || Common.defined com Define.DisplayStdin) ->
 		TypeloadParse.parse_file_from_string com file p stdin
 	| _ ->
 		let ftime = file_time ffile in
@@ -153,15 +156,6 @@ module Communication = struct
 		try loop 0 ""; with End_of_file -> close_in ch;
 		List.rev !lines
 
-	let resolve_file ctx f =
-			let ext = Common.extension f in
-			let second_ext = Common.extension (Common.remove_extension f) in
-			let platform_ext = "." ^ (platform_name_macro ctx) in
-			if platform_ext = second_ext then
-				(Common.remove_extension (Common.remove_extension f)) ^ ext
-			else
-				f
-
 	let compiler_pretty_message_string ctx ectx cm =
 		match cm.cm_message with
 		(* Filter some messages that don't add much when using this message renderer *)
@@ -177,10 +171,8 @@ module Communication = struct
 					let epos = if is_unknown_file cm.cm_pos.pfile then "(unknown position)" else cm.cm_pos.pfile in
 					(-1, -1, -1, -1, epos, [])
 				end else try begin
-					let f = resolve_file ctx.com cm.cm_pos.pfile in
-					let f = Common.find_file ctx.com f in
 					let l1, p1, l2, p2 = Lexer.get_pos_coords cm.cm_pos in
-					let lines = resolve_source f l1 p1 l2 p2 in
+					let lines = resolve_source cm.cm_pos.pfile l1 p1 l2 p2 in
 					let epos = Lexer.get_error_pos error_printer cm.cm_pos in
 					(l1, p1, l2, p2, epos, lines)
 				end with Not_found | Sys_error _ ->

@@ -1,8 +1,23 @@
-haxe (1:4.3.4-1~bpo20.04.1) focal; urgency=medium
+haxe (1:4.3.6-1~bpo20.04.1) focal; urgency=medium
 
   * Add camlp-streams to Build-Depends.
 
- -- Andy Li <andy@onthewings.net>  Fri, 22 Mar 2024 17:54:23 +0000
+ -- Andy Li <andy@onthewings.net>  Mon, 19 Aug 2024 08:05:07 +0100
+
+haxe (1:4.3.6-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Add makefile-haxelib.patch to build haxelib with proper flags.
+  * Strip haxelib, which is now a proper binary.
+  * Bump Standards-Version to 4.7.0 (no changes).
+
+ -- Andy Li <andy@onthewings.net>  Sun, 18 Aug 2024 05:59:19 +0100
+
+haxe (1:4.3.4-2) unstable; urgency=medium
+
+  * Add mbedtls3.patch from upstream (Closes: #1075827).
+
+ -- Andy Li <andy@onthewings.net>  Sat, 06 Jul 2024 08:52:59 +0100
 
 haxe (1:4.3.4-1) unstable; urgency=medium
 

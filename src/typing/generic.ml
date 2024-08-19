@@ -250,11 +250,12 @@ let rec build_generic_class ctx c p tl =
 			| Final
 			| Hack
 			| Internal
-			| Keep
+			| Keep | KeepSub
 			| NoClosure | NullSafety
 			| Pure
 			| Struct | StructInit
-			| Using ->
+			| Using
+			| Unreflective ->
 				true
 			| _ ->
 				false

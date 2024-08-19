@@ -589,7 +589,6 @@ class inline_state ctx ethis params cf f p = object(self)
 				mk (TBlock (DynArray.to_list el)) tret e.epos
 		in
 		let e = inline_metadata e cf.cf_meta in
-		let e = Diagnostics.secure_generated_code ctx e in
 		if has_params then begin
 			let mt = map_type cf.cf_type in
 			let unify_func () = unify_raise mt (TFun (tl,tret)) p in
@@ -701,6 +700,7 @@ let rec type_inline ctx cf f ethis params tret config p ?(self_calling_closure=f
 				typing_error "Could not inline `this` outside of an instance context" po
 			)
 		| TVar (v,eo) ->
+			if has_var_flag v VStatic then typing_error "Inline functions cannot have static locals" v.v_pos;
 			{ e with eexpr = TVar ((state#declare v).i_subst,opt (map false false) eo)}
 		| TReturn eo when not state#in_local_fun ->
 			if not term then begin
