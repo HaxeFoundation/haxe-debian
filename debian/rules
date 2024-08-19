@@ -11,10 +11,6 @@ override_dh_auto_configure:
 
 override_dh_auto_install:
 
-override_dh_strip:
-	# haxelib is the neko vm appended with neko bytecode. It should not be stripped
-	dh_strip --exclude=haxelib
-
 override_dh_missing:
 	dh_missing --fail-missing
 
