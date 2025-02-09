@@ -1,6 +1,13 @@
+haxe (1:4.3.6-3) unstable; urgency=medium
+
+  * Fix changelog of 1:4.3.6-2. (Closes: #1082569, #1093103)
+
+ -- Andy Li <andy@onthewings.net>  Sun, 09 Feb 2025 21:36:28 +0000
+
 haxe (1:4.3.6-2) unstable; urgency=medium
 
-  * Add ocaml5.3.patch for compatibility with OCaml 5.3. (Closes #1082569, #1093103)
+  * Add ocaml5.3.patch for compatibility with OCaml 5.3.
+    (Closes: #1082569, #1093103)
 
  -- Andy Li <andy@onthewings.net>  Sun, 09 Feb 2025 01:46:34 +0000
 
