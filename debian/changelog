@@ -1,3 +1,9 @@
+haxe (1:4.3.6-2) unstable; urgency=medium
+
+  * Add ocaml5.3.patch for compatibility with OCaml 5.3. (Closes #1082569, #1093103)
+
+ -- Andy Li <andy@onthewings.net>  Sun, 09 Feb 2025 01:46:34 +0000
+
 haxe (1:4.3.6-1) unstable; urgency=medium
 
   * New upstream version.

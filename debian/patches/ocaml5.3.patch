@@ -1,0 +1,1137 @@
+From 1630023f4678dd3a2fe359a5b8242e2db805e59e Mon Sep 17 00:00:00 2001
+From: Rudy Ges <k@klabz.org>
+Date: Sat, 8 Feb 2025 11:35:29 +0100
+Subject: [PATCH] Update for ocaml 5.3
+
+---
+ haxe.opam                              |   2 +-
+ libs/extc/extc.ml                      |   4 +-
+ libs/ilib/ilMetaReader.ml              |   2 +-
+ libs/javalib/jData.ml                  |   2 +-
+ libs/neko/nast.ml                      |   8 +-
+ libs/neko/ncompile.ml                  |   6 +-
+ libs/swflib/swfParser.ml               | 108 ++++++++++++-------------
+ libs/swflib/swfPic.ml                  |   2 +-
+ libs/ttflib/tTFSwfWriter.ml            |  16 ++--
+ src/codegen/dotnet.ml                  |   8 +-
+ src/codegen/gencommon/gencommon.ml     |   2 +-
+ src/codegen/java.ml                    |  16 ++--
+ src/codegen/javaModern.ml              |   4 +-
+ src/compiler/compiler.ml               |   4 +-
+ src/compiler/generate.ml               |   4 +-
+ src/compiler/server.ml                 |   4 +-
+ src/context/common.ml                  |   2 +-
+ src/context/display/displayToplevel.ml |   2 +-
+ src/context/nativeLibraryHandler.ml    |   4 +-
+ src/context/typecore.ml                |   2 +-
+ src/core/error.ml                      |   2 +-
+ src/core/path.ml                       |   4 +-
+ src/generators/flashProps.ml           |   4 +-
+ src/generators/gencpp.ml               |   6 +-
+ src/generators/gencs.ml                |  16 ++--
+ src/generators/genjava.ml              |   2 +-
+ src/generators/genjvm.ml               |   4 +-
+ src/generators/hl2c.ml                 |   4 +-
+ src/generators/jvm/jvmConstantPool.ml  |   4 +-
+ src/macro/eval/evalLuv.ml              |  26 +++---
+ src/macro/eval/evalStdLib.ml           |   6 +-
+ src/optimization/dce.ml                |   4 +-
+ src/typing/macroContext.ml             |   2 +-
+ std/eval/luv/FsEvent.hx                |   4 +-
+ std/eval/luv/Resource.hx               |   6 +-
+ 35 files changed, 150 insertions(+), 146 deletions(-)
+
+diff --git a/haxe.opam b/haxe.opam
+index 54bb8e31f..6b1441d60 100644
+--- a/haxe.opam
++++ b/haxe.opam
+@@ -32,5 +32,5 @@ depends: [
+   "conf-libpcre2-8"
+   "conf-zlib"
+   "conf-neko"
+-  "luv" {= "0.5.12"}
++  "luv" {= "0.5.13"}
+ ]
+diff --git a/libs/extc/extc.ml b/libs/extc/extc.ml
+index 890b978b5..25ac05eb5 100644
+--- a/libs/extc/extc.ml
++++ b/libs/extc/extc.ml
+@@ -113,7 +113,7 @@ let input_zip ?(bufsize=65536) ch =
+ 	let rec fill_buffer() =
+ 		let rec loop pos len =
+ 			if len > 0 || pos = 0 then begin
+-				let r = zlib_inflate z (Bytes.unsafe_to_string tmp_in) pos len tmp_out 0 bufsize (if pos = 0 && len = 0 then Z_FINISH else Z_SYNC_FLUSH) in
++				let r = zlib_inflate z ~src:(Bytes.unsafe_to_string tmp_in) ~spos:pos ~slen:len ~dst:tmp_out ~dpos:0 ~dlen:bufsize (if pos = 0 && len = 0 then Z_FINISH else Z_SYNC_FLUSH) in
+ 				Buffer.add_subbytes tmp_buf tmp_out 0 r.z_wrote;
+ 				loop (pos + r.z_read) (len - r.z_read);
+ 			end
+@@ -155,7 +155,7 @@ let output_zip ?(bufsize=65536) ?(level=9) ch =
+ 	let tmp_out = Bytes.create bufsize in
+ 	let p = ref 0 in
+ 	let rec flush finish =
+-		let r = zlib_deflate z (Bytes.unsafe_to_string out) 0 !p tmp_out 0 bufsize (if finish then Z_FINISH else Z_SYNC_FLUSH) in
++		let r = zlib_deflate z ~src:(Bytes.unsafe_to_string out) ~spos:0 ~slen:!p ~dst:tmp_out ~dpos:0 ~dlen:bufsize (if finish then Z_FINISH else Z_SYNC_FLUSH) in
+ 		ignore(IO.really_output ch tmp_out 0 r.z_wrote);
+ 		let remain = !p - r.z_read in
+ 		Bytes.blit out r.z_read out 0 remain;
+diff --git a/libs/ilib/ilMetaReader.ml b/libs/ilib/ilMetaReader.ml
+index 24a954cd3..f082469f3 100644
+--- a/libs/ilib/ilMetaReader.ml
++++ b/libs/ilib/ilMetaReader.ml
+@@ -2346,7 +2346,7 @@ let read_meta_tables pctx header module_cache =
+ 	List.iter (fun s ->
+ 		let rva = Int32.add (fst header.clr_meta) (Int32.of_int s.str_offset) in
+ 		seek_rva pctx rva;
+-		match String.lowercase s.str_name with
++		match String.lowercase_ascii s.str_name with
+ 		| "#guid" ->
+ 			sguid := nread_string i (Int32.to_int s.str_size)
+ 		| "#strings" ->
+diff --git a/libs/javalib/jData.ml b/libs/javalib/jData.ml
+index 52c779e25..c88a25a7e 100644
+--- a/libs/javalib/jData.ml
++++ b/libs/javalib/jData.ml
+@@ -220,7 +220,7 @@ let is_override_attrib = (function
+     (* TODO: pass anotations as @:meta *)
+     | AttrVisibleAnnotations ann ->
+       List.exists (function
+-        | { ann_type = TObject( (["java";"lang"], "Override"), [] ) } ->
++				| { ann_type = TObject( (["java";"lang"], "Override"), [] ); ann_elements = _ } ->
+             true
+         | _ -> false
+       ) ann
+diff --git a/libs/neko/nast.ml b/libs/neko/nast.ml
+index c265794b5..25d010264 100644
+--- a/libs/neko/nast.ml
++++ b/libs/neko/nast.ml
+@@ -44,7 +44,7 @@ type expr_decl =
+ 	| EParenthesis of expr
+ 	| EField of expr * string
+ 	| ECall of expr * expr list
+-	| EArray of expr * expr	
++	| EArray of expr * expr
+ 	| EVars of (string * expr option) list
+ 	| EWhile of expr * expr * while_flag
+ 	| EIf of expr * expr * expr option
+@@ -100,11 +100,11 @@ let map f (e,p) =
+ 	| ELabel _
+ 	| EConst _ as x -> x) , p
+ 
+-let iter f (e,p) =
++let iter f (e,_) =
+ 	match e with
+ 	| EBlock el -> List.iter f el
+ 	| EParenthesis e -> f e
+-	| EField (e,s) -> f e
++	| EField (e,_) -> f e
+ 	| ECall (e,el) -> f e; List.iter f el
+ 	| EArray (e1,e2) -> f e1; f e2
+ 	| EVars vl -> List.iter (fun (_,e) -> match e with None -> () | Some e -> f e) vl
+@@ -117,7 +117,7 @@ let iter f (e,p) =
+ 	| EBreak (Some e) -> f e
+ 	| ENext (e1,e2) -> f e1; f e2
+ 	| EObject fl -> List.iter (fun (_,e) -> f e) fl
+-	| ESwitch (e,cases,def) -> f e; List.iter (fun(e1,e2) -> f e1; f e2) cases; (match def with None -> () | Some e -> f e) 
++	| ESwitch (e,cases,def) -> f e; List.iter (fun(e1,e2) -> f e1; f e2) cases; (match def with None -> () | Some e -> f e)
+ 	| EReturn None
+ 	| EBreak None
+ 	| EContinue
+diff --git a/libs/neko/ncompile.ml b/libs/neko/ncompile.ml
+index 98bbdab9b..9fa636e39 100644
+--- a/libs/neko/ncompile.ml
++++ b/libs/neko/ncompile.ml
+@@ -263,7 +263,7 @@ let rec scan_labels ctx supported in_block e =
+ 			| Some e -> scan_labels ctx supported false e);
+ 			ctx.stack <- ctx.stack + 1
+ 		) l
+-	| ELabel l when not supported ->
++	| ELabel _ when not supported ->
+ 		error "Label is not supported in this part of the program" (snd e);
+ 	| ELabel l when Hashtbl.mem ctx.g.labels l ->
+ 		error ("Duplicate label " ^ l) (snd e)
+@@ -317,7 +317,7 @@ let rec scan_labels ctx supported in_block e =
+ 			scan_labels ctx supported false e;
+ 			ctx.stack <- ctx.stack - List.length el
+ 		end
+-	| ECall ((EConst (Builtin x),_),el) when x <> "apply" ->
++	| ECall ((EConst (Builtin x),_),_) when x <> "apply" ->
+ 		Nast.iter (scan_labels ctx false false) e
+ 	| ECall ((EConst (Builtin "apply"),_),e :: el)
+ 	| ECall(e,el) ->
+@@ -329,7 +329,7 @@ let rec scan_labels ctx supported in_block e =
+ 		ctx.stack <- ctx.stack - List.length el
+ 	| EObject fl ->
+ 		ctx.stack <- ctx.stack + 2;
+-		List.iter (fun (s,e) ->
++		List.iter (fun (_,e) ->
+ 			scan_labels ctx supported false e
+ 		) fl;
+ 		ctx.stack <- ctx.stack - 2;
+diff --git a/libs/swflib/swfParser.ml b/libs/swflib/swfParser.ml
+index 8006c81ae..9a66035d7 100644
+--- a/libs/swflib/swfParser.ml
++++ b/libs/swflib/swfParser.ml
+@@ -605,28 +605,28 @@ let write_gradient ch = function
+ let write_rect ch r =
+ 	let b = output_bits ch in
+ 	let nbits = rect_nbits r in
+-	write_bits b 5 nbits;
+-	write_bits b nbits r.left;
+-	write_bits b nbits r.right;
+-	write_bits b nbits r.top;
+-	write_bits b nbits r.bottom;
++	write_bits b ~nbits:5 nbits;
++	write_bits b ~nbits:nbits r.left;
++	write_bits b ~nbits:nbits r.right;
++	write_bits b ~nbits:nbits r.top;
++	write_bits b ~nbits:nbits r.bottom;
+ 	flush_bits b
+ 
+ let rec write_multi_bits b n l =
+ 	if n <= 30 then
+ 		match l with
+-		| [] -> write_bits b n 0
+-		| [x] -> write_bits b n x
++		| [] -> write_bits b ~nbits:n 0
++		| [x] -> write_bits b ~nbits:n x
+ 		| _ -> assert false
+ 	else
+ 		match l with
+-		| [] -> write_bits b 30 0; write_multi_bits b (n - 30) []
+-		| x :: l -> write_bits b 30 x; write_multi_bits b (n - 30) l
++		| [] -> write_bits b ~nbits:30 0; write_multi_bits b (n - 30) []
++		| x :: l -> write_bits b ~nbits:30 x; write_multi_bits b (n - 30) l
+ 
+ let write_big_rect ch r =
+ 	let b = output_bits ch in
+ 	let nbits = bigrect_nbits r in
+-	write_bits b 5 nbits;
++	write_bits b ~nbits:5 nbits;
+ 	write_multi_bits b nbits r.bleft;
+ 	write_multi_bits b nbits r.bright;
+ 	write_multi_bits b nbits r.btop;
+@@ -637,22 +637,22 @@ let write_matrix ch m =
+ 	let b = output_bits ch in
+ 	let write_matrix_part m =
+ 		let nbits = matrix_part_nbits m in
+-		write_bits b 5 nbits;
+-		write_bits b nbits m.mx;
+-		write_bits b nbits m.my;
++		write_bits b ~nbits:5 nbits;
++		write_bits b ~nbits:nbits m.mx;
++		write_bits b ~nbits:nbits m.my;
+ 	in
+ 	(match m.scale with
+ 	| None ->
+-		write_bits b 1 0
++		write_bits b ~nbits:1 0
+ 	| Some s ->
+-		write_bits b 1 1;
++		write_bits b ~nbits:1 1;
+ 		write_matrix_part s
+ 	);
+ 	(match m.rotate with
+ 	| None ->
+-		write_bits b 1 0
++		write_bits b ~nbits:1 0
+ 	| Some r ->
+-		write_bits b 1 1;
++		write_bits b ~nbits:1 1;
+ 		write_matrix_part r);
+ 	write_matrix_part m.trans;
+ 	flush_bits b
+@@ -662,19 +662,19 @@ let write_cxa ch c =
+ 	let nbits = cxa_nbits c in
+ 	(match c.cxa_add , c.cxa_mult with
+ 	| None , None ->
+-		write_bits b 2 0;
+-		write_bits b 4 1; (* some strange MM thing... *)
++		write_bits b ~nbits:2 0;
++		write_bits b ~nbits:4 1; (* some strange MM thing... *)
+ 	| Some c , None ->
+-		write_bits b 2 2;
+-		write_bits b 4 nbits;
++		write_bits b ~nbits:2 2;
++		write_bits b ~nbits:4 nbits;
+ 		List.iter (write_bits b ~nbits) [c.r;c.g;c.b;c.a];
+ 	| None , Some c ->
+-		write_bits b 2 1;
+-		write_bits b 4 nbits;
++		write_bits b ~nbits:2 1;
++		write_bits b ~nbits:4 nbits;
+ 		List.iter (write_bits b ~nbits) [c.r;c.g;c.b;c.a];
+ 	| Some c1 , Some c2 ->
+-		write_bits b 2 3;
+-		write_bits b 4 nbits;
++		write_bits b ~nbits:2 3;
++		write_bits b ~nbits:4 nbits;
+ 		List.iter (write_bits b ~nbits) [c2.r;c2.g;c2.b;c2.a;c1.r;c1.g;c1.b;c1.a]
+ 	);
+ 	flush_bits b
+@@ -1617,11 +1617,11 @@ let write_shape_array ch f sl =
+ 
+ let write_shape_style_change_record ch b nlbits nfbits s =
+ 	let flags = make_flags [flag s.scsr_move; flag s.scsr_fs0; flag s.scsr_fs1; flag s.scsr_ls; flag s.scsr_new_styles] in
+-	write_bits b 6 flags;
++	write_bits b ~nbits:6 flags;
+ 	opt (fun (n,dx,dy) ->
+-		write_bits b 5 n;
+-		write_bits b n dx;
+-		write_bits b n dy;
++		write_bits b ~nbits:5 n;
++		write_bits b ~nbits:n dx;
++		write_bits b ~nbits:n dy;
+ 	) s.scsr_move;
+ 	opt (write_bits b ~nbits:!nfbits) s.scsr_fs0;
+ 	opt (write_bits b ~nbits:!nfbits) s.scsr_fs1;
+@@ -1634,45 +1634,45 @@ let write_shape_style_change_record ch b nlbits nfbits s =
+ 		write_shape_array ch write_shape_line_style s.sns_line_styles;
+ 		nfbits := s.sns_nfbits;
+ 		nlbits := s.sns_nlbits;
+-		write_bits b 4 !nfbits;
+-		write_bits b 4 !nlbits
++		write_bits b ~nbits:4 !nfbits;
++		write_bits b ~nbits:4 !nlbits
+ 
+ let write_shape_record ch b nlbits nfbits = function
+ 	| SRStyleChange s ->
+ 		write_shape_style_change_record ch b nlbits nfbits s
+ 	| SRCurvedEdge s ->
+-		write_bits b 2 2;
+-		write_bits b 4 (s.scer_nbits - 2);
+-		write_bits b s.scer_nbits s.scer_cx;
+-		write_bits b s.scer_nbits s.scer_cy;
+-		write_bits b s.scer_nbits s.scer_ax;
+-		write_bits b s.scer_nbits s.scer_ay;
++		write_bits b ~nbits:2 2;
++		write_bits b ~nbits:4 (s.scer_nbits - 2);
++		write_bits b ~nbits:s.scer_nbits s.scer_cx;
++		write_bits b ~nbits:s.scer_nbits s.scer_cy;
++		write_bits b ~nbits:s.scer_nbits s.scer_ax;
++		write_bits b ~nbits:s.scer_nbits s.scer_ay;
+ 	| SRStraightEdge s ->
+-		write_bits b 2 3;
+-		write_bits b 4 (s.sser_nbits - 2);
++		write_bits b ~nbits:2 3;
++		write_bits b ~nbits:4 (s.sser_nbits - 2);
+ 		match s.sser_line with
+ 		| None , None -> assert false
+ 		| None , Some p
+ 		| Some p , None ->
+-			write_bits b 1 0;
+-			write_bits b 1 (if (fst s.sser_line) = None then 1 else 0);
+-			write_bits b s.sser_nbits p;
++			write_bits b ~nbits:1 0;
++			write_bits b ~nbits:1 (if (fst s.sser_line) = None then 1 else 0);
++			write_bits b ~nbits:s.sser_nbits p;
+ 		| Some dx, Some dy ->
+-			write_bits b 1 1;
+-			write_bits b s.sser_nbits dx;
+-			write_bits b s.sser_nbits dy
++			write_bits b ~nbits:1 1;
++			write_bits b ~nbits:s.sser_nbits dx;
++			write_bits b ~nbits:s.sser_nbits dy
+ 
+ let write_shape_without_style ch s =
+ 	(* write_shape_array ch write_shape_fill_style s.sws_fill_styles; *)
+ 	(* write_shape_array ch write_shape_line_style s.sws_line_styles; *)
+ 	let r = s in (* s.sws_records in *)
+ 	let b = output_bits ch in
+-	write_bits b 4 r.srs_nfbits;
+-	write_bits b 4 r.srs_nlbits;
++	write_bits b ~nbits:4 r.srs_nfbits;
++	write_bits b ~nbits:4 r.srs_nlbits;
+ 	let nlbits = ref r.srs_nlbits in
+ 	let nfbits = ref r.srs_nfbits in
+ 	List.iter (write_shape_record ch b nlbits nfbits) r.srs_records;
+-	(* write_bits b 6 0; *)
++	(* write_bits b ~nbits:6 0; *)
+ 	flush_bits b
+ 
+ let write_shape_with_style ch s =
+@@ -1680,12 +1680,12 @@ let write_shape_with_style ch s =
+ 	write_shape_array ch write_shape_line_style s.sws_line_styles;
+ 	let r = s.sws_records in
+ 	let b = output_bits ch in
+-	write_bits b 4 r.srs_nfbits;
+-	write_bits b 4 r.srs_nlbits;
++	write_bits b ~nbits:4 r.srs_nfbits;
++	write_bits b ~nbits:4 r.srs_nlbits;
+ 	let nlbits = ref r.srs_nlbits in
+ 	let nfbits = ref r.srs_nfbits in
+ 	List.iter (write_shape_record ch b nlbits nfbits) r.srs_records;
+-	write_bits b 6 0;
++	write_bits b ~nbits:6 0;
+ 	flush_bits b
+ 
+ let write_shape ch s =
+@@ -1721,8 +1721,8 @@ let write_text_record ch t r =
+ 	write_byte ch (List.length r.txr_glyphs);
+ 	let bits = output_bits ch in
+ 	List.iter (fun g ->
+-		write_bits bits t.txt_ngbits g.txg_index;
+-		write_bits bits t.txt_nabits g.txg_advanced;
++		write_bits bits ~nbits:t.txt_ngbits g.txg_index;
++		write_bits bits ~nbits:t.txt_nabits g.txg_advanced;
+ 	) r.txr_glyphs;
+ 	flush_bits bits
+ 
+@@ -2255,4 +2255,4 @@ let init inflate deflate =
+ 
+ ;;
+ Swf.__parser := parse;
+-Swf.__printer := write
+\ No newline at end of file
++Swf.__printer := write
+diff --git a/libs/swflib/swfPic.ml b/libs/swflib/swfPic.ml
+index 613260d18..30d53a2a3 100644
+--- a/libs/swflib/swfPic.ml
++++ b/libs/swflib/swfPic.ml
+@@ -59,7 +59,7 @@ let load_picture file id =
+ 	let len = String.length file in
+ 	let p = (try String.rindex file '.' with Not_found -> len) in
+ 	let ext = String.sub file (p + 1) (len - (p + 1)) in
+-	match ExtString.String.uppercase ext with
++	match ExtString.String.uppercase_ascii ext with
+ 	| "PNG" ->
+ 		let png , header, data = (try
+ 			let p = Png.parse ch in
+diff --git a/libs/ttflib/tTFSwfWriter.ml b/libs/ttflib/tTFSwfWriter.ml
+index d812147ed..f714f2c4c 100644
+--- a/libs/ttflib/tTFSwfWriter.ml
++++ b/libs/ttflib/tTFSwfWriter.ml
+@@ -153,14 +153,14 @@ let int_from_langcode lc =
+ 	| LCTraditionalChinese -> 5
+ 
+ let write_font2 ch b f2 =
+-	IO.write_bits b 1 (bi true);
+-	IO.write_bits b 1 (bi f2.font_shift_jis);
+-	IO.write_bits b 1 (bi f2.font_is_small);
+-	IO.write_bits b 1 (bi f2.font_is_ansi);
+-	IO.write_bits b 1 (bi f2.font_wide_offsets);
+-	IO.write_bits b 1 (bi f2.font_wide_codes);
+-	IO.write_bits b 1 (bi f2.font_is_italic);
+-	IO.write_bits b 1 (bi f2.font_is_bold);
++	IO.write_bits b ~nbits:1 (bi true);
++	IO.write_bits b ~nbits:1 (bi f2.font_shift_jis);
++	IO.write_bits b ~nbits:1 (bi f2.font_is_small);
++	IO.write_bits b ~nbits:1 (bi f2.font_is_ansi);
++	IO.write_bits b ~nbits:1 (bi f2.font_wide_offsets);
++	IO.write_bits b ~nbits:1 (bi f2.font_wide_codes);
++	IO.write_bits b ~nbits:1 (bi f2.font_is_italic);
++	IO.write_bits b ~nbits:1 (bi f2.font_is_bold);
+ 	IO.write_byte ch (int_from_langcode f2.font_language);
+ 	IO.write_byte ch ((String.length f2.font_name) + 1);
+ 	IO.nwrite_string ch f2.font_name;
+diff --git a/src/codegen/dotnet.ml b/src/codegen/dotnet.ml
+index 90bf25ec6..6f51d17f0 100644
+--- a/src/codegen/dotnet.ml
++++ b/src/codegen/dotnet.ml
+@@ -805,11 +805,11 @@ let convert_ilclass ctx p ?(delegate=false) ilcls = match ilcls.csuper with
+ 					ilcls.cmethods
+ 			in
+ 			run_fields (fun m ->
+-				convert_ilmethod ctx p !is_interface m (List.exists (fun m2 -> m != m2 && String.get m2.mname 0 <> '.' && String.ends_with m2.mname ("." ^ m.mname)) meths)
++				convert_ilmethod ctx p !is_interface m (List.exists (fun m2 -> m != m2 && String.get m2.mname 0 <> '.' && String.ends_with m2.mname ~suffix:("." ^ m.mname)) meths)
+ 			) meths;
+ 			run_fields (convert_ilfield ctx p) ilcls.cfields;
+ 			run_fields (fun prop ->
+-				convert_ilprop ctx p prop (List.exists (fun p2 -> prop != p2 && String.get p2.pname 0 <> '.' && String.ends_with p2.pname ("." ^ prop.pname)) ilcls.cprops)
++				convert_ilprop ctx p prop (List.exists (fun p2 -> prop != p2 && String.get p2.pname 0 <> '.' && String.ends_with p2.pname ~suffix:("." ^ prop.pname)) ilcls.cprops)
+ 			) ilcls.cprops;
+ 			run_fields (convert_ilevent ctx p) ilcls.cevents;
+ 
+@@ -1039,7 +1039,7 @@ let normalize_ilcls ctx cls =
+ 				| (f,_,name,false) as ff ->
+ 					(* look for compatible fields *)
+ 					if not (List.exists (function
+-						| (f2,_,name2,false) when (name = name2 || String.ends_with name2 ("." ^ name)) -> (* consider explicit implementations as implementations *)
++						| (f2,_,name2,false) when (name = name2 || String.ends_with name2 ~suffix:("." ^ name)) -> (* consider explicit implementations as implementations *)
+ 							compatible_field f f2
+ 						| _ -> false
+ 					) !current_all) then begin
+@@ -1311,7 +1311,7 @@ let before_generate com =
+ 			try
+ 				let f = Unix.readdir f in
+ 				let finsens = String.lowercase f in
+-				if String.ends_with finsens ".dll" then
++				if String.ends_with finsens ~suffix:".dll" then
+ 					add_net_lib com (path ^ "/" ^ f) true false ();
+ 				loop()
+ 			with | End_of_file ->
+diff --git a/src/codegen/gencommon/gencommon.ml b/src/codegen/gencommon/gencommon.ml
+index 9be3c25cb..e7f3e4b3c 100644
+--- a/src/codegen/gencommon/gencommon.ml
++++ b/src/codegen/gencommon/gencommon.ml
+@@ -861,7 +861,7 @@ let clean_files gen path excludes verbose =
+ 				let pack = pack @ [file] in
+ 				iter_files (pack) (Unix.opendir filepath) filepath;
+ 				try Unix.rmdir filepath with Unix.Unix_error (ENOTEMPTY,_,_) -> ();
+-			else if not (String.ends_with filepath ".meta") && not (List.mem (gen.gcon.file_keys#get filepath) excludes) then begin
++			else if not (String.ends_with filepath ~suffix:".meta") && not (List.mem (gen.gcon.file_keys#get filepath) excludes) then begin
+ 				if verbose then print_endline ("Removing " ^ filepath);
+ 			 	Sys.remove filepath
+ 			end
+diff --git a/src/codegen/java.ml b/src/codegen/java.ml
+index 20906bbec..f96d2c8d2 100644
+--- a/src/codegen/java.ml
++++ b/src/codegen/java.ml
+@@ -939,7 +939,7 @@ let normalize_jclass com cls =
+ let get_classes_zip zip =
+ 	let ret = ref [] in
+ 	List.iter (function
+-		| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f "$") ->
++		| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f ~sub:"$") ->
+ 				(match List.rev (String.nsplit f "/") with
+ 				| clsname :: pack ->
+ 					if not (String.contains clsname '$') then begin
+@@ -966,7 +966,7 @@ class virtual java_library com name file_path = object(self)
+ 			if Meta.has Meta.JavaCanonical metas then
+ 				List.map (function
+ 					| (Meta.JavaCanonical,[EConst (String(cpack,_)), _; EConst(String(cname,_)), _],_) ->
+-						let did_replace,name = String.replace cname name_original name_replace in
++						let did_replace,name = String.replace ~str:cname ~sub:name_original ~by:name_replace in
+ 						if not did_replace then print_endline (cname ^ " -> " ^ name_original ^ " -> " ^ name_replace);
+ 						mk_meta name
+ 					| m -> m
+@@ -999,7 +999,7 @@ class virtual java_library com name file_path = object(self)
+ 					| None, ([], c) -> build ctx (["haxe";"root"], c) p types
+ 					| None, _ -> None
+ 					| Some (cls, real_path, pos_path), _ ->
+-							let is_disallowed_inner = first && String.exists (snd cls.cpath) "$" in
++							let is_disallowed_inner = first && String.exists (snd cls.cpath) ~sub:"$" in
+ 							let is_disallowed_inner = if is_disallowed_inner then begin
+ 									let outer, inner = String.split (snd cls.cpath) "$" in
+ 									match self#lookup (fst path, outer) with
+@@ -1062,7 +1062,7 @@ class virtual java_library com name file_path = object(self)
+ 										match parts with
+ 											| _ :: _ ->
+ 												let alias_name = String.concat "_" parts in
+-												if (not (SS.mem alias_name !inner_alias)) && (not (String.exists (snd path) "_24")) then begin
++												if (not (SS.mem alias_name !inner_alias)) && (not (String.exists (snd path) ~sub:"_24")) then begin
+ 													let alias_def = ETypedef {
+ 														d_name = alias_name,null_pos;
+ 														d_doc = None;
+@@ -1127,7 +1127,7 @@ class java_library_jar com name file_path = object(self)
+ 		if not loaded then begin
+ 			loaded <- true;
+ 			List.iter (function
+-				| { Zip.is_directory = false; Zip.filename = filename } when String.ends_with filename ".class" ->
++				| { Zip.is_directory = false; Zip.filename = filename } when String.ends_with filename ~suffix:".class" ->
+ 					let pack = String.nsplit filename "/" in
+ 					(match List.rev pack with
+ 						| [] -> ()
+@@ -1180,7 +1180,7 @@ class java_library_jar com name file_path = object(self)
+ 	method private list_modules' : path list =
+ 		let ret = ref [] in
+ 		List.iter (function
+-			| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f "$") ->
++			| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f ~sub:"$") ->
+ 					(match List.rev (String.nsplit f "/") with
+ 					| clsname :: pack ->
+ 						if not (String.contains clsname '$') then begin
+@@ -1212,10 +1212,10 @@ class java_library_dir com name file_path = object(self)
+ 		let rec iter_files pack dir path = try
+ 			let file = Unix.readdir dir in
+ 			let filepath = path ^ "/" ^ file in
+-			(if String.ends_with file ".class" then
++			(if String.ends_with file ~suffix:".class" then
+ 				let name = String.sub file 0 (String.length file - 6) in
+ 				let path = jpath_to_hx (pack,name) in
+-				if not (String.exists file "$") then all := path :: !all;
++				if not (String.exists file ~sub:"$") then all := path :: !all;
+ 				Hashtbl.add hxpack_to_jpack path (pack,name)
+ 			else if (Unix.stat filepath).st_kind = S_DIR && file <> "." && file <> ".." then
+ 				let pack = pack @ [file] in
+diff --git a/src/codegen/javaModern.ml b/src/codegen/javaModern.ml
+index 7a298292c..034d38ad2 100644
+--- a/src/codegen/javaModern.ml
++++ b/src/codegen/javaModern.ml
+@@ -995,7 +995,7 @@ class java_library_modern com name file_path = object(self)
+ 			loaded <- true;
+ 			let close = Timer.timer ["jar";"load"] in
+ 			List.iter (function
+-				| ({ Zip.is_directory = false; Zip.filename = filename } as entry) when String.ends_with filename ".class" ->
++				| ({ Zip.is_directory = false; Zip.filename = filename } as entry) when String.ends_with filename ~suffix:".class" ->
+ 					let pack = String.nsplit filename "/" in
+ 					begin match List.rev pack with
+ 						| [] -> ()
+@@ -1056,4 +1056,4 @@ class java_library_modern com name file_path = object(self)
+ 		build path
+ 
+ 	method get_data = ()
+-end
+\ No newline at end of file
++end
+diff --git a/src/compiler/compiler.ml b/src/compiler/compiler.ml
+index e9a682c83..fdad0417f 100644
+--- a/src/compiler/compiler.ml
++++ b/src/compiler/compiler.ml
+@@ -251,7 +251,7 @@ module Setup = struct
+ 		com.filter_messages <- (fun predicate -> (ctx.messages <- (List.rev (filter_messages true predicate))));
+ 		com.run_command <- run_command ctx;
+ 		com.class_path <- get_std_class_paths ();
+-		com.std_path <- List.filter (fun p -> ExtString.String.ends_with p "std/" || ExtString.String.ends_with p "std\\") com.class_path
++		com.std_path <- List.filter (fun p -> ExtString.String.ends_with p ~suffix:"std/" || ExtString.String.ends_with p ~suffix:"std\\") com.class_path
+ 
+ end
+ 
+@@ -486,7 +486,7 @@ module HighLevel = struct
+ 			let ret = Unix.close_process_full (pin,pout,perr) in
+ 			if ret <> Unix.WEXITED 0 then fail (match lines, err with
+ 				| [], [] -> "Failed to call haxelib (command not found ?)"
+-				| [], [s] when ExtString.String.ends_with (ExtString.String.strip s) "Module not found: path" -> "The haxelib command has been strip'ed, please install it again"
++				| [], [s] when ExtString.String.ends_with (ExtString.String.strip s) ~suffix:"Module not found: path" -> "The haxelib command has been strip'ed, please install it again"
+ 				| _ -> String.concat "\n" (lines@err));
+ 			t();
+ 			lines
+diff --git a/src/compiler/generate.ml b/src/compiler/generate.ml
+index 76e9f256d..ae9b297c4 100644
+--- a/src/compiler/generate.ml
++++ b/src/compiler/generate.ml
+@@ -24,7 +24,7 @@ let parse_swf_header ctx h = match ExtString.String.nsplit h ":" with
+ 		| [width; height; fps] ->
+ 			Some (int_of_string width,int_of_string height,float_of_string fps,0xFFFFFF)
+ 		| [width; height; fps; color] ->
+-			let color = if ExtString.String.starts_with color "0x" then color else "0x" ^ color in
++			let color = if ExtString.String.starts_with color ~prefix:"0x" then color else "0x" ^ color in
+ 			Some (int_of_string width, int_of_string height, float_of_string fps, int_of_string color)
+ 		| _ ->
+ 			error ctx "Invalid SWF header format, expected width:height:fps[:color]" null_pos;
+@@ -98,4 +98,4 @@ let generate ctx tctx ext actx =
+ 		let t = Timer.timer ["generate";name] in
+ 		generate com;
+ 		t()
+-	end
+\ No newline at end of file
++	end
+diff --git a/src/compiler/server.ml b/src/compiler/server.ml
+index d9433fa4e..a4b2f0661 100644
+--- a/src/compiler/server.ml
++++ b/src/compiler/server.ml
+@@ -296,7 +296,7 @@ module Communication = struct
+ 				out
+ 				(String.make gutter_len ' ')
+ 				(* Remove "... " prefix *)
+-				(if (ExtString.String.starts_with str "... ") then String.sub str 4 ((String.length str) - 4) else str)
++				(if (ExtString.String.starts_with str ~prefix:"... ") then String.sub str 4 ((String.length str) - 4) else str)
+ 			) !out (ExtString.String.nsplit cm.cm_message "\n");
+ 
+ 			ectx.previous <- Some ((if is_null_pos then null_pos else cm.cm_pos), cm.cm_severity, cm.cm_depth);
+@@ -358,7 +358,7 @@ module Communication = struct
+ 					| first :: rest -> (cm.cm_depth, first) :: List.map (fun msg -> (cm.cm_depth+1, msg)) rest
+ 					| l -> [(cm.cm_depth, List.hd l)]
+ 				in
+-				let rm_prefix str = if (ExtString.String.starts_with str "... ") then String.sub str 4 ((String.length str) - 4) else str in
++				let rm_prefix str = if (ExtString.String.starts_with str ~prefix:"... ") then String.sub str 4 ((String.length str) - 4) else str in
+ 				Some (String.concat "\n" (List.map (fun (depth, msg) -> (String.make (depth*2) ' ') ^ epos ^ " : " ^ (rm_prefix msg)) lines))
+ 			end
+ 
+diff --git a/src/context/common.ml b/src/context/common.ml
+index 5db64e530..af6cbe4da 100644
+--- a/src/context/common.ml
++++ b/src/context/common.ml
+@@ -477,7 +477,7 @@ let convert_and_validate k =
+ 	if List.mem converted_flag reserved_flags then
+ 		raise_reserved (Printf.sprintf "`%s` is a reserved compiler flag" k);
+ 	List.iter (fun ns ->
+-		if ExtString.String.starts_with converted_flag (ns ^ ".") then
++		if ExtString.String.starts_with converted_flag ~prefix:(ns ^ ".") then
+ 			raise_reserved (Printf.sprintf "`%s` uses the reserved compiler flag namespace `%s.*`" k ns)
+ 	) reserved_flag_namespaces;
+ 	converted_flag
+diff --git a/src/context/display/displayToplevel.ml b/src/context/display/displayToplevel.ml
+index 541d769f7..c32119fd3 100644
+--- a/src/context/display/displayToplevel.ml
++++ b/src/context/display/displayToplevel.ml
+@@ -486,7 +486,7 @@ let collect ctx tk with_type sort =
+ 			match cfile.c_package with
+ 			| [s] -> add_package ([],s)
+ 			| _ -> ()
+-		end else if (List.exists (fun e -> ExtString.String.starts_with dot_path (e ^ ".")) !exclude) then
++		end else if (List.exists (fun e -> ExtString.String.starts_with dot_path ~prefix:(e ^ ".")) !exclude) then
+ 			()
+ 		else begin
+ 			ctx.com.module_to_file#add (cfile.c_package,module_name) cfile.c_file_path;
+diff --git a/src/context/nativeLibraryHandler.ml b/src/context/nativeLibraryHandler.ml
+index db6837204..8dc65cd58 100644
+--- a/src/context/nativeLibraryHandler.ml
++++ b/src/context/nativeLibraryHandler.ml
+@@ -32,7 +32,7 @@ let add_native_lib com file is_extern = match com.platform with
+ 		if try Sys.is_directory file with Sys_error _ -> false then
+ 			let dir = file in
+ 			(fun _ -> Array.iter (fun file ->
+-				if ExtString.String.ends_with file ".jar" then add (dir ^ "/" ^ file) ()
++				if ExtString.String.ends_with file ~suffix:".jar" then add (dir ^ "/" ^ file) ()
+ 			) (Sys.readdir file))
+ 		else
+ 			add file
+@@ -46,4 +46,4 @@ let add_native_lib com file is_extern = match com.platform with
+ 		in
+ 		Dotnet.add_net_lib com file is_std is_extern
+ 	| pf ->
+-		failwith (Printf.sprintf "Target %s does not support native libraries (trying to load %s)" (platform_name pf) file);
+\ No newline at end of file
++		failwith (Printf.sprintf "Target %s does not support native libraries (trying to load %s)" (platform_name pf) file);
+diff --git a/src/context/typecore.ml b/src/context/typecore.ml
+index dc38a5264..3e949be84 100644
+--- a/src/context/typecore.ml
++++ b/src/context/typecore.ml
+@@ -294,7 +294,7 @@ let add_local ctx k n t p =
+ 			begin try
+ 				let v' = PMap.find n ctx.locals in
+ 				(* ignore std lib *)
+-				if not (List.exists (ExtLib.String.starts_with p.pfile) ctx.com.std_path) then begin
++				if not (List.exists (fun path -> ExtLib.String.starts_with p.pfile ~prefix:path) ctx.com.std_path) then begin
+ 					warning ctx WVarShadow "This variable shadows a previously declared variable" p;
+ 					warning ~depth:1 ctx WVarShadow (compl_msg "Previous variable was here") v'.v_pos
+ 				end
+diff --git a/src/core/error.ml b/src/core/error.ml
+index d2361277e..e147c6415 100644
+--- a/src/core/error.ml
++++ b/src/core/error.ml
+@@ -318,7 +318,7 @@ let error_require r p =
+ 		"a system platform (php,neko,cpp,etc.)"
+ 	else try
+ 		if String.sub r 0 5 <> "flash" then raise Exit;
+-		let _, v = ExtString.String.replace (String.sub r 5 (String.length r - 5)) "_" "." in
++		let _, v = ExtString.String.replace ~str:(String.sub r 5 (String.length r - 5)) ~sub:"_" ~by:"." in
+ 		"flash version " ^ v ^ " (use -swf-version " ^ v ^ ")"
+ 	with _ ->
+ 		"'" ^ r ^ "' to be enabled"
+diff --git a/src/core/path.ml b/src/core/path.ml
+index 119908524..50a6ad819 100644
+--- a/src/core/path.ml
++++ b/src/core/path.ml
+@@ -242,7 +242,7 @@ end = struct
+ 		fst l
+ 
+ 	let starts_with subj start =
+-		ExtString.String.starts_with subj start
++		ExtString.String.starts_with subj ~prefix:start
+ 
+ 	let to_string k = k
+ end
+@@ -428,4 +428,4 @@ module FilePath = struct
+ 		| Some name -> match path.extension with
+ 			| None -> name
+ 			| Some ext -> name ^ "." ^ ext
+-end
+\ No newline at end of file
++end
+diff --git a/src/generators/flashProps.ml b/src/generators/flashProps.ml
+index 7c20ee44e..4a23dc4a8 100644
+--- a/src/generators/flashProps.ml
++++ b/src/generators/flashProps.ml
+@@ -18,8 +18,8 @@
+  *)
+ open Type
+ 
+-let is_getter_name name = ExtString.String.starts_with name "get_"
+-let is_setter_name name = ExtString.String.starts_with name "set_"
++let is_getter_name name = ExtString.String.starts_with name ~prefix:"get_"
++let is_setter_name name = ExtString.String.starts_with name ~prefix:"set_"
+ let get_property_name accessor_name = String.sub accessor_name 4 (String.length accessor_name - 4)
+ let is_flash_property cf = Meta.has Meta.FlashProperty cf.cf_meta
+ 
+diff --git a/src/generators/gencpp.ml b/src/generators/gencpp.ml
+index 8908ef476..cdceffd69 100644
+--- a/src/generators/gencpp.ml
++++ b/src/generators/gencpp.ml
+@@ -497,9 +497,9 @@ let format_code code =
+ let get_code meta key =
+    let code = get_meta_string meta key in
+    let magic_var = "${GENCPP_SOURCE_DIRECTORY}"  in
+-   let code = if ExtString.String.exists code magic_var then begin
++   let code = if ExtString.String.exists code ~sub:magic_var then begin
+          let source_directory = get_meta_string_full_dirname meta key in
+-         let _,code = ExtString.String.replace code magic_var source_directory in
++         let _,code = ExtString.String.replace ~str:code ~sub:magic_var ~by:source_directory in
+          code
+       end else
+          code
+@@ -1698,7 +1698,7 @@ and tcpp_to_string tcpp =
+ 
+ and cpp_class_path_of klass params =
+    match (get_meta_string klass.cl_meta Meta.Native)<>"" with
+-   | true -> 
++   | true ->
+       let typeParams = match params with
+       | [] -> ""
+       | _ -> "< " ^ String.concat "," (List.map tcpp_to_string params) ^ " >" in
+diff --git a/src/generators/gencs.ml b/src/generators/gencs.ml
+index 563db2420..900bf9c93 100644
+--- a/src/generators/gencs.ml
++++ b/src/generators/gencs.ml
+@@ -1305,7 +1305,7 @@ let generate con =
+ 						) args;
+ 						write w "] = ";
+ 						expr_s w value
+-					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) "add_" ->
++					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) ~prefix:"add_" ->
+ 						let name = field_name f in
+ 						let propname = String.sub name 4 (String.length name - 4) in
+ 						if is_event (gen.greal_type ef.etype) propname then begin
+@@ -1316,7 +1316,7 @@ let generate con =
+ 							expr_s w ev
+ 						end else
+ 							do_call w e [ev]
+-					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) "remove_" ->
++					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) ~prefix:"remove_" ->
+ 						let name = field_name f in
+ 						let propname = String.sub name 7 (String.length name - 7) in
+ 						if is_event (gen.greal_type ef.etype) propname then begin
+@@ -1327,7 +1327,7 @@ let generate con =
+ 							expr_s w ev
+ 						end else
+ 							do_call w e [ev]
+-					| TCall( ({ eexpr = TField(ef,f) } as e), [] ) when String.starts_with (field_name f) "get_" ->
++					| TCall( ({ eexpr = TField(ef,f) } as e), [] ) when String.starts_with (field_name f) ~prefix:"get_" ->
+ 						let name = field_name f in
+ 						let propname = String.sub name 4 (String.length name - 4) in
+ 						if is_extern_prop (gen.greal_type ef.etype) propname then
+@@ -1340,7 +1340,7 @@ let generate con =
+ 							end
+ 						else
+ 							do_call w e []
+-					| TCall( ({ eexpr = TField(ef,f) } as e), [v] ) when String.starts_with (field_name f) "set_" ->
++					| TCall( ({ eexpr = TField(ef,f) } as e), [v] ) when String.starts_with (field_name f) ~prefix:"set_" ->
+ 						let name = field_name f in
+ 						let propname = String.sub name 4 (String.length name - 4) in
+ 						if is_extern_prop (gen.greal_type ef.etype) propname then begin
+@@ -2777,7 +2777,7 @@ let generate con =
+ 				let interf = (has_class_flag cl CInterface) in
+ 				(* get all functions that are getters/setters *)
+ 				let nonprops = List.filter (function
+-					| cf when String.starts_with cf.cf_name "get_" -> (try
++					| cf when String.starts_with cf.cf_name ~prefix:"get_" -> (try
+ 						(* find the property *)
+ 						let prop = find_prop (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
+ 						let v, t, get, set = !prop in
+@@ -2785,7 +2785,7 @@ let generate con =
+ 						prop := (v,t,Some cf,set);
+ 						not interf
+ 					with | Not_found -> true)
+-					| cf when String.starts_with cf.cf_name "set_" -> (try
++					| cf when String.starts_with cf.cf_name ~prefix:"set_" -> (try
+ 						(* find the property *)
+ 						let prop = find_prop (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
+ 						let v, t, get, set = !prop in
+@@ -2793,7 +2793,7 @@ let generate con =
+ 						prop := (v,t,get,Some cf);
+ 						not interf
+ 					with | Not_found -> true)
+-					| cf when String.starts_with cf.cf_name "add_" -> (try
++					| cf when String.starts_with cf.cf_name ~prefix:"add_" -> (try
+ 						let event = find_event (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
+ 						let v, t, _, add, remove = !event in
+ 						assert (add = None);
+@@ -2801,7 +2801,7 @@ let generate con =
+ 						event := (v, t, custom, Some cf, remove);
+ 						false
+ 					with | Not_found -> true)
+-					| cf when String.starts_with cf.cf_name "remove_" -> (try
++					| cf when String.starts_with cf.cf_name ~prefix:"remove_" -> (try
+ 						let event = find_event (String.sub cf.cf_name 7 (String.length cf.cf_name - 7)) in
+ 						let v, t, _, add, remove = !event in
+ 						assert (remove = None);
+diff --git a/src/generators/genjava.ml b/src/generators/genjava.ml
+index c19edc3a6..51c135a49 100644
+--- a/src/generators/genjava.ml
++++ b/src/generators/genjava.ml
+@@ -964,7 +964,7 @@ let rec get_fun_modifiers meta access modifiers =
+ let generate con =
+ 	let exists = ref false in
+ 	List.iter (fun java_lib ->
+-		if String.ends_with java_lib#get_file_path "hxjava-std.jar" then begin
++		if String.ends_with java_lib#get_file_path ~suffix:"hxjava-std.jar" then begin
+ 			exists := true;
+ 			java_lib#add_flag NativeLibraries.FlagIsStd;
+ 		end;
+diff --git a/src/generators/genjvm.ml b/src/generators/genjvm.ml
+index 02db415c2..f56c1c065 100644
+--- a/src/generators/genjvm.ml
++++ b/src/generators/genjvm.ml
+@@ -263,7 +263,7 @@ module AnnotationHandler = struct
+ 				AEnum(object_path_sig path,s)
+ 			| ECall(e1, el) ->
+ 				let path = parse_path e1 in
+-				let _,name = ExtString.String.replace (snd path) "." "$" in
++				let _,name = ExtString.String.replace ~str:(snd path) ~sub:"." ~by:"$" in
+ 				let path = (fst path, name) in
+ 				let values = List.map parse_value_pair el in
+ 				AAnnotation(TObject(path, []),values)
+@@ -278,7 +278,7 @@ module AnnotationHandler = struct
+ 		let parse_expr e = match fst e with
+ 			| ECall(e1,el) ->
+ 				let path = parse_path e1 in
+-				let _,name = ExtString.String.replace (snd path) "." "$" in
++				let _,name = ExtString.String.replace ~str:(snd path) ~sub:"." ~by:"$" in
+ 				let path = (fst path,name) in
+ 				let values = List.map parse_value_pair el in
+ 				path,values
+diff --git a/src/generators/hl2c.ml b/src/generators/hl2c.ml
+index 4f7c458a7..95b1ec4a9 100644
+--- a/src/generators/hl2c.ml
++++ b/src/generators/hl2c.ml
+@@ -104,7 +104,7 @@ let keywords =
+ 	List.iter (fun i -> Hashtbl.add h i ()) c_kwds;
+ 	h
+ 
+-let ident i = if (Hashtbl.mem keywords i) || (ExtString.String.starts_with i "__") then "_hx_" ^ i else i
++let ident i = if (Hashtbl.mem keywords i) || (ExtString.String.starts_with i ~prefix:"__") then "_hx_" ^ i else i
+ 
+ let s_comp = function
+ 	| CLt -> "<"
+@@ -1332,7 +1332,7 @@ let make_modules ctx all_types =
+ 	) !all_modules;
+ 	let contexts = ref PMap.empty in
+ 	Array.iter (fun f ->
+-		if f.fe_module = None && ExtString.String.starts_with f.fe_name "fun$" then f.fe_name <- "wrap" ^ type_name ctx (match f.fe_decl with None -> Globals.die "" __LOC__ | Some f -> f.ftype);
++		if f.fe_module = None && ExtString.String.starts_with f.fe_name ~prefix:"fun$" then f.fe_name <- "wrap" ^ type_name ctx (match f.fe_decl with None -> Globals.die "" __LOC__ | Some f -> f.ftype);
+ 		(* assign context to function module *)
+ 		match f.fe_args with
+ 		| (HEnum e) as t :: _ when e.ename = "" ->
+diff --git a/src/generators/jvm/jvmConstantPool.ml b/src/generators/jvm/jvmConstantPool.ml
+index d347f2bde..cb6b6487c 100644
+--- a/src/generators/jvm/jvmConstantPool.ml
++++ b/src/generators/jvm/jvmConstantPool.ml
+@@ -87,7 +87,7 @@ class constant_pool = object(self)
+ 	method add_path path =
+ 		let s = self#s_type_path path in
+ 		let offset = self#add_type s in
+-		if String.contains (snd path) '$' && not (ExtString.String.starts_with s "[") then begin
++		if String.contains (snd path) '$' && not (ExtString.String.starts_with s ~prefix:"[") then begin
+ 			let name1,name2 = ExtString.String.split (snd path) "$" in
+ 			Hashtbl.replace inner_classes ((fst path,name1),name2) offset;
+ 		end;
+@@ -189,4 +189,4 @@ class constant_pool = object(self)
+ 		let ch = IO.output_bytes () in
+ 		self#write ch;
+ 		IO.close_out ch
+-end
+\ No newline at end of file
++end
+diff --git a/src/macro/eval/evalLuv.ml b/src/macro/eval/evalLuv.ml
+index a399d9108..8b93b7818 100644
+--- a/src/macro/eval/evalLuv.ml
++++ b/src/macro/eval/evalLuv.ml
+@@ -94,6 +94,8 @@ let encode_uv_error (e:Error.t) =
+ 	| `EILSEQ -> 77
+ 	| `EOVERFLOW -> 78
+ 	| `ESOCKTNOSUPPORT -> 79
++	| `ENODATA -> 80
++	| `EUNATCH -> 81
+ 	)
+ 
+ let decode_uv_error v : Error.t =
+@@ -178,6 +180,8 @@ let decode_uv_error v : Error.t =
+ 	| 77 -> `EILSEQ
+ 	| 78 -> `EOVERFLOW
+ 	| 79 -> `ESOCKTNOSUPPORT
++	| 80 -> `ENODATA
++	| 81 -> `EUNATCH
+ 	| _ -> unexpected_value v "eval.luv.UVError"
+ 
+ let luv_exception e =
+@@ -782,12 +786,12 @@ let buffer_fields = [
+ 		let buffer = decode_buffer v1
+ 		and offset = decode_int v2
+ 		and length = decode_int v3 in
+-		encode_buffer (Buffer.sub buffer offset length)
++		encode_buffer (Buffer.sub buffer ~offset ~length)
+ 	);
+ 	"blit", vfun2 (fun v1 v2 ->
+ 		let buffer = decode_buffer v1
+ 		and destination = decode_buffer v2 in
+-		Buffer.blit buffer destination;
++		Buffer.blit ~source:buffer ~destination;
+ 		vnull
+ 	);
+ 	"fill", vfun2 (fun v1 v2 ->
+@@ -812,21 +816,21 @@ let buffer_fields = [
+ 		let buffer = decode_buffer v1
+ 		and destination = decode_bytes v2
+ 		and offset = decode_int v3 in
+-		Buffer.blit_to_bytes buffer destination offset;
++		Buffer.blit_to_bytes buffer destination ~destination_offset:offset;
+ 		vnull
+ 	);
+ 	"blitFromBytes", vfun3 (fun v1 v2 v3 ->
+ 		let buffer = decode_buffer v1
+ 		and source = decode_bytes v2
+ 		and offset = decode_int v3 in
+-		Buffer.blit_from_bytes buffer source offset;
++		Buffer.blit_from_bytes buffer source ~source_offset:offset;
+ 		vnull
+ 	);
+ 	"blitFromString", vfun3 (fun v1 v2 v3 ->
+ 		let buffer = decode_buffer v1
+ 		and source = decode_native_string v2
+ 		and offset = decode_int v3 in
+-		Buffer.blit_from_string buffer source offset;
++		Buffer.blit_from_string buffer source ~source_offset:offset;
+ 		vnull
+ 	);
+ ]
+@@ -1159,7 +1163,7 @@ let stream_fields = [
+ 	"accept", vfun2 (fun v1 v2 ->
+ 		let server = decode_stream v1
+ 		and client = decode_stream v2 in
+-		encode_unit_result (Stream.accept server client)
++		encode_unit_result (Stream.accept ~server ~client)
+ 	);
+ 	"readStart", vfun3 (fun v1 v2 v3 ->
+ 		let stream = decode_stream v1
+@@ -1942,7 +1946,7 @@ let fs_event_fields = [
+ 					) events
+ 				in
+ 				encode_obj [
+-					key_file,vnative_string file;
++					key_file,encode_nullable vnative_string file;
+ 					key_events,encode_array vevents;
+ 				]
+ 			) v4
+@@ -2175,7 +2179,7 @@ let env_fields = [
+ let time_fields = [
+ 	"getTimeOfDay", vfun0 (fun() ->
+ 		encode_result (fun (t:Time.t) ->
+-			encode_obj [key_sec,VInt64 t.tv_sec; key_usec,vint32 t.tv_usec]
++			encode_obj [key_sec,VInt64 t.sec; key_usec,vint32 t.usec]
+ 		) (Time.gettimeofday())
+ 	);
+ 	"hrTime", vfun0 (fun() ->
+@@ -2292,10 +2296,10 @@ let resource_fields = [
+ 		encode_array_a [|vfloat m1; vfloat m5; vfloat m15|];
+ 	);
+ 	"freeMemory", vfun0 (fun() ->
+-		VUInt64 (Resource.free_memory())
++		encode_nullable (fun u -> VUInt64 u) (Resource.free_memory())
+ 	);
+ 	"totalMemory", vfun0 (fun() ->
+-		VUInt64 (Resource.total_memory())
++		encode_nullable (fun u -> VUInt64 u) (Resource.total_memory())
+ 	);
+ 	"constrainedMemory", vfun0 (fun() ->
+ 		encode_nullable (fun u -> VUInt64 u) (Resource.constrained_memory())
+@@ -2445,4 +2449,4 @@ let version_fields = [
+ 	"isRelease", vbool (Version.is_release);
+ 	"suffix", encode_string (Version.suffix);
+ 	"hex", vint (Version.hex);
+-]
+\ No newline at end of file
++]
+diff --git a/src/macro/eval/evalStdLib.ml b/src/macro/eval/evalStdLib.ml
+index 935733b53..ce512fbc3 100644
+--- a/src/macro/eval/evalStdLib.ml
++++ b/src/macro/eval/evalStdLib.ml
+@@ -555,7 +555,7 @@ module StdCompress = struct
+ 		let srcPos = decode_int srcPos in
+ 		let dst = decode_bytes dst in
+ 		let dstPos = decode_int dstPos in
+-		let r = try f this.z (Bytes.unsafe_to_string src) srcPos (Bytes.length src - srcPos) dst dstPos (Bytes.length dst - dstPos) this.z_flush with _ -> exc_string "oops" in
++		let r = try f this.z ~src:(Bytes.unsafe_to_string src) ~spos:srcPos ~slen:(Bytes.length src - srcPos) ~dst ~dpos:dstPos ~dlen:(Bytes.length dst - dstPos) this.z_flush with _ -> exc_string "oops" in
+ 		encode_obj [
+ 			key_done,vbool r.z_finish;
+ 			key_read,vint r.z_read;
+@@ -576,7 +576,7 @@ module StdCompress = struct
+ 		let level = decode_int level in
+ 		let zip = zlib_deflate_init level in
+ 		let d = Bytes.make (zlib_deflate_bound zip (Bytes.length s)) (char_of_int 0) in
+-		let r = zlib_deflate zip (Bytes.unsafe_to_string s) 0 (Bytes.length s) d 0 (Bytes.length d) Z_FINISH in
++		let r = zlib_deflate zip ~src:(Bytes.unsafe_to_string s) ~spos:0 ~slen:(Bytes.length s) ~dst:d ~dpos:0 ~dlen:(Bytes.length d) Z_FINISH in
+ 		zlib_deflate_end zip;
+ 		if not r.z_finish || r.z_read <> (Bytes.length s) then exc_string "Compression failed";
+ 		encode_bytes (Bytes.sub d 0 r.z_wrote)
+@@ -3040,7 +3040,7 @@ module StdUncompress = struct
+ 		let buf = Buffer.create 0 in
+ 		let tmp = Bytes.make bufsize (char_of_int 0) in
+ 		let rec loop pos =
+-			let r = zlib_inflate zip (Bytes.unsafe_to_string src) pos (Bytes.length src - pos) tmp 0 bufsize Z_SYNC_FLUSH in
++			let r = zlib_inflate zip ~src:(Bytes.unsafe_to_string src) ~spos:pos ~slen:(Bytes.length src - pos) ~dst:tmp ~dpos:0 ~dlen:bufsize Z_SYNC_FLUSH in
+ 			Buffer.add_subbytes buf tmp 0 r.z_wrote;
+ 			if not r.z_finish then loop (pos + r.z_read)
+ 		in
+diff --git a/src/optimization/dce.ml b/src/optimization/dce.ml
+index 4e7b1fc98..ad5d9ced8 100644
+--- a/src/optimization/dce.ml
++++ b/src/optimization/dce.ml
+@@ -76,7 +76,7 @@ let overrides_extern_field cf c =
+ 	loop c cf
+ 
+ let is_std_file dce file =
+-	List.exists (ExtString.String.starts_with file) dce.std_dirs
++	List.exists (fun pfx -> ExtString.String.starts_with file ~prefix:pfx) dce.std_dirs
+ 
+ let keep_metas = [Meta.Keep;Meta.Expose]
+ 
+@@ -603,7 +603,7 @@ and expr dce e =
+ 		check_op dce op;
+ 		check_and_add_feature dce "dynamic_array_write";
+ 		expr dce e1;
+-		expr dce e2;		
++		expr dce e2;
+ 	| TArray(({etype = t} as e1),e2) when is_array t ->
+ 		check_and_add_feature dce "array_read";
+ 		expr dce e1;
+diff --git a/src/typing/macroContext.ml b/src/typing/macroContext.ml
+index 2babcc8dc..a5aae669c 100644
+--- a/src/typing/macroContext.ml
++++ b/src/typing/macroContext.ml
+@@ -563,7 +563,7 @@ let get_macro_context ctx p =
+ 		com2.main_class <- None;
+ 		(* Inherit most display settings, but require normal typing. *)
+ 		com2.display <- {ctx.com.display with dms_kind = DMNone; dms_full_typing = true; dms_force_macro_typing = true; dms_inline = true; };
+-		com2.class_path <- List.filter (fun s -> not (ExtString.String.exists s "/_std/")) com2.class_path;
++		com2.class_path <- List.filter (fun s -> not (ExtString.String.exists s ~sub:"/_std/")) com2.class_path;
+ 		let name = platform_name !Globals.macro_platform in
+ 		com2.class_path <- List.map (fun p -> p ^ name ^ "/_std/") com2.std_path @ com2.class_path;
+ 		let defines = adapt_defines_to_macro_context com2.defines; in
+diff --git a/std/eval/luv/FsEvent.hx b/std/eval/luv/FsEvent.hx
+index 557113819..3381e4e9b 100644
+--- a/std/eval/luv/FsEvent.hx
++++ b/std/eval/luv/FsEvent.hx
+@@ -26,11 +26,11 @@ enum abstract FsEventFlag(Int) {
+ 	/**
+ 		Starts the handle and watches the given path for changes.
+ 	**/
+-	public function start(path:NativeString, ?flags:Array<FsEventFlag>, callback:(result:Result<{file:NativeString,events:Array<FsEventType>}>)->Void):Void;
++	public function start(path:NativeString, ?flags:Array<FsEventFlag>, callback:(result:Result<{file:Null<NativeString>,events:Array<FsEventType>}>)->Void):Void;
+ 
+ 	/**
+ 		Stops the handle.
+ 	**/
+ 	public function stop():Result<Result.NoData>;
+ 
+-}
+\ No newline at end of file
++}
+diff --git a/std/eval/luv/Resource.hx b/std/eval/luv/Resource.hx
+index 5457e74f6..0acf4e730 100644
+--- a/std/eval/luv/Resource.hx
++++ b/std/eval/luv/Resource.hx
+@@ -41,12 +41,12 @@ extern class Resource {
+ 	/**
+ 		Evaluates to the amount of free memory, in bytes.
+ 	**/
+-	static function freeMemory():UInt64;
++	static function freeMemory():Null<UInt64>;
+ 
+ 	/**
+ 		Evaluates to the total amount of memory, in bytes.
+ 	**/
+-	static function totalMemory():UInt64;
++	static function totalMemory():Null<UInt64>;
+ 
+ 	/**
+ 		Gets the amount of memory available to the process (in bytes) based on
+@@ -75,4 +75,4 @@ extern class Resource {
+ 	**/
+ 	static function getRUsage():Result<RUsage>;
+ 
+-}
+\ No newline at end of file
++}
+-- 
+2.45.2.windows.1
+
