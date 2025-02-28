@@ -28,7 +28,7 @@ Homepage: https://haxe.org
 
 Package: haxe
 Architecture: any
-Depends: neko (>= 2.0.0),
+Depends: neko,
          ${misc:Depends},
          ${ocaml:Depends},
          ${shlibs:Depends}
