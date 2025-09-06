@@ -1,3 +1,11 @@
+haxe (1:4.3.7-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Remove ocaml5.3.patch and mbedtls3.patch, which were integrated in this
+    version already.
+
+ -- Andy Li <andy@onthewings.net>  Sat, 06 Sep 2025 05:18:22 +0000
+
 haxe (1:4.3.6-3) unstable; urgency=medium
 
   * Fix changelog of 1:4.3.6-2. (Closes: #1082569, #1093103)
