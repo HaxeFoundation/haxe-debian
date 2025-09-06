@@ -263,7 +263,7 @@ let rec scan_labels ctx supported in_block e =
 			| Some e -> scan_labels ctx supported false e);
 			ctx.stack <- ctx.stack + 1
 		) l
-	| ELabel l when not supported ->
+	| ELabel _ when not supported ->
 		error "Label is not supported in this part of the program" (snd e);
 	| ELabel l when Hashtbl.mem ctx.g.labels l ->
 		error ("Duplicate label " ^ l) (snd e)
@@ -317,7 +317,7 @@ let rec scan_labels ctx supported in_block e =
 			scan_labels ctx supported false e;
 			ctx.stack <- ctx.stack - List.length el
 		end
-	| ECall ((EConst (Builtin x),_),el) when x <> "apply" ->
+	| ECall ((EConst (Builtin x),_),_) when x <> "apply" ->
 		Nast.iter (scan_labels ctx false false) e
 	| ECall ((EConst (Builtin "apply"),_),e :: el)
 	| ECall(e,el) ->
@@ -329,7 +329,7 @@ let rec scan_labels ctx supported in_block e =
 		ctx.stack <- ctx.stack - List.length el
 	| EObject fl ->
 		ctx.stack <- ctx.stack + 2;
-		List.iter (fun (s,e) ->
+		List.iter (fun (_,e) ->
 			scan_labels ctx supported false e
 		) fl;
 		ctx.stack <- ctx.stack - 2;

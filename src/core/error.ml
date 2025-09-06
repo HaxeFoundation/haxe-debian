@@ -318,7 +318,7 @@ let error_require r p =
 		"a system platform (php,neko,cpp,etc.)"
 	else try
 		if String.sub r 0 5 <> "flash" then raise Exit;
-		let _, v = ExtString.String.replace (String.sub r 5 (String.length r - 5)) "_" "." in
+		let _, v = ExtString.String.replace ~str:(String.sub r 5 (String.length r - 5)) ~sub:"_" ~by:"." in
 		"flash version " ^ v ^ " (use -swf-version " ^ v ^ ")"
 	with _ ->
 		"'" ^ r ^ "' to be enabled"

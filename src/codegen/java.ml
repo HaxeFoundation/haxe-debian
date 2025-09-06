@@ -939,7 +939,7 @@ let normalize_jclass com cls =
 let get_classes_zip zip =
 	let ret = ref [] in
 	List.iter (function
-		| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f "$") ->
+		| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f ~sub:"$") ->
 				(match List.rev (String.nsplit f "/") with
 				| clsname :: pack ->
 					if not (String.contains clsname '$') then begin
@@ -966,7 +966,7 @@ class virtual java_library com name file_path = object(self)
 			if Meta.has Meta.JavaCanonical metas then
 				List.map (function
 					| (Meta.JavaCanonical,[EConst (String(cpack,_)), _; EConst(String(cname,_)), _],_) ->
-						let did_replace,name = String.replace cname name_original name_replace in
+						let did_replace,name = String.replace ~str:cname ~sub:name_original ~by:name_replace in
 						if not did_replace then print_endline (cname ^ " -> " ^ name_original ^ " -> " ^ name_replace);
 						mk_meta name
 					| m -> m
@@ -999,7 +999,7 @@ class virtual java_library com name file_path = object(self)
 					| None, ([], c) -> build ctx (["haxe";"root"], c) p types
 					| None, _ -> None
 					| Some (cls, real_path, pos_path), _ ->
-							let is_disallowed_inner = first && String.exists (snd cls.cpath) "$" in
+							let is_disallowed_inner = first && String.exists (snd cls.cpath) ~sub:"$" in
 							let is_disallowed_inner = if is_disallowed_inner then begin
 									let outer, inner = String.split (snd cls.cpath) "$" in
 									match self#lookup (fst path, outer) with
@@ -1062,7 +1062,7 @@ class virtual java_library com name file_path = object(self)
 										match parts with
 											| _ :: _ ->
 												let alias_name = String.concat "_" parts in
-												if (not (SS.mem alias_name !inner_alias)) && (not (String.exists (snd path) "_24")) then begin
+												if (not (SS.mem alias_name !inner_alias)) && (not (String.exists (snd path) ~sub:"_24")) then begin
 													let alias_def = ETypedef {
 														d_name = alias_name,null_pos;
 														d_doc = None;
@@ -1127,7 +1127,7 @@ class java_library_jar com name file_path = object(self)
 		if not loaded then begin
 			loaded <- true;
 			List.iter (function
-				| { Zip.is_directory = false; Zip.filename = filename } when String.ends_with filename ".class" ->
+				| { Zip.is_directory = false; Zip.filename = filename } when String.ends_with filename ~suffix:".class" ->
 					let pack = String.nsplit filename "/" in
 					(match List.rev pack with
 						| [] -> ()
@@ -1180,7 +1180,7 @@ class java_library_jar com name file_path = object(self)
 	method private list_modules' : path list =
 		let ret = ref [] in
 		List.iter (function
-			| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f "$") ->
+			| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f ~sub:"$") ->
 					(match List.rev (String.nsplit f "/") with
 					| clsname :: pack ->
 						if not (String.contains clsname '$') then begin
@@ -1212,10 +1212,10 @@ class java_library_dir com name file_path = object(self)
 		let rec iter_files pack dir path = try
 			let file = Unix.readdir dir in
 			let filepath = path ^ "/" ^ file in
-			(if String.ends_with file ".class" then
+			(if String.ends_with file ~suffix:".class" then
 				let name = String.sub file 0 (String.length file - 6) in
 				let path = jpath_to_hx (pack,name) in
-				if not (String.exists file "$") then all := path :: !all;
+				if not (String.exists file ~sub:"$") then all := path :: !all;
 				Hashtbl.add hxpack_to_jpack path (pack,name)
 			else if (Unix.stat filepath).st_kind = S_DIR && file <> "." && file <> ".." then
 				let pack = pack @ [file] in

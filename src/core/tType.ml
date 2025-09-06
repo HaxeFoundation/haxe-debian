@@ -433,10 +433,11 @@ type flag_tclass_field =
 	| CfGeneric
 	| CfDefault (* Interface field with default implementation (only valid on Java) *)
 	| CfPostProcessed (* Marker to indicate the field has been post-processed *)
+	| CfNoLookup (* Field cannot be accessed by-name. *)
 
 (* Order has to match declaration for printing*)
 let flag_tclass_field_names = [
-	"CfPublic";"CfStatic";"CfExtern";"CfFinal";"CfModifiesThis";"CfOverride";"CfAbstract";"CfOverload";"CfImpl";"CfEnum";"CfGeneric";"CfDefault"
+	"CfPublic";"CfStatic";"CfExtern";"CfFinal";"CfModifiesThis";"CfOverride";"CfAbstract";"CfOverload";"CfImpl";"CfEnum";"CfGeneric";"CfDefault";"CfNoLookup"
 ]
 
 type flag_tvar =

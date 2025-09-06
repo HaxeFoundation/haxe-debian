@@ -220,7 +220,7 @@ let is_override_attrib = (function
     (* TODO: pass anotations as @:meta *)
     | AttrVisibleAnnotations ann ->
       List.exists (function
-        | { ann_type = TObject( (["java";"lang"], "Override"), [] ) } ->
+				| { ann_type = TObject( (["java";"lang"], "Override"), [] ); ann_elements = _ } ->
             true
         | _ -> false
       ) ann

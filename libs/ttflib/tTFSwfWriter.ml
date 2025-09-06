@@ -153,14 +153,14 @@ let int_from_langcode lc =
 	| LCTraditionalChinese -> 5
 
 let write_font2 ch b f2 =
-	IO.write_bits b 1 (bi true);
-	IO.write_bits b 1 (bi f2.font_shift_jis);
-	IO.write_bits b 1 (bi f2.font_is_small);
-	IO.write_bits b 1 (bi f2.font_is_ansi);
-	IO.write_bits b 1 (bi f2.font_wide_offsets);
-	IO.write_bits b 1 (bi f2.font_wide_codes);
-	IO.write_bits b 1 (bi f2.font_is_italic);
-	IO.write_bits b 1 (bi f2.font_is_bold);
+	IO.write_bits b ~nbits:1 (bi true);
+	IO.write_bits b ~nbits:1 (bi f2.font_shift_jis);
+	IO.write_bits b ~nbits:1 (bi f2.font_is_small);
+	IO.write_bits b ~nbits:1 (bi f2.font_is_ansi);
+	IO.write_bits b ~nbits:1 (bi f2.font_wide_offsets);
+	IO.write_bits b ~nbits:1 (bi f2.font_wide_codes);
+	IO.write_bits b ~nbits:1 (bi f2.font_is_italic);
+	IO.write_bits b ~nbits:1 (bi f2.font_is_bold);
 	IO.write_byte ch (int_from_langcode f2.font_language);
 	IO.write_byte ch ((String.length f2.font_name) + 1);
 	IO.nwrite_string ch f2.font_name;

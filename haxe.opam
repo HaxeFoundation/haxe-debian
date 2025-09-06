@@ -19,9 +19,8 @@ build: [
 install: [make "install" "INSTALL_DIR=%{prefix}%"]
 remove: [make "uninstall" "INSTALL_DIR=%{prefix}%"]
 depends: [
-  ("ocaml" {>= "5.0"} & ("camlp5" {build}))
-    | ("ocaml" {>= "4.08" & < "5.0"} & ("camlp5" {build & = "8.00.03"}))
-  "ocamlfind" {build}
+  ("ocaml" {>= "5.0"} & ("camlp5" {build}) & ("ocamlfind" {build}))
+    | ("ocaml" {>= "4.08" & < "5.0"} & ("camlp5" {build & = "8.03.04"}) & ("ocamlfind" {build & = "1.9.1"}))
   "dune" {>= "1.11" & < "3.16"}
   "sedlex" {>= "2.0"}
   "xml-light"
@@ -32,5 +31,5 @@ depends: [
   "conf-libpcre2-8"
   "conf-zlib"
   "conf-neko"
-  "luv" {= "0.5.12"}
+  "luv" {= "0.5.13"}
 ]

@@ -18,8 +18,8 @@
  *)
 open Type
 
-let is_getter_name name = ExtString.String.starts_with name "get_"
-let is_setter_name name = ExtString.String.starts_with name "set_"
+let is_getter_name name = ExtString.String.starts_with name ~prefix:"get_"
+let is_setter_name name = ExtString.String.starts_with name ~prefix:"set_"
 let get_property_name accessor_name = String.sub accessor_name 4 (String.length accessor_name - 4)
 let is_flash_property cf = Meta.has Meta.FlashProperty cf.cf_meta
 

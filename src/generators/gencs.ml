@@ -1305,7 +1305,7 @@ let generate con =
 						) args;
 						write w "] = ";
 						expr_s w value
-					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) "add_" ->
+					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) ~prefix:"add_" ->
 						let name = field_name f in
 						let propname = String.sub name 4 (String.length name - 4) in
 						if is_event (gen.greal_type ef.etype) propname then begin
@@ -1316,7 +1316,7 @@ let generate con =
 							expr_s w ev
 						end else
 							do_call w e [ev]
-					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) "remove_" ->
+					| TCall( ({ eexpr = TField(ef,f) } as e), [ev] ) when String.starts_with (field_name f) ~prefix:"remove_" ->
 						let name = field_name f in
 						let propname = String.sub name 7 (String.length name - 7) in
 						if is_event (gen.greal_type ef.etype) propname then begin
@@ -1327,7 +1327,7 @@ let generate con =
 							expr_s w ev
 						end else
 							do_call w e [ev]
-					| TCall( ({ eexpr = TField(ef,f) } as e), [] ) when String.starts_with (field_name f) "get_" ->
+					| TCall( ({ eexpr = TField(ef,f) } as e), [] ) when String.starts_with (field_name f) ~prefix:"get_" ->
 						let name = field_name f in
 						let propname = String.sub name 4 (String.length name - 4) in
 						if is_extern_prop (gen.greal_type ef.etype) propname then
@@ -1340,7 +1340,7 @@ let generate con =
 							end
 						else
 							do_call w e []
-					| TCall( ({ eexpr = TField(ef,f) } as e), [v] ) when String.starts_with (field_name f) "set_" ->
+					| TCall( ({ eexpr = TField(ef,f) } as e), [v] ) when String.starts_with (field_name f) ~prefix:"set_" ->
 						let name = field_name f in
 						let propname = String.sub name 4 (String.length name - 4) in
 						if is_extern_prop (gen.greal_type ef.etype) propname then begin
@@ -2777,7 +2777,7 @@ let generate con =
 				let interf = (has_class_flag cl CInterface) in
 				(* get all functions that are getters/setters *)
 				let nonprops = List.filter (function
-					| cf when String.starts_with cf.cf_name "get_" -> (try
+					| cf when String.starts_with cf.cf_name ~prefix:"get_" -> (try
 						(* find the property *)
 						let prop = find_prop (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
 						let v, t, get, set = !prop in
@@ -2785,7 +2785,7 @@ let generate con =
 						prop := (v,t,Some cf,set);
 						not interf
 					with | Not_found -> true)
-					| cf when String.starts_with cf.cf_name "set_" -> (try
+					| cf when String.starts_with cf.cf_name ~prefix:"set_" -> (try
 						(* find the property *)
 						let prop = find_prop (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
 						let v, t, get, set = !prop in
@@ -2793,7 +2793,7 @@ let generate con =
 						prop := (v,t,get,Some cf);
 						not interf
 					with | Not_found -> true)
-					| cf when String.starts_with cf.cf_name "add_" -> (try
+					| cf when String.starts_with cf.cf_name ~prefix:"add_" -> (try
 						let event = find_event (String.sub cf.cf_name 4 (String.length cf.cf_name - 4)) in
 						let v, t, _, add, remove = !event in
 						assert (add = None);
@@ -2801,7 +2801,7 @@ let generate con =
 						event := (v, t, custom, Some cf, remove);
 						false
 					with | Not_found -> true)
-					| cf when String.starts_with cf.cf_name "remove_" -> (try
+					| cf when String.starts_with cf.cf_name ~prefix:"remove_" -> (try
 						let event = find_event (String.sub cf.cf_name 7 (String.length cf.cf_name - 7)) in
 						let v, t, _, add, remove = !event in
 						assert (remove = None);

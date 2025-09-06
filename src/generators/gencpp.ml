@@ -497,9 +497,9 @@ let format_code code =
 let get_code meta key =
    let code = get_meta_string meta key in
    let magic_var = "${GENCPP_SOURCE_DIRECTORY}"  in
-   let code = if ExtString.String.exists code magic_var then begin
+   let code = if ExtString.String.exists code ~sub:magic_var then begin
          let source_directory = get_meta_string_full_dirname meta key in
-         let _,code = ExtString.String.replace code magic_var source_directory in
+         let _,code = ExtString.String.replace ~str:code ~sub:magic_var ~by:source_directory in
          code
       end else
          code
@@ -1698,7 +1698,7 @@ and tcpp_to_string tcpp =
 
 and cpp_class_path_of klass params =
    match (get_meta_string klass.cl_meta Meta.Native)<>"" with
-   | true -> 
+   | true ->
       let typeParams = match params with
       | [] -> ""
       | _ -> "< " ^ String.concat "," (List.map tcpp_to_string params) ^ " >" in
@@ -4411,7 +4411,10 @@ let current_virtual_functions_rev clazz base_functions =
       | _, Method MethDynamic -> result
       | TFun (args,return_type), Method _  ->
           if (is_override elem ) then
-             List.map (fun (e,a,r) ->  if e.cf_name<>elem.cf_name then (e,a,r) else  (elem,args,return_type) ) result
+            if List.exists (fun (e,a,r) -> e.cf_name=elem.cf_name ) result then
+               List.map (fun (e,a,r) -> if e.cf_name<>elem.cf_name then (e,a,r) else (elem,args,return_type) ) result
+            else
+               (elem,args,return_type) :: result
           else
              (elem,args,return_type) :: result
       | _,_ -> result

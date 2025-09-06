@@ -76,7 +76,8 @@
 	{
 		"name": "WVarShadow",
 		"doc": "A local variable hides another by using the same name",
-		"parent": "WTyper"
+		"parent": "WTyper",
+		"enabled": false
 	},
 	{
 		"name": "WExternWithExpr",
@@ -112,6 +113,11 @@
 		"name": "WConstructorInliningCancelled",
 		"doc": "Constructor call could not be inlined because a field is uninitialized",
 		"parent": "WTyper"
+	},
+	{
+		"name": "WUnsafeEnumEquality",
+		"doc": "Equality operations on enums with parameters might not work as expected",
+		"parent": "WTyper",
+		"enabled": false
 	}
-
 ]

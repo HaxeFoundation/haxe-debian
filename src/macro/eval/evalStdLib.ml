@@ -555,7 +555,7 @@ module StdCompress = struct
 		let srcPos = decode_int srcPos in
 		let dst = decode_bytes dst in
 		let dstPos = decode_int dstPos in
-		let r = try f this.z (Bytes.unsafe_to_string src) srcPos (Bytes.length src - srcPos) dst dstPos (Bytes.length dst - dstPos) this.z_flush with _ -> exc_string "oops" in
+		let r = try f this.z ~src:(Bytes.unsafe_to_string src) ~spos:srcPos ~slen:(Bytes.length src - srcPos) ~dst ~dpos:dstPos ~dlen:(Bytes.length dst - dstPos) this.z_flush with _ -> exc_string "oops" in
 		encode_obj [
 			key_done,vbool r.z_finish;
 			key_read,vint r.z_read;
@@ -576,7 +576,7 @@ module StdCompress = struct
 		let level = decode_int level in
 		let zip = zlib_deflate_init level in
 		let d = Bytes.make (zlib_deflate_bound zip (Bytes.length s)) (char_of_int 0) in
-		let r = zlib_deflate zip (Bytes.unsafe_to_string s) 0 (Bytes.length s) d 0 (Bytes.length d) Z_FINISH in
+		let r = zlib_deflate zip ~src:(Bytes.unsafe_to_string s) ~spos:0 ~slen:(Bytes.length s) ~dst:d ~dpos:0 ~dlen:(Bytes.length d) Z_FINISH in
 		zlib_deflate_end zip;
 		if not r.z_finish || r.z_read <> (Bytes.length s) then exc_string "Compression failed";
 		encode_bytes (Bytes.sub d 0 r.z_wrote)
@@ -3040,7 +3040,7 @@ module StdUncompress = struct
 		let buf = Buffer.create 0 in
 		let tmp = Bytes.make bufsize (char_of_int 0) in
 		let rec loop pos =
-			let r = zlib_inflate zip (Bytes.unsafe_to_string src) pos (Bytes.length src - pos) tmp 0 bufsize Z_SYNC_FLUSH in
+			let r = zlib_inflate zip ~src:(Bytes.unsafe_to_string src) ~spos:pos ~slen:(Bytes.length src - pos) ~dst:tmp ~dpos:0 ~dlen:bufsize Z_SYNC_FLUSH in
 			Buffer.add_subbytes buf tmp 0 r.z_wrote;
 			if not r.z_finish then loop (pos + r.z_read)
 		in

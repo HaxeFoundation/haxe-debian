@@ -269,11 +269,16 @@ module Pattern = struct
 		let display_mode () =
 			if pctx.is_postfix_match then DKMarked else DKPattern toplevel
 		in
-		let catch_errors () =
+		let catch_errors p =
 			let old = ctx.com.located_error in
 			let restore_report_mode = disable_report_mode ctx.com in
-			ctx.com.located_error <- (fun ?depth _ ->
-				raise Exit
+			ctx.com.located_error <- (fun ?depth err ->
+				let ep = extract_located_pos err in
+				(* The error might not actually come from here, let's check the position (issue #12098). *)
+				if ep.pfile <> p.pfile || ep.pmax < p.pmin || ep.pmin > p.pmax then
+					old err
+				else
+					raise Exit
 			);
 			(fun () ->
 				restore_report_mode();
@@ -283,7 +288,7 @@ module Pattern = struct
 		let try_typing e =
 			let old = ctx.untyped in
 			ctx.untyped <- true;
-			let restore = catch_errors () in
+			let restore = catch_errors (pos e) in
 			let e = try
 				type_expr ctx e (WithType.with_type t)
 			with exc ->
@@ -305,7 +310,7 @@ module Pattern = struct
 				try_typing (EConst (Ident s),p)
 			with
 			| Exit | Bad_pattern _ ->
-				let restore = catch_errors () in
+				let restore = catch_errors p in
 				begin try
 					let mt = module_type_of_type t in
 					let e_mt = TyperBase.type_module_type ctx mt None p in

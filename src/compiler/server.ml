@@ -296,7 +296,7 @@ module Communication = struct
 				out
 				(String.make gutter_len ' ')
 				(* Remove "... " prefix *)
-				(if (ExtString.String.starts_with str "... ") then String.sub str 4 ((String.length str) - 4) else str)
+				(if (ExtString.String.starts_with str ~prefix:"... ") then String.sub str 4 ((String.length str) - 4) else str)
 			) !out (ExtString.String.nsplit cm.cm_message "\n");
 
 			ectx.previous <- Some ((if is_null_pos then null_pos else cm.cm_pos), cm.cm_severity, cm.cm_depth);
@@ -358,7 +358,7 @@ module Communication = struct
 					| first :: rest -> (cm.cm_depth, first) :: List.map (fun msg -> (cm.cm_depth+1, msg)) rest
 					| l -> [(cm.cm_depth, List.hd l)]
 				in
-				let rm_prefix str = if (ExtString.String.starts_with str "... ") then String.sub str 4 ((String.length str) - 4) else str in
+				let rm_prefix str = if (ExtString.String.starts_with str ~prefix:"... ") then String.sub str 4 ((String.length str) - 4) else str in
 				Some (String.concat "\n" (List.map (fun (depth, msg) -> (String.make (depth*2) ' ') ^ epos ^ " : " ^ (rm_prefix msg)) lines))
 			end
 

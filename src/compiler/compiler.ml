@@ -224,7 +224,7 @@ module Setup = struct
 		Common.define_value com Define.Dce "std";
 		com.info <- (fun ?(depth=0) msg p -> message ctx (make_compiler_message msg p depth DKCompilerMessage Information));
 		com.warning <- (fun ?(depth=0) w options msg p ->
-			match Warning.get_mode w (com.warning_options @ options) with
+			match Warning.get_mode w (options @ com.warning_options) with
 			| WMEnable ->
 				let wobj = Warning.warning_obj w in
 				let msg = if wobj.w_generic then
@@ -251,7 +251,7 @@ module Setup = struct
 		com.filter_messages <- (fun predicate -> (ctx.messages <- (List.rev (filter_messages true predicate))));
 		com.run_command <- run_command ctx;
 		com.class_path <- get_std_class_paths ();
-		com.std_path <- List.filter (fun p -> ExtString.String.ends_with p "std/" || ExtString.String.ends_with p "std\\") com.class_path
+		com.std_path <- List.filter (fun p -> ExtString.String.ends_with p ~suffix:"std/" || ExtString.String.ends_with p ~suffix:"std\\") com.class_path
 
 end
 
@@ -486,7 +486,7 @@ module HighLevel = struct
 			let ret = Unix.close_process_full (pin,pout,perr) in
 			if ret <> Unix.WEXITED 0 then fail (match lines, err with
 				| [], [] -> "Failed to call haxelib (command not found ?)"
-				| [], [s] when ExtString.String.ends_with (ExtString.String.strip s) "Module not found: path" -> "The haxelib command has been strip'ed, please install it again"
+				| [], [s] when ExtString.String.ends_with (ExtString.String.strip s) ~suffix:"Module not found: path" -> "The haxelib command has been strip'ed, please install it again"
 				| _ -> String.concat "\n" (lines@err));
 			t();
 			lines

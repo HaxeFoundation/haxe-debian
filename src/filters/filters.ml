@@ -75,7 +75,8 @@ module LocalStatic = struct
 			typing_error ~depth:1 "Conflicting field was found here" cf.cf_name_pos;
 		with Not_found ->
 			let cf = mk_field name ~static:true v.v_type v.v_pos v.v_pos in
-			cf.cf_meta <- v.v_meta;
+			cf.cf_meta <- (Meta.NoCompletion,[],Globals.null_pos) :: v.v_meta;
+			add_class_field_flag cf CfNoLookup;
 			begin match eo with
 			| None ->
 				()
@@ -700,7 +701,7 @@ module ForRemap = struct
 		| TFor(v,e1,e2) ->
 			let e1 = loop e1 in
 			let e2 = loop e2 in
-			let iterator = ForLoop.IterationKind.of_texpr ctx e1 (ForLoop.is_cheap_enough_t ctx e2) e.epos in
+			let iterator = ForLoop.IterationKind.of_texpr ctx e1 (ForLoop.get_unroll_params_t ctx e2) e.epos in
 			let restore = save_locals ctx in
 			let e = ForLoop.IterationKind.to_texpr ctx v iterator e2 e.epos in
 			restore();

@@ -224,7 +224,7 @@ let pass_name = function
 	| PFinal -> "final"
 
 let warning ?(depth=0) ctx w msg p =
-	let options = (Warning.from_meta ctx.curclass.cl_meta) @ (Warning.from_meta ctx.curfield.cf_meta) in
+	let options = (Warning.from_meta ctx.curfield.cf_meta) @ (Warning.from_meta ctx.curclass.cl_meta) in
 	ctx.com.warning ~depth w options msg p
 
 let make_call ctx e el t p = (!make_call_ref) ctx e el t p
@@ -288,13 +288,13 @@ let save_locals ctx =
 
 let add_local ctx k n t p =
 	let v = alloc_var k n t p in
-	if Define.defined ctx.com.defines Define.WarnVarShadowing && n <> "_" then begin
+	if n <> "_" then begin
 		match k with
 		| VUser _ ->
 			begin try
 				let v' = PMap.find n ctx.locals in
 				(* ignore std lib *)
-				if not (List.exists (ExtLib.String.starts_with p.pfile) ctx.com.std_path) then begin
+				if not (List.exists (fun path -> ExtLib.String.starts_with p.pfile ~prefix:path) ctx.com.std_path) then begin
 					warning ctx WVarShadow "This variable shadows a previously declared variable" p;
 					warning ~depth:1 ctx WVarShadow (compl_msg "Previous variable was here") v'.v_pos
 				end
