@@ -964,7 +964,7 @@ let rec get_fun_modifiers meta access modifiers =
 let generate con =
 	let exists = ref false in
 	List.iter (fun java_lib ->
-		if String.ends_with java_lib#get_file_path "hxjava-std.jar" then begin
+		if String.ends_with java_lib#get_file_path ~suffix:"hxjava-std.jar" then begin
 			exists := true;
 			java_lib#add_flag NativeLibraries.FlagIsStd;
 		end;

@@ -805,11 +805,11 @@ let convert_ilclass ctx p ?(delegate=false) ilcls = match ilcls.csuper with
 					ilcls.cmethods
 			in
 			run_fields (fun m ->
-				convert_ilmethod ctx p !is_interface m (List.exists (fun m2 -> m != m2 && String.get m2.mname 0 <> '.' && String.ends_with m2.mname ("." ^ m.mname)) meths)
+				convert_ilmethod ctx p !is_interface m (List.exists (fun m2 -> m != m2 && String.get m2.mname 0 <> '.' && String.ends_with m2.mname ~suffix:("." ^ m.mname)) meths)
 			) meths;
 			run_fields (convert_ilfield ctx p) ilcls.cfields;
 			run_fields (fun prop ->
-				convert_ilprop ctx p prop (List.exists (fun p2 -> prop != p2 && String.get p2.pname 0 <> '.' && String.ends_with p2.pname ("." ^ prop.pname)) ilcls.cprops)
+				convert_ilprop ctx p prop (List.exists (fun p2 -> prop != p2 && String.get p2.pname 0 <> '.' && String.ends_with p2.pname ~suffix:("." ^ prop.pname)) ilcls.cprops)
 			) ilcls.cprops;
 			run_fields (convert_ilevent ctx p) ilcls.cevents;
 
@@ -1039,7 +1039,7 @@ let normalize_ilcls ctx cls =
 				| (f,_,name,false) as ff ->
 					(* look for compatible fields *)
 					if not (List.exists (function
-						| (f2,_,name2,false) when (name = name2 || String.ends_with name2 ("." ^ name)) -> (* consider explicit implementations as implementations *)
+						| (f2,_,name2,false) when (name = name2 || String.ends_with name2 ~suffix:("." ^ name)) -> (* consider explicit implementations as implementations *)
 							compatible_field f f2
 						| _ -> false
 					) !current_all) then begin
@@ -1311,7 +1311,7 @@ let before_generate com =
 			try
 				let f = Unix.readdir f in
 				let finsens = String.lowercase f in
-				if String.ends_with finsens ".dll" then
+				if String.ends_with finsens ~suffix:".dll" then
 					add_net_lib com (path ^ "/" ^ f) true false ();
 				loop()
 			with | End_of_file ->

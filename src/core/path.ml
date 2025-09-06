@@ -242,7 +242,7 @@ end = struct
 		fst l
 
 	let starts_with subj start =
-		ExtString.String.starts_with subj start
+		ExtString.String.starts_with subj ~prefix:start
 
 	let to_string k = k
 end

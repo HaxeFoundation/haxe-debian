@@ -76,7 +76,7 @@ let overrides_extern_field cf c =
 	loop c cf
 
 let is_std_file dce file =
-	List.exists (ExtString.String.starts_with file) dce.std_dirs
+	List.exists (fun pfx -> ExtString.String.starts_with file ~prefix:pfx) dce.std_dirs
 
 let keep_metas = [Meta.Keep;Meta.Expose]
 
@@ -603,7 +603,7 @@ and expr dce e =
 		check_op dce op;
 		check_and_add_feature dce "dynamic_array_write";
 		expr dce e1;
-		expr dce e2;		
+		expr dce e2;
 	| TArray(({etype = t} as e1),e2) when is_array t ->
 		check_and_add_feature dce "array_read";
 		expr dce e1;

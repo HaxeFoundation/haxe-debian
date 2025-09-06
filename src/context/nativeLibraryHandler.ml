@@ -32,7 +32,7 @@ let add_native_lib com file is_extern = match com.platform with
 		if try Sys.is_directory file with Sys_error _ -> false then
 			let dir = file in
 			(fun _ -> Array.iter (fun file ->
-				if ExtString.String.ends_with file ".jar" then add (dir ^ "/" ^ file) ()
+				if ExtString.String.ends_with file ~suffix:".jar" then add (dir ^ "/" ^ file) ()
 			) (Sys.readdir file))
 		else
 			add file

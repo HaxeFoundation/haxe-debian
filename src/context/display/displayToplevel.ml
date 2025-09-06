@@ -486,7 +486,7 @@ let collect ctx tk with_type sort =
 			match cfile.c_package with
 			| [s] -> add_package ([],s)
 			| _ -> ()
-		end else if (List.exists (fun e -> ExtString.String.starts_with dot_path (e ^ ".")) !exclude) then
+		end else if (List.exists (fun e -> ExtString.String.starts_with dot_path ~prefix:(e ^ ".")) !exclude) then
 			()
 		else begin
 			ctx.com.module_to_file#add (cfile.c_package,module_name) cfile.c_file_path;

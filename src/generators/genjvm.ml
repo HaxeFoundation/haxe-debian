@@ -263,7 +263,7 @@ module AnnotationHandler = struct
 				AEnum(object_path_sig path,s)
 			| ECall(e1, el) ->
 				let path = parse_path e1 in
-				let _,name = ExtString.String.replace (snd path) "." "$" in
+				let _,name = ExtString.String.replace ~str:(snd path) ~sub:"." ~by:"$" in
 				let path = (fst path, name) in
 				let values = List.map parse_value_pair el in
 				AAnnotation(TObject(path, []),values)
@@ -278,7 +278,7 @@ module AnnotationHandler = struct
 		let parse_expr e = match fst e with
 			| ECall(e1,el) ->
 				let path = parse_path e1 in
-				let _,name = ExtString.String.replace (snd path) "." "$" in
+				let _,name = ExtString.String.replace ~str:(snd path) ~sub:"." ~by:"$" in
 				let path = (fst path,name) in
 				let values = List.map parse_value_pair el in
 				path,values

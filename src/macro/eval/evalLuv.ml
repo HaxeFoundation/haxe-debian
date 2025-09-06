@@ -94,6 +94,8 @@ let encode_uv_error (e:Error.t) =
 	| `EILSEQ -> 77
 	| `EOVERFLOW -> 78
 	| `ESOCKTNOSUPPORT -> 79
+	| `ENODATA -> 80
+	| `EUNATCH -> 81
 	)
 
 let decode_uv_error v : Error.t =
@@ -178,6 +180,8 @@ let decode_uv_error v : Error.t =
 	| 77 -> `EILSEQ
 	| 78 -> `EOVERFLOW
 	| 79 -> `ESOCKTNOSUPPORT
+	| 80 -> `ENODATA
+	| 81 -> `EUNATCH
 	| _ -> unexpected_value v "eval.luv.UVError"
 
 let luv_exception e =
@@ -782,12 +786,12 @@ let buffer_fields = [
 		let buffer = decode_buffer v1
 		and offset = decode_int v2
 		and length = decode_int v3 in
-		encode_buffer (Buffer.sub buffer offset length)
+		encode_buffer (Buffer.sub buffer ~offset ~length)
 	);
 	"blit", vfun2 (fun v1 v2 ->
 		let buffer = decode_buffer v1
 		and destination = decode_buffer v2 in
-		Buffer.blit buffer destination;
+		Buffer.blit ~source:buffer ~destination;
 		vnull
 	);
 	"fill", vfun2 (fun v1 v2 ->
@@ -812,21 +816,21 @@ let buffer_fields = [
 		let buffer = decode_buffer v1
 		and destination = decode_bytes v2
 		and offset = decode_int v3 in
-		Buffer.blit_to_bytes buffer destination offset;
+		Buffer.blit_to_bytes buffer destination ~destination_offset:offset;
 		vnull
 	);
 	"blitFromBytes", vfun3 (fun v1 v2 v3 ->
 		let buffer = decode_buffer v1
 		and source = decode_bytes v2
 		and offset = decode_int v3 in
-		Buffer.blit_from_bytes buffer source offset;
+		Buffer.blit_from_bytes buffer source ~source_offset:offset;
 		vnull
 	);
 	"blitFromString", vfun3 (fun v1 v2 v3 ->
 		let buffer = decode_buffer v1
 		and source = decode_native_string v2
 		and offset = decode_int v3 in
-		Buffer.blit_from_string buffer source offset;
+		Buffer.blit_from_string buffer source ~source_offset:offset;
 		vnull
 	);
 ]
@@ -1159,7 +1163,7 @@ let stream_fields = [
 	"accept", vfun2 (fun v1 v2 ->
 		let server = decode_stream v1
 		and client = decode_stream v2 in
-		encode_unit_result (Stream.accept server client)
+		encode_unit_result (Stream.accept ~server ~client)
 	);
 	"readStart", vfun3 (fun v1 v2 v3 ->
 		let stream = decode_stream v1
@@ -1942,7 +1946,7 @@ let fs_event_fields = [
 					) events
 				in
 				encode_obj [
-					key_file,vnative_string file;
+					key_file,encode_nullable vnative_string file;
 					key_events,encode_array vevents;
 				]
 			) v4
@@ -2175,7 +2179,7 @@ let env_fields = [
 let time_fields = [
 	"getTimeOfDay", vfun0 (fun() ->
 		encode_result (fun (t:Time.t) ->
-			encode_obj [key_sec,VInt64 t.tv_sec; key_usec,vint32 t.tv_usec]
+			encode_obj [key_sec,VInt64 t.sec; key_usec,vint32 t.usec]
 		) (Time.gettimeofday())
 	);
 	"hrTime", vfun0 (fun() ->
@@ -2292,10 +2296,10 @@ let resource_fields = [
 		encode_array_a [|vfloat m1; vfloat m5; vfloat m15|];
 	);
 	"freeMemory", vfun0 (fun() ->
-		VUInt64 (Resource.free_memory())
+		encode_nullable (fun u -> VUInt64 u) (Resource.free_memory())
 	);
 	"totalMemory", vfun0 (fun() ->
-		VUInt64 (Resource.total_memory())
+		encode_nullable (fun u -> VUInt64 u) (Resource.total_memory())
 	);
 	"constrainedMemory", vfun0 (fun() ->
 		encode_nullable (fun u -> VUInt64 u) (Resource.constrained_memory())

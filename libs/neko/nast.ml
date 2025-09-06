@@ -44,7 +44,7 @@ type expr_decl =
 	| EParenthesis of expr
 	| EField of expr * string
 	| ECall of expr * expr list
-	| EArray of expr * expr	
+	| EArray of expr * expr
 	| EVars of (string * expr option) list
 	| EWhile of expr * expr * while_flag
 	| EIf of expr * expr * expr option
@@ -100,11 +100,11 @@ let map f (e,p) =
 	| ELabel _
 	| EConst _ as x -> x) , p
 
-let iter f (e,p) =
+let iter f (e,_) =
 	match e with
 	| EBlock el -> List.iter f el
 	| EParenthesis e -> f e
-	| EField (e,s) -> f e
+	| EField (e,_) -> f e
 	| ECall (e,el) -> f e; List.iter f el
 	| EArray (e1,e2) -> f e1; f e2
 	| EVars vl -> List.iter (fun (_,e) -> match e with None -> () | Some e -> f e) vl
@@ -117,7 +117,7 @@ let iter f (e,p) =
 	| EBreak (Some e) -> f e
 	| ENext (e1,e2) -> f e1; f e2
 	| EObject fl -> List.iter (fun (_,e) -> f e) fl
-	| ESwitch (e,cases,def) -> f e; List.iter (fun(e1,e2) -> f e1; f e2) cases; (match def with None -> () | Some e -> f e) 
+	| ESwitch (e,cases,def) -> f e; List.iter (fun(e1,e2) -> f e1; f e2) cases; (match def with None -> () | Some e -> f e)
 	| EReturn None
 	| EBreak None
 	| EContinue

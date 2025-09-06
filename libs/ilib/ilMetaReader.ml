@@ -2346,7 +2346,7 @@ let read_meta_tables pctx header module_cache =
 	List.iter (fun s ->
 		let rva = Int32.add (fst header.clr_meta) (Int32.of_int s.str_offset) in
 		seek_rva pctx rva;
-		match String.lowercase s.str_name with
+		match String.lowercase_ascii s.str_name with
 		| "#guid" ->
 			sguid := nread_string i (Int32.to_int s.str_size)
 		| "#strings" ->

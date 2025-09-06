@@ -477,7 +477,7 @@ let convert_and_validate k =
 	if List.mem converted_flag reserved_flags then
 		raise_reserved (Printf.sprintf "`%s` is a reserved compiler flag" k);
 	List.iter (fun ns ->
-		if ExtString.String.starts_with converted_flag (ns ^ ".") then
+		if ExtString.String.starts_with converted_flag ~prefix:(ns ^ ".") then
 			raise_reserved (Printf.sprintf "`%s` uses the reserved compiler flag namespace `%s.*`" k ns)
 	) reserved_flag_namespaces;
 	converted_flag
@@ -837,7 +837,7 @@ let create compilation_step cs version args =
 		get_macros = (fun() -> None);
 		info = (fun ?depth _ _ -> die "" __LOC__);
 		warning = (fun ?depth _ _ _ -> die "" __LOC__);
-		warning_options = [];
+		warning_options = [List.map (fun w -> {wo_warning = w;wo_mode = WMDisable}) WarningList.disabled_warnings];
 		error = (fun ?depth _ _ -> die "" __LOC__);
 		located_error = (fun ?depth _ -> die "" __LOC__);
 		get_messages = (fun() -> []);

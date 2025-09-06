@@ -995,7 +995,7 @@ class java_library_modern com name file_path = object(self)
 			loaded <- true;
 			let close = Timer.timer ["jar";"load"] in
 			List.iter (function
-				| ({ Zip.is_directory = false; Zip.filename = filename } as entry) when String.ends_with filename ".class" ->
+				| ({ Zip.is_directory = false; Zip.filename = filename } as entry) when String.ends_with filename ~suffix:".class" ->
 					let pack = String.nsplit filename "/" in
 					begin match List.rev pack with
 						| [] -> ()

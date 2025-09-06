@@ -96,7 +96,7 @@ let process_display_configuration ctx =
 			add_diagnostics_message ?depth com (located s p) DKCompilerMessage Information
 		);
 		com.warning <- (fun ?depth w options s p ->
-			match Warning.get_mode w (com.warning_options @ options) with
+			match Warning.get_mode w (options @ com.warning_options) with
 			| WMEnable ->
 				add_diagnostics_message ?depth com (located s p) DKCompilerMessage Warning
 			| WMDisable ->
